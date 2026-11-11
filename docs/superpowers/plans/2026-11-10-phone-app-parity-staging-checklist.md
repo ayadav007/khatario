@@ -175,6 +175,37 @@ Credit approvals now need the website build that includes f974ead5 on staging (t
 120. An account with no statement → "Import a statement on the website".
 121. More › Activity Logs → filter by a person and by dates (the last day of the range is included) → Show more; open an entry → details.
 
+## Stage 5: reports (commits 12bba76e to 5825b3df)
+
+Deploy e9bd4db4 to staging first: the GSTR-2B decision and reconcile routes now take the business from the login, and saving a decision checks the reconciliation belongs to that business.
+
+### Reports home (Task 31)
+122. More › Reports › Overview → a period bar and four figures (sales, purchases, expenses, profit) matching the website's overview for the same dates; change the period → they change.
+123. Report groups list every report; a report your plan lacks shows Upgrade and opens the upgrade sheet.
+
+### Sales, purchase and other reports (Task 32)
+124. Each sales report (summary, invoice-wise, item-wise, party-wise, tax-wise, payment mode, discount, credit, cancelled, returns, B2B vs B2C) opens with the server's totals; compare two against the website for the same dates.
+125. Sales summary → group by Week, then Month → rows regroup. Sales invoice-wise → filter Draft, then channel WhatsApp → the list narrows; the unbilled-orders note shows when there are any.
+126. Tap an invoice row → the invoice opens; a party row → the customer; an item row → the item.
+127. Each purchase report opens the same way; purchase invoice-wise filters by status; a supplier row opens the supplier.
+128. Profit by invoice → rows open invoices. Credit risk → a customer row opens the customer, a supplier row the supplier.
+129. Deleted items → filter by type, choose dates → Restore asks first → the record returns (on a plan without restore, the upgrade sheet shows instead).
+130. Label print log → choose a period and purpose → rows include today's jobs.
+
+### GST and e-way bills (Task 33)
+131. GSTR-1 for last month → sections with the server's totals; Share Excel; Mark as filed → warns it locks the month's invoices → filed.
+132. GSTR-3B → tables 3.1, 3.2, 4 and 5 for the month.
+133. GSTR-2B reconciliation → Run reconciliation (asks, naming the period) → matched and missing lines; open a line → choose a decision → asks, naming the invoice and amount → saved.
+134. GSTR-1 vs 3B and GST alerts → dismiss an alert with a reason, then restore it.
+135. GST cash ledger with several branches → "Select a branch before posting" until one is picked; deposit, utilise and reverse each ask first.
+136. E-way bills → add one; extend, close and cancel each ask first.
+137. On staging after deploy: the website's GSTR-2B reconciliation page still runs and records decisions.
+
+### Statements (Task 34)
+138. Profit & Loss, Balance Sheet, Trial Balance and Cash Flow → Share PDF opens the PDF for the chosen period.
+139. Profit & Loss → tap an expense account → its entries; tap Cost of goods sold → its parts including opening stock, purchases and closing stock; tap Purchases → the purchase items; tap Net profit → its parts.
+140. An account statement PDF from the ledger still opens with the same name.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
@@ -188,3 +219,5 @@ Credit approvals now need the website build that includes f974ead5 on staging (t
 - The website's TDS pages send a year that matches no saved financial year; the TDS certificate PDF route asks for columns that may not exist; the TDS summary returns only the first quarter's figures.
 - The website's activity log leaves out the last day of a date range.
 - Depreciation cannot be previewed before it is posted.
+- `recordDecision` in `lib/gst/gstr2b-reconciliation.ts` still has no business check of its own; the decision route now checks first, but any other caller would not.
+- Profit & Loss earnings rows (PBT, EBIT, EBITDA) and the Schedule III layout are website-only.
