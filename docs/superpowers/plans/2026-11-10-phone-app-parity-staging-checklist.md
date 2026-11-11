@@ -99,9 +99,53 @@ Credit approvals now need the website build that includes f974ead5 on staging (t
 66. On staging after deploy: approve from the website still works (it sends the business id, which must match).
 67. On staging after deploy: approve and reject from the phone work.
 
+## Stage 3: stock (commits 00be7df1 to 16b556ed)
+
+### Pricing (Task 20)
+68. More › Inventory › Party Pricing → pick a customer → their item and category prices and their price level.
+69. Add an item price → saved and listed; open History → the server's earlier prices.
+70. Remove a price → asks first, naming the item → it leaves the list.
+71. Price Levels → create one, rename it, pause it; open it → add a rate (item, minimum quantity, price) → saved.
+72. Schemes → create, edit, pause; edit the paused scheme and save → it stays paused.
+73. Price List › Edit party prices → opens the phone party-pricing screen, not the website.
+
+### Adjustments and repacks (Task 21)
+74. More › Inventory › Adjustments → list; switch to Repacks → repack list.
+75. New adjustment → add two items, one added and one reduced, with a reason → save → each line shows "Saved" and the stock after.
+76. Make the second line fail (e.g. reduce more than in stock) → the first stays saved, the second shows the server's message; fix it and save → only the second goes out.
+77. A serial-tracked item → "Adjust this item on the website"; Save is off until it is removed.
+78. Items › a variant item › Adjust → opens the new adjustment form.
+79. New repack → pick the source item → quantities fill from the server → save. Open it › Cancel → asks first → cancelled.
+
+### Stock transfers (Task 22)
+80. More › Inventory › Stock Transfers → list with status chips; + creates a transfer between two warehouses with the number filled in.
+81. Open a draft → Approve → Dispatch (asks first) → status In transit.
+82. Receive → enter received quantities; more than was sent is refused before sending → save → status Received.
+83. A transfer with a shortfall → Close shortfall → asks first → closed.
+84. Cancel a pending transfer → asks first → cancelled.
+
+### Stock counts, held goods, manufacturing, claims (Task 23)
+85. More › Inventory › Stock Counts → start a count for a warehouse → lines listed.
+86. Scan a barcode on the count → the matching line's count goes up; an unknown barcode says "Not on this count".
+87. Type quantities, leave the screen and come back → they are kept.
+88. Clear a counted box and tap Finish → "Enter a quantity for … or leave it as it was"; nothing submitted.
+89. Finish → asks first, naming uncounted items → review; Post → asks first → stock adjusted.
+90. Held goods → release one and write off one (with a reason) → both ask first.
+91. Manufacturing › Recipes → create one; Production → run one batch → asks first → finished goods added.
+92. Insurance claims → raise one; admit, then settle → each names its ledger effect first.
+
+### Categories, labels, stock reports (Task 24)
+93. More › Inventory › Item categories → add one, set a size chart, delete an unused one; deleting a used one shows the server's message.
+94. Print Labels → pick a template, two items and copies → prints on the paired label printer.
+95. Each stock report opens with a period picker and the server's totals: Stock Summary (by item), Closing Stock, Stock with Parties, Valuation, Quantity details, Bank stock statement, Job work, FIFO lots.
+96. Closing Stock for a year with more than 200 items → Show more loads the rest; a year with no closing stock says so and offers the website.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
 - Several phone settings screens send `business_id` in request bodies (`phone/lib/screens/settings/settings_router.dart`), which the project rules forbid.
 - The website's credit-note Edit link leads to a page that does not edit, and its payment reminders History tab calls a route that does not exist.
 - Converting a work order on the phone creates the final invoice straight away; the website opens a pre-filled invoice form first.
+- Editing a paused scheme on the website makes it active again (the route treats a missing setting as active).
+- Creating a stock transfer has no protection against a repeated save, on the website and the phone.
+- The website's stock dashboard page (reorder, ageing, velocity) is not on the phone.
