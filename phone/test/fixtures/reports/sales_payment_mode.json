@@ -1,0 +1,23 @@
+{
+  "byPaymentMode": [
+    {
+      "payment_mode": "upi",
+      "invoice_count": "6",
+      "total_amount": "18400.00"
+    },
+    {
+      "payment_mode": "cash",
+      "invoice_count": "4",
+      "total_amount": "7250.50"
+    },
+    {
+      "payment_mode": "unpaid",
+      "invoice_count": "2",
+      "total_amount": "5414.00"
+    }
+  ],
+  "totals": {
+    "total_invoices": 12,
+    "total_amount": 31064.5
+  }
+}

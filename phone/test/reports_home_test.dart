@@ -181,7 +181,7 @@ void main() {
     expect(find.byType(ProfitLossScreen), findsOneWidget);
     Navigator.of(ctx).pop();
     await t.pumpAndSettle();
-    openAppHref(ctx, s, '/reports/sales/summary', 'Sales summary');
+    openAppHref(ctx, s, '/reports/gst/gstr3b', 'GSTR-3B');
     await t.pumpAndSettle();
     expect(find.byType(RecordPage), findsOneWidget);
   });

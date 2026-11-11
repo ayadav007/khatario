@@ -36,6 +36,9 @@ import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
 import '../reports/reports_home_screen.dart';
+import '../reports/other_reports.dart';
+import '../reports/purchase_reports.dart';
+import '../reports/sales_reports.dart';
 import '../reports/stock_reports.dart';
 import '../sales/credit_approvals_screen.dart';
 import '../sales/credit_debit_notes_screen.dart';
@@ -235,7 +238,10 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/reports/profit-loss' => ProfitLossScreen(session: session),
     '/reports/balance-sheet' => BalanceSheetScreen(session: session),
     '/reports/trial-balance' => TrialBalanceScreen(session: session),
-    _ => stockReportScreen(session, href),
+    _ => stockReportScreen(session, href) ??
+        salesReportScreen(session, href) ??
+        purchaseReportScreen(session, href) ??
+        otherReportScreen(session, href),
   };
 }
 

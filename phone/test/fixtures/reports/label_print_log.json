@@ -1,0 +1,55 @@
+{
+  "entries": [
+    {
+      "id": "1f0a0c10-0000-4000-8000-000000000011",
+      "business_id": "b",
+      "user_id": "u",
+      "purpose": "purchase",
+      "template_id": null,
+      "template_name": "Shelf label 50x25",
+      "purchase_id": "6b2e0c10-0000-4000-8000-0000000000b1",
+      "format": "pdf",
+      "layout": "50x25",
+      "symbology": "code128",
+      "line_count": 3,
+      "total_labels": 120,
+      "lines_snapshot": [
+        {
+          "product_name": "Basmati Rice 5kg",
+          "variant_name": null,
+          "barcode": "8901234567890",
+          "copies": 100,
+          "price": 480,
+          "mrp": 520,
+          "batch_number": "B7",
+          "expiry_date": null
+        }
+      ],
+      "created_at": "2026-11-09T10:30:00.000Z",
+      "user_name": "Ravi Kumar",
+      "user_email": "ravi@example.com",
+      "bill_number": "BILL-2026-0018"
+    },
+    {
+      "id": "1f0a0c10-0000-4000-8000-000000000012",
+      "business_id": "b",
+      "user_id": "u",
+      "purpose": "standalone",
+      "template_id": null,
+      "template_name": null,
+      "purchase_id": null,
+      "format": "pdf",
+      "layout": "A4",
+      "symbology": null,
+      "line_count": 1,
+      "total_labels": 24,
+      "lines_snapshot": [],
+      "created_at": "2026-11-08T15:00:00.000Z",
+      "user_name": null,
+      "user_email": "owner@example.com",
+      "bill_number": null
+    }
+  ],
+  "total_jobs": 2,
+  "total_labels": 144
+}

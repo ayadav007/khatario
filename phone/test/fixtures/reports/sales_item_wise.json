@@ -1,0 +1,48 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "items": [
+    {
+      "item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001",
+      "item_name": "Basmati Rice 5kg",
+      "hsn_sac": "1006",
+      "unit": "BAG",
+      "quantity_invoiced": 30,
+      "quantity_returned": 2,
+      "quantity_sold": 28,
+      "quantity_label": "28 BAG",
+      "amount": 13440,
+      "tax": 672,
+      "amount_with_tax": 14112,
+      "discount": 120,
+      "average_price": 480,
+      "invoice_count": 9
+    },
+    {
+      "item_id": null,
+      "item_name": "Delivery help",
+      "hsn_sac": null,
+      "unit": null,
+      "quantity_invoiced": 4,
+      "quantity_returned": 0,
+      "quantity_sold": 4,
+      "quantity_label": "4",
+      "amount": 400,
+      "tax": 72,
+      "amount_with_tax": 472,
+      "discount": 0,
+      "average_price": 100,
+      "invoice_count": 4
+    }
+  ],
+  "totals": {
+    "quantity_invoiced": 34,
+    "quantity_returned": 2,
+    "quantity_sold": 32,
+    "amount": 13840,
+    "tax": 744,
+    "amount_with_tax": 14584,
+    "discount": 120
+  }
+}

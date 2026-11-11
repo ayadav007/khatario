@@ -1,0 +1,46 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "period": "day",
+  "summary": [
+    {
+      "period": "2026-11-08",
+      "invoice_count": 4,
+      "credit_note_count": 1,
+      "invoice_sales": 18500,
+      "credit_note_sales": 1200,
+      "sales": 17300,
+      "tax": 3114,
+      "sales_with_tax": 20414,
+      "discount": 300,
+      "collected": 15000,
+      "balance_due": 5414
+    },
+    {
+      "period": "2026-11-07",
+      "invoice_count": 2,
+      "credit_note_count": 0,
+      "invoice_sales": 8000,
+      "credit_note_sales": 0,
+      "sales": 8000,
+      "tax": 1440,
+      "sales_with_tax": 9440,
+      "discount": 100,
+      "collected": 9440,
+      "balance_due": 0
+    }
+  ],
+  "totals": {
+    "invoice_count": 6,
+    "credit_note_count": 1,
+    "invoice_sales": 26500,
+    "credit_note_sales": 1200,
+    "sales": 25300,
+    "tax": 4554,
+    "sales_with_tax": 29854,
+    "discount": 400,
+    "collected": 24440,
+    "balance_due": 5414
+  }
+}

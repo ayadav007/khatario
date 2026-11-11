@@ -1,0 +1,24 @@
+{
+  "invoices": [
+    {
+      "invoice_id": "5a1d0c10-0000-4000-8000-0000000000a1",
+      "invoice_number": "INV-2026-0042",
+      "date": "2026-11-08",
+      "customer_name": "Sharma Traders",
+      "total_revenue": 10000,
+      "total_cost": 7400,
+      "total_profit": 2600,
+      "margin_percent": 26
+    },
+    {
+      "invoice_id": "5a1d0c10-0000-4000-8000-0000000000a2",
+      "invoice_number": "INV-2026-0041",
+      "date": "2026-11-07",
+      "customer_name": null,
+      "total_revenue": 500,
+      "total_cost": 520,
+      "total_profit": -20,
+      "margin_percent": -4
+    }
+  ]
+}

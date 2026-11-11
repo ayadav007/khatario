@@ -1,0 +1,43 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "period": "day",
+  "summary": [
+    {
+      "period": "2026-11-09",
+      "bill_count": 2,
+      "return_count": 1,
+      "bill_purchases": 15000,
+      "return_purchases": 1000,
+      "purchases": 14000,
+      "tax": 2520,
+      "purchases_with_tax": 16520,
+      "paid": 10000,
+      "balance_due": 6520
+    },
+    {
+      "period": "2026-11-03",
+      "bill_count": 1,
+      "return_count": 0,
+      "bill_purchases": 6000,
+      "return_purchases": 0,
+      "purchases": 6000,
+      "tax": 300,
+      "purchases_with_tax": 6300,
+      "paid": 6300,
+      "balance_due": 0
+    }
+  ],
+  "totals": {
+    "bill_count": 3,
+    "return_count": 1,
+    "bill_purchases": 21000,
+    "return_purchases": 1000,
+    "purchases": 20000,
+    "tax": 2820,
+    "purchases_with_tax": 22820,
+    "paid": 16300,
+    "balance_due": 6520
+  }
+}

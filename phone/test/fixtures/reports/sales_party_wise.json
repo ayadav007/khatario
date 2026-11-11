@@ -1,0 +1,57 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "parties": [
+    {
+      "customer_id": "7c0a0c10-0000-4000-8000-0000000000c1",
+      "customer_name": "Sharma Traders",
+      "phone": "9876500001",
+      "gstin": "27ABCDE1234F1Z5",
+      "invoice_count": 3,
+      "credit_note_count": 1,
+      "invoice_sales": 22000,
+      "invoice_sales_with_tax": 25960,
+      "credit_note_sales": 1200,
+      "credit_note_sales_with_tax": 1416,
+      "sales": 20800,
+      "tax": 3744,
+      "sales_with_tax": 24544,
+      "discount": 200,
+      "collected": 18000,
+      "balance_due": 6544
+    },
+    {
+      "customer_id": null,
+      "customer_name": "Walk-in / Cash Sale",
+      "phone": null,
+      "gstin": null,
+      "invoice_count": 3,
+      "credit_note_count": 0,
+      "invoice_sales": 4500,
+      "invoice_sales_with_tax": 5310,
+      "credit_note_sales": 0,
+      "credit_note_sales_with_tax": 0,
+      "sales": 4500,
+      "tax": 810,
+      "sales_with_tax": 5310,
+      "discount": 200,
+      "collected": 5310,
+      "balance_due": 0
+    }
+  ],
+  "totals": {
+    "invoice_count": 6,
+    "credit_note_count": 1,
+    "invoice_sales": 26500,
+    "invoice_sales_with_tax": 31270,
+    "credit_note_sales": 1200,
+    "credit_note_sales_with_tax": 1416,
+    "sales": 25300,
+    "tax": 4554,
+    "sales_with_tax": 29854,
+    "discount": 400,
+    "collected": 23310,
+    "balance_due": 6544
+  }
+}

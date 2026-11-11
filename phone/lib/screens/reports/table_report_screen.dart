@@ -18,6 +18,19 @@ class ReportColumn {
   final bool money, qty;
 }
 
+/// A choice drawn under the period bar. The chosen value is sent as `queryName=value`, except when it is
+/// [omitValue] (the "All" option), which sends nothing. [initial] defaults to the first option.
+class ReportFilter {
+  const ReportFilter(this.label, this.queryName, this.options, {this.initialValue, this.omitValue});
+
+  final String label, queryName;
+  final List<(String value, String label)> options;
+  final String? omitValue;
+  final String? initialValue;
+
+  String get initial => initialValue ?? options.first.$1;
+}
+
 /// Describes one report. [TableReportScreen] draws it: headline tiles, a period bar and a table of rows.
 class TableReportSpec {
   const TableReportSpec({
@@ -43,6 +56,12 @@ class TableReportSpec {
     this.emptyBody,
     this.emptyActionLabel,
     this.onEmptyAction,
+    this.filters = const [],
+    this.periodOptional = false,
+    this.toSuffix = '',
+    this.onOpenSectionRow,
+    this.onLoaded,
+    this.notice,
   });
 
   final String title, path, rowsKey, rowAmountKey;
@@ -80,6 +99,26 @@ class TableReportSpec {
   /// Replaces "Nothing for this period" when the reply holds no rows, with an optional action.
   final String? emptyTitle, emptyBody, emptyActionLabel;
   final void Function(BuildContext context)? onEmptyAction;
+
+  /// Choices drawn under the period bar; each adds its own query name. Empty changes nothing.
+  final List<ReportFilter> filters;
+
+  /// A [ReportPeriodKind.range] report that starts with no dates ("All time") and sends none until the
+  /// user picks dates.
+  final bool periodOptional;
+
+  /// Text added to the end of the `to` date (`T23:59:59` for routes that compare it with a timestamp).
+  final String toSuffix;
+
+  /// Like [onOpenRow] for the rows of [sections]; [section] is the index in [sections]. Rows of a section
+  /// fall back to [onOpenRow] when this is null.
+  final void Function(BuildContext context, int section, Map<String, dynamic> row)? onOpenSectionRow;
+
+  /// Called with the reply after every successful load.
+  final void Function(dynamic body)? onLoaded;
+
+  /// A line of caption text above the list, drawn from the reply. Null or empty draws nothing.
+  final String? Function(dynamic body)? notice;
 }
 
 const _dash = '—';
@@ -114,6 +153,8 @@ class _TableReportScreenState extends State<TableReportScreen> {
   late MonthPeriod _month = MonthPeriod.of(_today);
   late FinancialYear _fy = FinancialYear.of(_today);
   late DateTime _asOn = _today;
+  late bool _rangeOn = !_spec.periodOptional;
+  late final Map<String, String> _filterValues = {for (final f in _spec.filters) f.queryName: f.initial};
 
   dynamic _body;
   bool _loading = true;
@@ -142,7 +183,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
 
   String? get _periodQuery => switch (_spec.period) {
         ReportPeriodKind.none => null,
-        ReportPeriodKind.range => '${_spec.fromKey}=${_range.fromIso}&${_spec.toKey}=${_range.toIso}',
+        ReportPeriodKind.range => _rangeOn ? '${_spec.fromKey}=${_range.fromIso}&${_spec.toKey}=${_range.toIso}${_spec.toSuffix}' : null,
         ReportPeriodKind.month => _month.query,
         ReportPeriodKind.financialYear => _spec.longFinancialYear ? 'financial_year=${_fy.longCode}' : _fy.query,
         ReportPeriodKind.asOn => '${_spec.asOnKey}=${ymd(_asOn)}',
@@ -152,6 +193,8 @@ class _TableReportScreenState extends State<TableReportScreen> {
     final extra = _spec.extraQuery?.call().trim() ?? '';
     final query = [
       ?_periodQuery,
+      for (final f in _spec.filters)
+        if (_filterValues[f.queryName] != f.omitValue) '${f.queryName}=${Uri.encodeQueryComponent(_filterValues[f.queryName]!)}',
       if (extra.isNotEmpty) extra,
       if (page != null) 'page=$page',
     ].join('&');
@@ -172,6 +215,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
     try {
       final body = await widget.session.api.getData(_url());
       if (!mounted || seq != _seq) return;
+      _spec.onLoaded?.call(body);
       setState(() {
         _body = body;
         _more = [];
@@ -235,7 +279,19 @@ class _TableReportScreenState extends State<TableReportScreen> {
       case ReportPeriodKind.none:
         return const SizedBox.shrink();
       case ReportPeriodKind.range:
-        return ReportPeriodBar(period: _range, onChanged: (p) => _setPeriod(() => _range = p));
+        final bar = ReportPeriodBar(period: _range, onChanged: (p) => _setPeriod(() => _range = p));
+        if (!_spec.periodOptional) return bar;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KChipBar<bool>(
+              value: _rangeOn,
+              options: const [(false, 'All time'), (true, 'Choose dates')],
+              onChanged: (on) => _setPeriod(() => _rangeOn = on),
+            ),
+            if (_rangeOn) bar,
+          ],
+        );
       case ReportPeriodKind.month:
         return MonthPeriodBar(period: _month, onChanged: (p) => _setPeriod(() => _month = p));
       case ReportPeriodKind.financialYear:
@@ -243,6 +299,27 @@ class _TableReportScreenState extends State<TableReportScreen> {
       case ReportPeriodKind.asOn:
         return AsOnDateBar(date: _asOn, onChanged: (d) => _setPeriod(() => _asOn = d));
     }
+  }
+
+  Widget _filterBar() {
+    if (_spec.filters.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final f in _spec.filters) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpace.gutter + 2, AppSpace.xs, AppSpace.gutter, AppSpace.xs),
+            child: Text(f.label, style: AppText.caption),
+          ),
+          KChipBar<String>(
+            value: _filterValues[f.queryName],
+            options: f.options,
+            onChanged: (v) => _setPeriod(() => _filterValues[f.queryName] = v),
+          ),
+        ],
+        const SizedBox(height: AppSpace.sm),
+      ],
+    );
   }
 
   List<Map<String, dynamic>> _filtered(List<Map<String, dynamic>> rows) {
@@ -254,7 +331,11 @@ class _TableReportScreenState extends State<TableReportScreen> {
     ];
   }
 
-  Future<void> _open(Map<String, dynamic> row) async {
+  Future<void> _open(Map<String, dynamic> row, {int? section}) async {
+    if (section != null && _spec.onOpenSectionRow != null) {
+      _spec.onOpenSectionRow!(context, section, row);
+      return;
+    }
     if (_spec.onOpenRow != null) {
       _spec.onOpenRow!(context, row);
       return;
@@ -301,6 +382,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
           children: [
             KBackBar(_spec.title),
             _periodBar(),
+            _filterBar(),
             Expanded(child: _content()),
           ],
         ),
@@ -344,6 +426,10 @@ class _TableReportScreenState extends State<TableReportScreen> {
         padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.sm, AppSpace.gutter, AppSpace.xxl),
         children: [
           if (_spec.tiles.isNotEmpty) ...[_tiles(), const SizedBox(height: AppSpace.lg)],
+          if (_spec.notice?.call(_body) case final note? when note.isNotEmpty) ...[
+            Text(note, style: AppText.caption),
+            const SizedBox(height: AppSpace.md),
+          ],
           if (!nothingAtAll || searching) ...[
             KSearchField(controller: _search, hint: 'Search ${_spec.title.toLowerCase()}', onChanged: (_) => setState(() {})),
             const SizedBox(height: AppSpace.md),
@@ -361,11 +447,11 @@ class _TableReportScreenState extends State<TableReportScreen> {
             const KEmptyState(icon: LucideIcons.search, title: 'Nothing matches your search', body: 'Try another word.')
           else if (shown.isNotEmpty)
             _table(shown),
-          for (final (title, secRows) in sections)
+          for (final (i, (title, secRows)) in sections.indexed)
             if (secRows.isNotEmpty) ...[
               const SizedBox(height: AppSpace.xl),
               KSectionHeader(title),
-              _table(secRows),
+              _table(secRows, section: i),
             ],
           if (paging != null && paging.page < paging.totalPages && !searching) ...[
             const SizedBox(height: AppSpace.lg),
@@ -415,14 +501,14 @@ class _TableReportScreenState extends State<TableReportScreen> {
     );
   }
 
-  Widget _table(List<Map<String, dynamic>> rows) {
-    return KCard(child: KDivided(children: [for (final r in rows) _row(r)]));
+  Widget _table(List<Map<String, dynamic>> rows, {int? section}) {
+    return KCard(child: KDivided(children: [for (final r in rows) _row(r, section: section)]));
   }
 
-  Widget _row(Map<String, dynamic> row) {
+  Widget _row(Map<String, dynamic> row, {int? section}) {
     final title = _spec.rowTitle(row);
     final subtitle = _spec.rowSubtitle?.call(row);
-    final tappable = _spec.onOpenRow != null || _spec.columns.isNotEmpty;
+    final tappable = _spec.onOpenRow != null || (section != null && _spec.onOpenSectionRow != null) || _spec.columns.isNotEmpty;
     return KListRow(
       title: title.isEmpty ? _dash : title,
       subtitle: subtitle,
@@ -430,7 +516,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
         _spec.rowAmountText?.call(row) ?? reportCellText(readPath(row, _spec.rowAmountKey), money: true),
         style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular),
       ),
-      onTap: tappable ? () => _open(row) : null,
+      onTap: tappable ? () => _open(row, section: section) : null,
     );
   }
 }

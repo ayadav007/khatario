@@ -1,0 +1,57 @@
+{
+  "as_on_date": "2026-11-10",
+  "receivables_account": {
+    "id": "a1",
+    "code": "1109",
+    "name": "Inter-Branch Receivables"
+  },
+  "payables_account": {
+    "id": "a2",
+    "code": "2111",
+    "name": "Inter-Branch Payables"
+  },
+  "totals": {
+    "receivables": 15000,
+    "payables": 14000,
+    "difference": 1000,
+    "is_reconciled": false
+  },
+  "branch_wise": {
+    "receivables": [
+      {
+        "branch_id": "b1",
+        "branch_name": "Main Branch",
+        "receivables_balance": "15000.00"
+      }
+    ],
+    "payables": [
+      {
+        "branch_id": "b2",
+        "branch_name": "Pune Branch",
+        "payables_balance": "14000.00"
+      }
+    ]
+  },
+  "unmatched_transactions": [
+    {
+      "voucher_id": "v1",
+      "voucher_type": "stock_transfer",
+      "entry_date": "2026-11-09T00:00:00.000Z",
+      "narration": "Transfer to Pune",
+      "branch_name": "Main Branch",
+      "transaction_type": "Receivable",
+      "amount": "15000.00"
+    },
+    {
+      "voucher_id": "v2",
+      "voucher_type": "stock_transfer",
+      "entry_date": "2026-11-09T00:00:00.000Z",
+      "narration": "Received from Main",
+      "branch_name": "Pune Branch",
+      "transaction_type": "Payable",
+      "amount": "14000.00"
+    }
+  ],
+  "reconciliation_status": "unreconciled",
+  "message": "Inter-branch accounts are not reconciled. Difference: Rs 1000.00"
+}

@@ -1,0 +1,80 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "invoices": [
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a1",
+      "invoice_number": "INV-2026-0042",
+      "invoice_date": "2026-11-08",
+      "due_date": "2026-11-22",
+      "status": "final",
+      "payment_status": "partial",
+      "reference_number": null,
+      "customer_id": "7c0a0c10-0000-4000-8000-0000000000c1",
+      "customer_name": "Sharma Traders",
+      "customer_gstin": "27ABCDE1234F1Z5",
+      "channel": "manual",
+      "subtotal": 10000,
+      "discount_total": 0,
+      "additional_charges": 0,
+      "tax_total": 1800,
+      "cgst_total": 900,
+      "sgst_total": 900,
+      "igst_total": 0,
+      "grand_total": 11800,
+      "paid_amount": 5000,
+      "balance_amount": 6800,
+      "supply_type": "b2b",
+      "payments_label": "Upi Rs 5000.00",
+      "sales": 10000
+    },
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a2",
+      "invoice_number": "INV-2026-0041",
+      "invoice_date": "2026-11-07",
+      "due_date": null,
+      "status": "draft",
+      "payment_status": "unpaid",
+      "reference_number": null,
+      "customer_id": null,
+      "customer_name": "Walk-in / Cash Sale",
+      "customer_gstin": null,
+      "channel": "counter",
+      "subtotal": 500,
+      "discount_total": 0,
+      "additional_charges": 0,
+      "tax_total": 90,
+      "cgst_total": 45,
+      "sgst_total": 45,
+      "igst_total": 0,
+      "grand_total": 590,
+      "paid_amount": 0,
+      "balance_amount": 590,
+      "supply_type": "b2c_small",
+      "payments_label": null,
+      "sales": 500
+    }
+  ],
+  "totals": {
+    "total_invoices": 1,
+    "draft_count": 1,
+    "cancelled_count": 0,
+    "total_sales": 10000,
+    "total_tax": 1800,
+    "total_sales_with_tax": 11800,
+    "total_discount": 0,
+    "total_collected": 5000,
+    "total_pending": 6800
+  },
+  "by_channel": {
+    "manual": {
+      "count": 1,
+      "sales_with_tax": 11800
+    }
+  },
+  "unbilled_orders": {
+    "count": 0,
+    "amount": 0
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "returns": [
+    {
+      "id": "9d0e0c10-0000-4000-8000-0000000000d1",
+      "credit_note_number": "CN-2026-0007",
+      "credit_note_date": "2026-11-06T00:00:00.000Z",
+      "original_invoice_date": "2026-11-01T00:00:00.000Z",
+      "invoice_number": "INV-2026-0030",
+      "customer_name": "Sharma Traders",
+      "customer_gstin": "27ABCDE1234F1Z5",
+      "reason": "Damaged in transit",
+      "subtotal": "1200.00",
+      "tax_total": "216.00",
+      "cgst_total": "108.00",
+      "sgst_total": "108.00",
+      "igst_total": "0.00",
+      "grand_total": "1416.00",
+      "refund_status": "pending",
+      "refund_amount": "0.00",
+      "refund_mode": null,
+      "refund_date": null
+    }
+  ],
+  "totals": {
+    "total_returns": 1,
+    "total_amount": 1416,
+    "total_tax": 216,
+    "total_refunded": 0,
+    "refunded_count": 0,
+    "adjusted_count": 0,
+    "pending_count": 1
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "cancelledInvoices": [
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a1",
+      "invoice_number": "INV-2026-0038",
+      "invoice_date": "2026-11-04T00:00:00.000Z",
+      "customer_name": "Gupta Stores",
+      "status": "cancelled",
+      "grand_total": "2360.00",
+      "tax_total": "360.00",
+      "cancellation_reason": "Wrong rate entered",
+      "cancelled_by": "Owner",
+      "cancelled_at": "2026-11-04T10:15:00.000Z",
+      "updated_at": "2026-11-04T10:15:00.000Z"
+    }
+  ],
+  "totals": {
+    "total_invoices": 1,
+    "total_amount": 2360,
+    "total_tax": 360
+  }
+}
