@@ -153,10 +153,6 @@ const websiteByDesign = <String>{
 
 /// Links that open the website today and are meant to get a phone screen. Later tasks delete entries.
 const websiteForNow = <String>{
-  '/stock-counts',
-  '/stock-holds',
-  '/manufacturing',
-  '/insurance-claims',
   '/eway-bills',
   '/employees/new',
 };
