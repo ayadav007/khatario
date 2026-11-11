@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getEmployeeIdForUser } from '@/lib/hr/manager-scope';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionEarning } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -125,7 +126,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { commission_id, action, approved_by, payment_reference, notes } = body;
+    const { commission_id, action, payment_reference, notes } = body; // body approved_by is ignored
+    const businessId = getSessionScopedBusinessId(request);
     const updated_by_user_id = actingUserId(request, body.updated_by_user_id);
 
     if (!commission_id || !action) {
@@ -149,13 +151,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get commission with business_id from employee
+    if (!businessId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+
+    // AUTHORIZATION first, against the session business, so a caller without permission gets 403 for any id
+    try {
+      await authorize(updated_by_user_id, 'commissions', 'update', { businessId, resourceId: commission_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
+    }
+
+    // Only a commission of an employee in the session business
     const commission = await queryOne<CommissionEarning & { business_id: string }>(
       `SELECT ce.*, e.business_id
        FROM commission_earnings ce
        INNER JOIN employees e ON ce.employee_id = e.id
-       WHERE ce.id = $1`,
-      [commission_id]
+       WHERE ce.id = $1 AND e.business_id = $2`,
+      [commission_id, businessId]
     );
 
     if (!commission) {
@@ -163,16 +179,6 @@ export async function POST(request: NextRequest) {
         { error: 'Commission not found' },
         { status: 404 }
       );
-    }
-
-    // AUTHORIZATION: Check update permission (commissions are part of HR module)
-    try {
-      await authorize(updated_by_user_id, 'commissions', 'update', { businessId: commission.business_id, resourceId: commission_id });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
-      }
-      throw error;
     }
 
     if (action === 'approve') {
@@ -183,11 +189,14 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // The approver is the acting user's employee record; a body approved_by is never used.
+      const approvedBy = await getEmployeeIdForUser(updated_by_user_id, businessId);
       await query(
-        `UPDATE commission_earnings
+        `UPDATE commission_earnings ce
          SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [approved_by || null, commission_id]
+         FROM employees emp
+         WHERE ce.id = $2 AND ce.employee_id = emp.id AND emp.business_id = $3`,
+        [approvedBy || null, commission_id, businessId]
       );
     } else if (action === 'pay') {
       if (commission.status !== 'approved') {
@@ -198,10 +207,11 @@ export async function POST(request: NextRequest) {
       }
 
       await query(
-        `UPDATE commission_earnings
+        `UPDATE commission_earnings ce
          SET status = 'paid', paid_at = CURRENT_TIMESTAMP, payment_reference = $1, notes = $2, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $3`,
-        [payment_reference || null, notes || null, commission_id]
+         FROM employees emp
+         WHERE ce.id = $3 AND ce.employee_id = emp.id AND emp.business_id = $4`,
+        [payment_reference || null, notes || null, commission_id, businessId]
       );
     } else if (action === 'cancel') {
       if (commission.status === 'paid') {
@@ -212,10 +222,11 @@ export async function POST(request: NextRequest) {
       }
 
       await query(
-        `UPDATE commission_earnings
+        `UPDATE commission_earnings ce
          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1`,
-        [commission_id]
+         FROM employees emp
+         WHERE ce.id = $1 AND ce.employee_id = emp.id AND emp.business_id = $2`,
+        [commission_id, businessId]
       );
     }
 

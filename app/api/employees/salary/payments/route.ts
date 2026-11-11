@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+import { getDefaultBranchId } from '@/lib/branch-helpers';
 import { postSalaryPaymentToBooks } from '@/lib/hr/staff-wage-posting';
 import {
   defaultPartialRecoveryNote,
@@ -176,6 +178,27 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    // The employee must belong to the session business before anything is read or written.
+    const ownedEmployee = await queryOne<{ name: string | null; bank_account_number: string | null; bank_ifsc: string | null }>(
+      `SELECT u.name, e.bank_account_number, e.bank_ifsc
+       FROM employees e LEFT JOIN users u ON u.id = e.id
+       WHERE e.id = $1 AND e.business_id = $2`,
+      [employee_id, business_id]
+    );
+    if (!ownedEmployee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    }
+
+    // A locked period would refuse the books post after the payment, payslip and recoveries are
+    // already saved, so refuse it up front (same check the post makes), with nothing written.
+    const lockedResponse = await periodGuardResponse({
+      businessId: business_id,
+      branchId: await getDefaultBranchId(business_id),
+      dates: [String(payment_date).slice(0, 10)],
+      action: 'post salary payment',
+    });
+    if (lockedResponse) return lockedResponse;
+
     const payrollLimit = await limitExceededResponse(business_id, 'payroll');
     if (payrollLimit) return payrollLimit;
 
@@ -222,11 +245,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get employee bank details
-    const employee = await queryOne(
-      'SELECT bank_account_number, bank_ifsc FROM employees WHERE id = $1 AND business_id = $2',
-      [employee_id, business_id]
-    );
+    // Employee bank details (ownership already verified above)
+    const employee = ownedEmployee;
 
     // Get pending advances for automatic recovery
     const pendingAdvances = await queryRows<{
@@ -417,16 +437,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const named = await queryOne<{ name: string }>(
-      `SELECT u.name FROM users u WHERE u.id = $1`,
-      [employee_id],
-    );
     try {
       await postSalaryPaymentToBooks({
         businessId: business_id,
         salaryPaymentId: salaryPayment.id,
         employeeId: employee_id,
-        employeeName: named?.name || 'Employee',
+        employeeName: ownedEmployee.name || 'Employee',
         paymentDate: String(payment_date).slice(0, 10),
         paymentMode: payment_mode || 'cash',
         gross: grossSalary,

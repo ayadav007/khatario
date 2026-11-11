@@ -22,7 +22,12 @@ import '../hr/employees_screen.dart';
 import '../hr/org_chart_screen.dart';
 import '../hr/leave_calendar_screen.dart';
 import '../hr/leaves_screen.dart';
+import '../hr/commissions_screen.dart';
+import '../hr/employee_expenses_screen.dart';
+import '../hr/salary_advances_screen.dart';
+import '../hr/salary_payment_form_screen.dart';
 import '../hr/salary_payments_screen.dart';
+import '../hr/targets_screen.dart';
 import '../hr/shift_roster_screen.dart';
 import '../hub/hub_directory_screen.dart';
 import '../hub/hub_home_screen.dart';
@@ -234,6 +239,13 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/employees/leaves' => LeavesScreen(session: session),
     '/employees/leaves/calendar' => LeaveCalendarScreen(session: session),
     '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
+    '/employees/salary/payments/new' => SalaryPaymentFormScreen(session: session),
+    '/employees/salary/advances' => SalaryAdvancesScreen(session: session),
+    '/employees/salary/advances/new' => SalaryAdvanceFormScreen(session: session),
+    '/employees/expenses' => EmployeeExpensesScreen(session: session),
+    '/employees/expenses/new' => EmployeeExpenseFormScreen(session: session),
+    '/employees/commissions' => CommissionsScreen(session: session),
+    '/employees/targets' => TargetsScreen(session: session),
     '/pricing/price-list' => PriceListScreen(session: session),
     '/items/cleanup' => ItemCleanupScreen(session: session),
     '/inventory-adjustments' => AdjustmentsScreen(session: session),

@@ -7,10 +7,13 @@ import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
 import '../pages/website_page_screen.dart';
+import 'payslip_screen.dart';
+import 'salary_advances_screen.dart';
+import 'salary_payment_form_screen.dart';
 import 'salary_payments_logic.dart';
 
 /// Website `/employees/salary/payments`: salaries paid, grouped by month. Paying a salary opens the
-/// website's pay form inside the app (it works out deductions and payroll from the salary structure).
+/// phone's pay form (the server works out the figures); a row opens its payslip.
 class SalaryPaymentsScreen extends StatefulWidget {
   const SalaryPaymentsScreen({super.key, required this.session});
 
@@ -58,9 +61,17 @@ class _SalaryPaymentsScreenState extends State<SalaryPaymentsScreen> {
   }
 
   Future<void> _pay() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => WebsitePageScreen(session: widget.session, href: '/employees/salary/payments/new', title: 'Pay salary'),
-    ));
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SalaryPaymentFormScreen(session: widget.session)));
+    if (mounted) _load();
+  }
+
+  Future<void> _openPayslip(SalaryPaymentRow r) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PayslipScreen(session: widget.session, payment: r)));
+    if (mounted) _load();
+  }
+
+  Future<void> _openAdvances() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SalaryAdvancesScreen(session: widget.session)));
     if (mounted) _load();
   }
 
@@ -75,11 +86,14 @@ class _SalaryPaymentsScreenState extends State<SalaryPaymentsScreen> {
           children: [
             KBackBar(
               'Salary Payments',
-              trailing: KIconButton(
-                icon: LucideIcons.globe,
-                tooltip: 'Open on website',
-                onTap: () => openWebsiteInApp(context, widget.session, '/employees/salary/payments', 'Salary Payments'),
-              ),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                KIconButton(icon: LucideIcons.handCoins, tooltip: 'Salary advances', onTap: _openAdvances),
+                KIconButton(
+                  icon: LucideIcons.globe,
+                  tooltip: 'Open on website',
+                  onTap: () => openWebsiteInApp(context, widget.session, '/employees/salary/payments', 'Salary Payments'),
+                ),
+              ]),
             ),
             Expanded(child: _body()),
           ],
@@ -123,7 +137,7 @@ class _SalaryPaymentsScreenState extends State<SalaryPaymentsScreen> {
                   Text(inr(m.total), style: AppText.label.copyWith(fontWeight: FontWeight.w600)),
                 ]),
               ),
-              KCard(child: KDivided(indent: 0, children: [for (final r in m.rows) _row(r)])),
+              KCard(child: KDivided(indent: 0, children: [for (final r in m.rows) InkWell(onTap: () => _openPayslip(r), child: _row(r))])),
             ],
         ],
       ),
