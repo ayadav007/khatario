@@ -2,6 +2,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../capability.dart';
 import '../../session.dart';
+import '../accounting/account_form_screen.dart';
+import '../accounting/accounts_screen.dart';
+import '../accounting/ledger_screen.dart';
 import '../expenses/expense_categories_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -88,6 +91,12 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return PaymentInScreen(session: session, payable: href == '/payments/out');
     case '/suppliers/new':
       return SupplierFormScreen(session: session);
+    case '/accounts':
+      return AccountsScreen(session: session);
+    case '/accounts/new':
+      return AccountFormScreen(session: session);
+    case '/ledger':
+      return LedgerScreen(session: session);
     case '/expenses':
       return ExpensesScreen(session: session);
     case '/expenses/new':
