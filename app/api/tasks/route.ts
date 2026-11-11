@@ -37,9 +37,9 @@ export async function GET(request: NextRequest) {
         assigner.employee_code as assigner_code,
         assigner_user.name as assigner_name
       FROM tasks t
-      LEFT JOIN employees assignee ON t.assigned_to = assignee.id
+      LEFT JOIN employees assignee ON t.assigned_to = assignee.id AND assignee.business_id = t.business_id
       LEFT JOIN users assignee_user ON assignee.id = assignee_user.id
-      LEFT JOIN employees assigner ON t.assigned_by = assigner.id
+      LEFT JOIN employees assigner ON t.assigned_by = assigner.id AND assigner.business_id = t.business_id
       LEFT JOIN users assigner_user ON assigner.id = assigner_user.id
       WHERE t.business_id = $1
     `;
@@ -119,6 +119,17 @@ export async function POST(request: NextRequest) {
         { error: 'business_id and title are required' },
         { status: 400 }
       );
+    }
+
+    // The assignee must be an employee of the session business.
+    if (assigned_to) {
+      const assignee = await queryOne(
+        'SELECT 1 FROM employees WHERE id = $1 AND business_id = $2',
+        [assigned_to, business_id]
+      );
+      if (!assignee) {
+        return NextResponse.json({ error: 'Assignee not found' }, { status: 404 });
+      }
     }
 
     const taskLimit = await limitExceededResponse(business_id, 'employee_tasks');

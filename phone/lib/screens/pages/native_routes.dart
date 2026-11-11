@@ -19,7 +19,12 @@ import '../expenses/expenses_screen.dart';
 import '../hr/attendance_screen.dart';
 import '../hr/employee_form_screen.dart';
 import '../hr/employees_screen.dart';
+import '../hr/engagement_screen.dart';
 import '../hr/exits_screen.dart';
+import '../hr/hr_documents_screen.dart';
+import '../hr/hr_reports_screen.dart';
+import '../hr/performance_screen.dart';
+import '../hr/tasks_screen.dart';
 import '../hr/hr_dashboard_screen.dart';
 import '../hr/manager_approvals_screen.dart';
 import '../hr/manager_screen.dart';
@@ -126,6 +131,18 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return ManagerTeamScreen(session: session);
     case '/employees/recruitment':
       return RecruitmentScreen(session: session);
+    case '/hr/engagement':
+      return EngagementScreen(session: session);
+    case '/hr/documents':
+      return HrDocumentsScreen(session: session);
+    case '/hr/reports':
+      return HrReportsScreen(session: session);
+    case '/employees/performance':
+      return PerformanceScreen(session: session);
+    case '/employees/tasks':
+      return TasksScreen(session: session);
+    case '/employees/tasks/new':
+      return TaskFormScreen(session: session);
     case '/hr/exits':
       return ExitsScreen(session: session);
     case '/payments/in':
