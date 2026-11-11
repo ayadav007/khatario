@@ -64,7 +64,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: khatarioTheme(),
       debugShowCheckedModeBanner: false,
-      home: InvoiceFormScreen(session: session),
+      // The screen draws today's date; pinned so the pictures do not change with the calendar.
+      home: InvoiceFormScreen(session: session, now: () => DateTime(2026, 11, 10, 11)),
     ));
     await tester.pumpAndSettle();
 

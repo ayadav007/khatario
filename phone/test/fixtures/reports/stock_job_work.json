@@ -1,0 +1,14 @@
+{
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "as_of": "2026-11-11",
+  "sent": [
+    {"challan_id": "c1", "challan_number": "DC-0011", "challan_date": "2026-10-05", "job_worker": "Ganesh Fabricators", "job_worker_gstin": "27ABCDE1234F1Z5", "job_worker_state": "Maharashtra", "job_work_goods": "inputs", "item_name": "Steel sheet", "hsn_sac": "7210", "uqc": "KGS", "qty": 100, "taxable_value": 8500, "tax_rate": 18, "igst": 0, "cgst": 765, "sgst": 765}
+  ],
+  "received": [
+    {"challan_id": "c1", "challan_number": "DC-0011", "challan_date": "2026-10-05", "return_date": "2026-10-25", "job_worker": "Ganesh Fabricators", "job_worker_gstin": "27ABCDE1234F1Z5", "item_name": "Steel sheet", "hsn_sac": "7210", "uqc": "KGS", "qty_returned": 60, "qty_lost": 1}
+  ],
+  "open": [
+    {"challan_id": "c1", "challan_number": "DC-0011", "challan_date": "2026-10-05", "job_worker": "Ganesh Fabricators", "job_work_goods": "inputs", "item_name": "Steel sheet", "qty_open": 39, "deadline": "2029-10-05", "days_left": 1059, "deemed_supply": false}
+  ]
+}

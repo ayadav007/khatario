@@ -34,6 +34,15 @@ class TableReportSpec {
     this.onOpenRow,
     this.sections = const [],
     this.countTiles = const {},
+    this.fromKey = 'from_date',
+    this.toKey = 'to_date',
+    this.asOnKey = 'as_on_date',
+    this.longFinancialYear = false,
+    this.rowAmountText,
+    this.emptyTitle,
+    this.emptyBody,
+    this.emptyActionLabel,
+    this.onEmptyAction,
   });
 
   final String title, path, rowsKey, rowAmountKey;
@@ -56,6 +65,21 @@ class TableReportSpec {
 
   /// Tile keys (from [tiles]) drawn as plain numbers, without the rupee sign.
   final Set<String> countTiles;
+
+  /// Query names the route reads. The defaults suit most reports; some stock routes read `from`/`to`
+  /// or `as_of` instead.
+  final String fromKey, toKey, asOnKey;
+
+  /// Sends the financial year as `2026-2027` (the code the server registers) instead of `2026-27`.
+  final bool longFinancialYear;
+
+  /// Text drawn at the end of each row instead of the rupee amount at [rowAmountKey]
+  /// (quantity reports, or a table whose rows hold different measures).
+  final String Function(Map<String, dynamic> row)? rowAmountText;
+
+  /// Replaces "Nothing for this period" when the reply holds no rows, with an optional action.
+  final String? emptyTitle, emptyBody, emptyActionLabel;
+  final void Function(BuildContext context)? onEmptyAction;
 }
 
 const _dash = '—';
@@ -98,6 +122,10 @@ class _TableReportScreenState extends State<TableReportScreen> {
   bool _noAccess = false;
   int _seq = 0;
 
+  /// Rows of later pages (`pagination` in the reply), appended below the first page's rows.
+  List<Map<String, dynamic>> _more = [];
+  bool _loadingMore = false;
+
   TableReportSpec get _spec => widget.spec;
 
   @override
@@ -114,17 +142,18 @@ class _TableReportScreenState extends State<TableReportScreen> {
 
   String? get _periodQuery => switch (_spec.period) {
         ReportPeriodKind.none => null,
-        ReportPeriodKind.range => _range.query,
+        ReportPeriodKind.range => '${_spec.fromKey}=${_range.fromIso}&${_spec.toKey}=${_range.toIso}',
         ReportPeriodKind.month => _month.query,
-        ReportPeriodKind.financialYear => _fy.query,
-        ReportPeriodKind.asOn => asOnQuery(_asOn),
+        ReportPeriodKind.financialYear => _spec.longFinancialYear ? 'financial_year=${_fy.longCode}' : _fy.query,
+        ReportPeriodKind.asOn => '${_spec.asOnKey}=${ymd(_asOn)}',
       };
 
-  String _url() {
+  String _url({int? page}) {
     final extra = _spec.extraQuery?.call().trim() ?? '';
     final query = [
       ?_periodQuery,
       if (extra.isNotEmpty) extra,
+      if (page != null) 'page=$page',
     ].join('&');
     if (query.isEmpty) return _spec.path;
     return '${_spec.path}${_spec.path.contains('?') ? '&' : '?'}$query';
@@ -145,6 +174,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
       if (!mounted || seq != _seq) return;
       setState(() {
         _body = body;
+        _more = [];
         _loading = false;
         _error = null;
         _notInPlan = false;
@@ -166,6 +196,29 @@ class _TableReportScreenState extends State<TableReportScreen> {
         _error = 'Could not reach the server.';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _showMore(int nextPage) async {
+    if (_loadingMore) return;
+    final seq = _seq;
+    setState(() => _loadingMore = true);
+    try {
+      final body = await widget.session.api.getData(_url(page: nextPage));
+      if (!mounted || seq != _seq) return;
+      setState(() {
+        _more = [..._more, ...docRows(readPath(body, _spec.rowsKey), '')];
+        final paging = docPaging(body);
+        if (paging != null && _body is Map) {
+          _body = {...(_body as Map), 'pagination': (_body as Map)['pagination'] is Map ? {...(_body as Map)['pagination'] as Map, 'page': paging.page, 'totalPages': paging.totalPages} : {'page': paging.page, 'totalPages': paging.totalPages}};
+        }
+      });
+    } on ApiException catch (e) {
+      if (mounted) showKToast(context, e.message, tone: KTone.negative);
+    } catch (_) {
+      if (mounted) showKToast(context, 'Could not reach the server.', tone: KTone.negative);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -273,7 +326,8 @@ class _TableReportScreenState extends State<TableReportScreen> {
       ]);
     }
 
-    final rows = docRows(readPath(_body, _spec.rowsKey), '');
+    final rows = [...docRows(readPath(_body, _spec.rowsKey), ''), ..._more];
+    final paging = docPaging(_body);
     final shown = _filtered(rows);
     final searching = _search.text.trim().isNotEmpty;
     final rawSections = [for (final (_, key) in _spec.sections) docRows(readPath(_body, key), '')];
@@ -295,7 +349,14 @@ class _TableReportScreenState extends State<TableReportScreen> {
             const SizedBox(height: AppSpace.md),
           ],
           if (nothingAtAll)
-            const KEmptyState(icon: LucideIcons.fileText, title: 'Nothing for this period')
+            KEmptyState(
+              icon: LucideIcons.fileText,
+              title: _spec.emptyTitle ?? 'Nothing for this period',
+              body: _spec.emptyBody,
+              action: _spec.emptyActionLabel == null || _spec.onEmptyAction == null
+                  ? null
+                  : KButton.secondary(label: _spec.emptyActionLabel!, expand: false, onPressed: () => _spec.onEmptyAction!(context)),
+            )
           else if (nothingMatches)
             const KEmptyState(icon: LucideIcons.search, title: 'Nothing matches your search', body: 'Try another word.')
           else if (shown.isNotEmpty)
@@ -306,6 +367,10 @@ class _TableReportScreenState extends State<TableReportScreen> {
               KSectionHeader(title),
               _table(secRows),
             ],
+          if (paging != null && paging.page < paging.totalPages && !searching) ...[
+            const SizedBox(height: AppSpace.lg),
+            KButton.secondary(label: 'Show more', loading: _loadingMore, onPressed: () => _showMore(paging.page + 1)),
+          ],
         ],
       ),
     );
@@ -362,7 +427,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
       title: title.isEmpty ? _dash : title,
       subtitle: subtitle,
       trailing: Text(
-        reportCellText(readPath(row, _spec.rowAmountKey), money: true),
+        _spec.rowAmountText?.call(row) ?? reportCellText(readPath(row, _spec.rowAmountKey), money: true),
         style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular),
       ),
       onTap: tappable ? () => _open(row) : null,

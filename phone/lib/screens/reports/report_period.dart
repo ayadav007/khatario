@@ -131,6 +131,11 @@ class FinancialYear {
   FinancialYear get next => FinancialYear(startYear + 1);
 
   String get code => '$startYear-${((startYear + 1) % 100).toString().padLeft(2, '0')}';
+  /// The long form, `2026-2027`, which is how a business registers its years (`financial_years.year_code`).
+  /// Closing stock (`/api/reports/stock/closing-stock`) wants this form; with [code] it finds no snapshot.
+  String get longCode => '$startYear-${startYear + 1}';
+
+  /// The short form, `financial_year=2026-27`, for routes that take it. Check the route before using it.
   String get query => 'financial_year=$code';
   String get label => 'FY $code';
 

@@ -1,0 +1,8 @@
+{
+  "stock": [
+    {"id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001", "item_name": "Basmati Rice 5kg", "code": "RICE5", "unit": "BAG", "current_stock": "42.000", "min_stock": "10.000", "opening_stock": "50.000", "purchase_price": "410.00", "selling_price": "480.00", "stock_value": "17220.00", "stock_status": "in_stock"},
+    {"id": "0c1d6f10-1a2b-4c3d-8e4f-000000000002", "item_name": "Toor Dal 1kg", "code": "DAL1", "unit": "PKT", "current_stock": "6.000", "min_stock": "10.000", "opening_stock": "30.000", "purchase_price": "120.00", "selling_price": "145.00", "stock_value": "720.00", "stock_status": "low_stock"},
+    {"id": "0c1d6f10-1a2b-4c3d-8e4f-000000000003", "item_name": "Sunflower Oil 1L", "code": "OIL1", "unit": "BTL", "current_stock": "0.000", "min_stock": "5.000", "opening_stock": "20.000", "purchase_price": "135.00", "selling_price": "160.00", "stock_value": "0.00", "stock_status": "out_of_stock"}
+  ],
+  "totals": {"total_items": 3, "total_quantity": 48, "total_value": 17940, "out_of_stock": 1, "low_stock": 1}
+}

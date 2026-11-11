@@ -21,7 +21,7 @@ import 'invoice_scan.dart';
 /// `app/(app)/invoices/new/page.tsx`): customer, dates, items, notes, totals, settlement.
 /// The server recalculates GST, stock and the ledger; this screen sends lines only.
 class InvoiceFormScreen extends StatefulWidget {
-  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice', this.supplyOrderId});
+  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice', this.supplyOrderId, this.now});
 
   final AppSession session;
   final String? invoiceId;
@@ -31,6 +31,9 @@ class InvoiceFormScreen extends StatefulWidget {
   /// Bill a confirmed Supplier Hub order: customer and lines come from the order, and saving
   /// links the invoice back to it.
   final String? supplyOrderId;
+
+  /// Today's date for a new bill. Tests pass a fixed one so a picture does not change with the calendar.
+  final DateTime Function()? now;
 
   @override
   State<InvoiceFormScreen> createState() => _InvoiceFormScreenState();
@@ -73,7 +76,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   bool _breakupOpen = false;
   bool _loading = false;
   bool _saving = false;
-  DateTime _date = DateTime.now();
+  late DateTime _date = (widget.now ?? DateTime.now)();
   DateTime? _dueDate;
   String? _number;
   String? _locked;

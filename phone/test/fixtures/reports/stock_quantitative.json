@@ -1,0 +1,7 @@
+{
+  "from": "2026-04-01",
+  "to": "2027-03-31",
+  "rows": [
+    {"item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001", "item_name": "Basmati Rice 5kg", "item_code": "RICE5", "unit": "BAG", "stock_class": "trading", "opening": 50, "purchases": 120, "purchase_returns": 2, "sales": 110, "sales_returns": 1, "shortage": 1, "excess": 0, "other": 0, "consumed": 0, "produced": 0, "closing": 58}
+  ]
+}

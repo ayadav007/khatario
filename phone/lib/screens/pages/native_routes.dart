@@ -24,6 +24,7 @@ import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../reports/stock_reports.dart';
 import '../sales/credit_approvals_screen.dart';
 import '../sales/credit_debit_notes_screen.dart';
 import '../sales/delivery_challans_screen.dart';
@@ -36,11 +37,13 @@ import '../settings/settings_hub_screen.dart';
 import '../stock/adjustment_form_screen.dart';
 import '../stock/adjustments_screen.dart';
 import '../stock/insurance_claims_screen.dart';
+import '../stock/item_categories_screen.dart';
 import '../stock/item_cleanup_screen.dart';
 import '../stock/manufacturing_screen.dart';
 import '../stock/party_pricing_screen.dart';
 import '../stock/price_levels_screen.dart';
 import '../stock/price_list_screen.dart';
+import '../stock/print_labels_screen.dart';
 import '../stock/repack_form_screen.dart';
 import '../stock/schemes_screen.dart';
 import '../stock/stock_counts_screen.dart';
@@ -117,6 +120,11 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return const EmiCalculatorScreen();
     case '/tools/currency-converter':
       return const CurrencyConverterScreen();
+    case '/items/categories':
+      // Before the settings fall-through: this screen replaces the small settings one.
+      return ItemCategoriesScreen(session: session);
+    case '/items/barcodes':
+      return PrintLabelsScreen(session: session);
     case '/pricing/party-item':
       // Before the settings fall-through: this screen replaces the small settings one.
       return PartyPricingScreen(session: session);
@@ -183,7 +191,7 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/reports/profit-loss' => ProfitLossScreen(session: session),
     '/reports/balance-sheet' => BalanceSheetScreen(session: session),
     '/reports/trial-balance' => TrialBalanceScreen(session: session),
-    _ => null,
+    _ => stockReportScreen(session, href),
   };
 }
 
