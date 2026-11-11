@@ -5,6 +5,9 @@ import '../../session.dart';
 import '../accounting/account_form_screen.dart';
 import '../accounting/accounts_screen.dart';
 import '../accounting/advances_screen.dart';
+import '../accounting/fixed_assets_screen.dart';
+import '../accounting/provisions_screen.dart';
+import '../accounting/tds_screen.dart';
 import '../accounting/contra_screen.dart';
 import '../accounting/journal_entries_screen.dart';
 import '../accounting/ledger_screen.dart';
@@ -106,6 +109,19 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return ContraScreen(session: session);
     case '/advances':
       return AdvancesScreen(session: session);
+    case '/fixed-assets':
+      return FixedAssetsScreen(session: session);
+    case '/provisions':
+      return ProvisionsScreen(session: session);
+    case '/tds':
+    case '/tds/transactions':
+      return TdsScreen(session: session);
+    case '/tds/payments':
+      return TdsScreen(session: session, initialTab: TdsTab.payments);
+    case '/tds/certificates':
+      return TdsScreen(session: session, initialTab: TdsTab.certificates);
+    case '/tds/categories':
+      return TdsScreen(session: session, initialTab: TdsTab.categories);
     case '/expenses':
       return ExpensesScreen(session: session);
     case '/expenses/new':
