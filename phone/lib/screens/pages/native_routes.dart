@@ -5,6 +5,8 @@ import '../../session.dart';
 import '../accounting/account_form_screen.dart';
 import '../accounting/accounts_screen.dart';
 import '../accounting/advances_screen.dart';
+import '../accounting/activity_logs_screen.dart';
+import '../accounting/bank_reconciliation_screen.dart';
 import '../accounting/fixed_assets_screen.dart';
 import '../accounting/provisions_screen.dart';
 import '../accounting/tds_screen.dart';
@@ -105,6 +107,10 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return LedgerScreen(session: session);
     case '/journal-entries':
       return JournalEntriesScreen(session: session);
+    case '/activity-logs':
+      return ActivityLogsScreen(session: session);
+    case '/bank/reconciliation':
+      return BankReconciliationScreen(session: session);
     case '/contra':
       return ContraScreen(session: session);
     case '/advances':
