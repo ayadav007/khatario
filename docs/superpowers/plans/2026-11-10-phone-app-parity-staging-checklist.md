@@ -140,6 +140,41 @@ Credit approvals now need the website build that includes f974ead5 on staging (t
 95. Each stock report opens with a period picker and the server's totals: Stock Summary (by item), Closing Stock, Stock with Parties, Valuation, Quantity details, Bank stock statement, Job work, FIFO lots.
 96. Closing Stock for a year with more than 200 items → Show more loads the rest; a year with no closing stock says so and offers the website.
 
+## Stage 4: books (commits 8efa1d6f to 0e40017e)
+
+### Chart of accounts and ledger (Task 26)
+97. More › Accounting › Chart of Accounts → accounts grouped, with the balances the server reports.
+98. Add an account → saved and listed. Edit one, change its name only → its group and Schedule III line are unchanged on the website afterwards.
+99. Deactivate an account → asks first → it shows as inactive. A system account offers no edit or deactivate.
+100. Open an account → its ledger for this financial year with opening, running and closing figures labelled Dr or Cr; change the period → the figures change; Statement PDF opens.
+101. Tap a ledger row for an invoice → the invoice opens; for a journal → the journal opens on the phone.
+102. More › Accounting › Ledger → all entries; Show more loads older ones.
+103. Check one account's closing balance against the website for the same dates, and check one date near midnight shows the right day.
+
+### Journal entries, contra, advances (Task 27)
+104. Journal Entries → list; open one → lines and totals; there is no Delete.
+105. Edit a journal → change an amount on both sides, save → updated. A locked or reversed entry explains why it can't be edited.
+106. Reverse → asks for a reason, naming the entry and amount → reversed.
+107. Lock, then unlock an entry.
+108. Contra → move money from cash to a bank account → saved; only cash and bank accounts are offered.
+109. Advances → record a customer advance and a supplier advance; adjust one against an invoice; refund part of another (asks first) → the remaining amount the server reports goes down.
+
+### Fixed assets, provisions, TDS (Task 28)
+110. Fixed assets → add one; Depreciate → asks first with its book value → the toast shows the amount posted.
+111. Dispose of an asset with "Charge depreciation" on → the question says depreciation is posted first → the gain or loss the server reports is shown.
+112. Provisions → add, edit, delete; add an entry and a utilisation.
+113. TDS → tabs for Transactions, Payments, Certificates, Categories; pick a quarter → summary tiles appear.
+114. Record a TDS payment → asks first, quoting the pending amount → saved; the same challan again is refused.
+115. Create a certificate, then open its PDF (the server route may fail; note what happens).
+
+### Bank reconciliation and activity log (Task 29)
+116. More › Accounting › Bank reconciliation → pick a bank account → statement lines with suggestions and the server's balances.
+117. Match a line to its suggestion; match another with "Match to other entries" by ticking two entries; ignore one; undo one.
+118. Create an entry from a line → asks, naming amount, date and accounts → posted.
+119. Match automatically → asks → toast says how many lines matched. Complete → asks → reconciliation closed.
+120. An account with no statement → "Import a statement on the website".
+121. More › Activity Logs → filter by a person and by dates (the last day of the range is included) → Show more; open an entry → details.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
@@ -149,3 +184,7 @@ Credit approvals now need the website build that includes f974ead5 on staging (t
 - Editing a paused scheme on the website makes it active again (the route treats a missing setting as active).
 - Creating a stock transfer has no protection against a repeated save, on the website and the phone.
 - The website's stock dashboard page (reorder, ageing, velocity) is not on the phone.
+- Editing a journal on any device drops each line's own reference number (the server writes the entry's reference to every line).
+- The website's TDS pages send a year that matches no saved financial year; the TDS certificate PDF route asks for columns that may not exist; the TDS summary returns only the first quarter's figures.
+- The website's activity log leaves out the last day of a date range.
+- Depreciation cannot be previewed before it is posted.
