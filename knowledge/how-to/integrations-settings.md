@@ -2,7 +2,7 @@
 title: Email, payments, AI agent, WhatsApp bot and other integration settings
 audience: [tenant_user]
 locale: en
-tags: [email, smtp, gmail, sms, payment providers, upi, razorpay, ai sales agent, ai assistant, whatsapp bot, bot settings, integrations, workflow automation, account mappings, how to]
+tags: [email, smtp, gmail, app password, zoho, hostinger, outlook, sms, payment providers, upi, razorpay, ai sales agent, ai assistant, whatsapp bot, bot settings, integrations, workflow automation, account mappings, how to]
 url: /settings/integrations
 ---
 
@@ -12,9 +12,13 @@ url: /settings/integrations
 
 Khatario sends email through your own email account, so you must set it up first:
 1. Go to Settings > Integrations > Email (SMTP) and tick **Enable outbound email for this business**.
-2. For Gmail: SMTP host smtp.gmail.com, port 587, SMTP username = your Gmail address, SMTP password = a Gmail App Password (create one in your Google account under Security > App passwords; your normal password will not work if 2-step verification is on). For Outlook, Zoho or others, use their SMTP details.
-3. Fill in From email and From name (your business name), and optionally Reply-to.
-4. Tap Save settings, then Test connection, and optionally Send test to your own address.
+2. Pick your **Email provider** (Gmail / Google Workspace, Zoho Mail, Hostinger, or Other). This fills in the SMTP host, port and SSL/TLS for you. For Other, copy the SMTP host from your email host's "email settings" page; use port 465 with SSL/TLS ticked or 587 with it unticked (changing one updates the other).
+3. SMTP username = your full email address. From email is filled in from it; keep them the same, because Gmail and most providers only send from the address you log in with.
+4. SMTP password: for Gmail this must be a Google **App Password**, not your normal password. Turn on 2-Step Verification in your Google account, open myaccount.google.com/apppasswords, create one named Khatario and paste the 16-character code. Google Workspace admins may need to allow App Passwords first. For Zoho, use your password or an app-specific password if 2FA is on; for Hostinger, your mailbox password.
+5. Fill in From name (your business name) and optionally Reply-to.
+6. Tap Save settings, then Test connection, and optionally Send test to your own address. If something is wrong, the message says what to fix (wrong password, App Password needed, port and SSL/TLS mismatch, host not found).
+
+Outlook, Hotmail and Microsoft 365 usually do not work: Microsoft has switched off password-based SMTP. Use Gmail, Zoho Mail or your web host's email instead. Free Gmail can send about 500 emails a day.
 
 Until this is set up, sending an invoice or reminder by email shows "Email is not configured for your business". Daily email sending depends on your plan.
 
@@ -25,7 +29,7 @@ Not yet. SMS messaging is shown as Coming soon in Settings > Integrations. Use W
 ## How do I add my UPI ID or a payment gateway?
 
 Go to Settings > Integrations > Payment providers.
-- **Automatic Payments**: connect Razorpay, Cashfree, PayU, PhonePe Business or Instamojo. Payments made through the link are confirmed automatically. If you connect more than one, choose the Preferred provider.
+- **Automatic Payments**: connect Razorpay, Cashfree, PayU, PhonePe Business, Instamojo or Easebuzz. Payments made through the link are confirmed automatically. If you connect more than one, choose the Preferred provider.
 - **Manual Payments**: tap Add Payment Method, choose Method Type UPI (or Bank Transfer, Wallet), enter a Method Name and your UPI ID (for example yourname@ybl), and tick Default (used for payment links). This UPI ID is used in payment links sent on WhatsApp when no gateway is connected.
 
 ## How do I set up the AI sales agent for WhatsApp?

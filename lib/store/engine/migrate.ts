@@ -88,6 +88,11 @@ function migrateSettings(t: StoreTheme, ctx: MigrationContext, w: Warnings): The
     },
     menus: [],
     product_card: cloneProductCard(PRODUCT_CARD_DEFAULTS),
+    // The old store had none of these cart extras: they start off, as on a new theme.
+    cart_free_ship_bar: false,
+    cart_suggestions: false,
+    cart_suggestions_heading: 'Pair it with',
+    cart_whatsapp_order: false,
   };
 }
 
@@ -124,7 +129,14 @@ function packChrome(
       { type: 'menu_link', settings: { label: 'All Products', link: '/catalog' } },
       ...(sectionEnabled(t, 'offers') ? [{ type: 'menu_link', settings: { label: 'Offers', link: '/catalog?disc=10' } }] : []),
     ];
-    const rebuilt = withLegacyBlocks(engineSection('header', { ...header.settings, show_category_chips: sectionEnabled(t, 'categories') }), links);
+    const rebuilt = withLegacyBlocks(
+      engineSection('header', {
+        ...header.settings,
+        show_category_chips: sectionEnabled(t, 'categories'),
+        show_store_name: t.show_store_name,
+      }),
+      links,
+    );
     head = { ...header, settings: rebuilt.settings, blocks: rebuilt.blocks, block_order: rebuilt.block_order };
   } else {
     head = { ...header, color_scheme: 'scheme-4' };

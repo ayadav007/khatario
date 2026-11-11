@@ -190,7 +190,7 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
 
         const purchase = item as Purchase;
         const balance = Number(purchase.grand_total) - Number(purchase.paid_amount || 0);
-        const href = `/purchases/new?edit=${purchase.id}`;
+        const href = purchase.status === 'draft' ? `/purchases/new?edit=${purchase.id}` : `/purchases/${purchase.id}`;
 
         return (
           <Link
@@ -376,7 +376,7 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/purchases/new?edit=${purchase.id}`}
+                    href={purchase.status === 'draft' ? `/purchases/new?edit=${purchase.id}` : `/purchases/${purchase.id}`}
                     className="font-medium text-primary-600 hover:underline dark:text-primary-400"
                     onClick={onClose}
                   >

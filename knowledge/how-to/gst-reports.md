@@ -25,7 +25,11 @@ Reports > GST Reports > GSTR-3B shows the output tax from sales and the input ta
 
 ## How do I match purchases with GSTR-2B?
 
-Download GSTR-2B from the GST portal, upload it in Reports > GST Reports > GSTR-2B, then use GSTR-2B Reconciliation to see which supplier bills match, which are missing and which differ.
+Download GSTR-2B from the GST portal (the JSON or the Excel file both work), upload it in Reports > GST Reports > GSTR-2B, then use GSTR-2B Reconciliation to see which supplier bills match, which are missing and which differ.
+
+## How do I record a credit or debit note I received from a supplier?
+
+Go to Purchases > All Purchases, tap New Purchase and choose the Document type **Supplier credit note** or **Supplier debit note**. Enter the supplier's note number and date. It adjusts what you owe the supplier and your input tax credit, and GSTR-2B Reconciliation can match it against the note the supplier reported.
 
 ## What are GST alerts?
 
@@ -52,4 +56,4 @@ Yes. Reports > GST Reports > GSTR-9 summarises the year.
 
 ## Why can't I see GST reports?
 
-GST reports are included in the Business and Enterprise plans and in the free trial. On other plans the menu shows an upgrade prompt.
+GST reports are included in every Billing plan, including Free, and in the free trial. If the menu is missing, your role may not have permission for GST reports; ask the business owner.

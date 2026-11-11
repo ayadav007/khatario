@@ -164,7 +164,6 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
                 updated_at = CURRENT_TIMESTAMP
             `, [businessId, conversationId, conv.from_number, lead_status]);
             
-            console.log(`[API] Manual override: Set AI lead_status to ${lead_status} for conversation ${conversationId}`);
           }
         } catch (error) {
           console.error('[API] Error updating AI lead status:', error);

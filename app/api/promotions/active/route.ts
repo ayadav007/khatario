@@ -82,11 +82,6 @@ export async function GET(request: NextRequest) {
 
     const promotions = await queryRows(query, params);
 
-    // Debug logging (remove in production if needed)
-    console.log('[Promotions API] Business ID:', businessId);
-    console.log('[Promotions API] Plan ID:', planId);
-    console.log('[Promotions API] Type filter:', type);
-    console.log('[Promotions API] Found promotions:', promotions.length);
 
     return NextResponse.json({ promotions });
   } catch (error: any) {

@@ -40,6 +40,7 @@ import {
   takeOver,
   transfer,
   visibilityClause,
+  WAITING_SINCE_SQL,
   type InboxViewer,
 } from '@/lib/whatsapp/inbox-ownership';
 
@@ -123,6 +124,7 @@ run('WhatsApp inbox ownership (kh_phase2_test)', () => {
   afterAll(async () => {
     try {
       await query(`DELETE FROM notifications WHERE business_id = $1`, [B]).catch(() => undefined);
+      await query(`DELETE FROM whatsapp_messages WHERE business_id = $1`, [B]).catch(() => undefined);
       await query(`DELETE FROM whatsapp_conversations WHERE business_id = $1`, [B]);
       await query(`DELETE FROM users WHERE business_id = $1`, [B]);
       await query(`DELETE FROM user_roles WHERE business_id = $1`, [B]);
@@ -259,6 +261,57 @@ run('WhatsApp inbox ownership (kh_phase2_test)', () => {
     } finally {
       await query(`UPDATE users SET is_active = true WHERE id = $1`, [RAVI]);
     }
+  });
+
+  test('waiting time counts from the first unanswered customer message; a phone or inbox reply stops it', async () => {
+    const c = await newChat({ state: 'requesting' });
+    await query(`UPDATE whatsapp_conversations SET requested_at = NOW() - interval '5 hours' WHERE id = $1`, [c]);
+    const at = async (ago: string) =>
+      (await queryOne<{ t: Date }>(`SELECT NOW() - $1::interval AS t`, [ago]))!.t.getTime();
+    async function msg(direction: 'incoming' | 'outgoing', ago: string, opts: { sentBy?: string; viaKhatario?: boolean } = {}) {
+      const mid = `test-${randomUUID()}`;
+      await query(
+        `INSERT INTO whatsapp_conversation_messages (business_id, conversation_id, message_id, from_number, to_number, direction, message_text, message_type, sent_by, created_at)
+         VALUES ($1, $2, $3, '910000000000', '919999999999', $4, 'hi', 'text', $5, NOW() - $6::interval)`,
+        [B, c, mid, direction, opts.sentBy ?? null, ago],
+      );
+      if (opts.viaKhatario) {
+        await query(
+          `INSERT INTO whatsapp_messages (business_id, to_number, message_type, message_text, status, baileys_message_id)
+           VALUES ($1, '910000000000', 'manual', 'hi', 'sent', $2)`,
+          [B, mid],
+        );
+      }
+    }
+    async function waitingSince(id = c): Promise<number | null> {
+      const row = await queryOne<{ w: Date | null }>(
+        `SELECT ${WAITING_SINCE_SQL('c')} AS w FROM whatsapp_conversations c WHERE c.id = $1`,
+        [id],
+      );
+      return row!.w ? row!.w.getTime() : null;
+    }
+    const near = (a: number | null, b: number) => expect(Math.abs((a ?? 0) - b)).toBeLessThan(5000);
+
+    // A message the bot handled before the chat was queued does not start the clock early.
+    await msg('incoming', '6 hours');
+    await msg('outgoing', '6 hours', { sentBy: 'bot' });
+    await msg('incoming', '5 hours');
+    near(await waitingSince(), await at('5 hours'));
+
+    // Typed on the shop's phone (untagged, not a Khatario send): answered.
+    await msg('outgoing', '1 hour');
+    expect(await waitingSince()).toBeNull();
+
+    // Customer writes again; an automated send logged by Khatario is not a reply.
+    await msg('incoming', '30 minutes');
+    await msg('outgoing', '20 minutes', { viaKhatario: true });
+    near(await waitingSince(), await at('30 minutes'));
+
+    await msg('outgoing', '10 minutes', { sentBy: 'staff' });
+    expect(await waitingSince()).toBeNull();
+
+    const active = await newChat();
+    expect(await waitingSince(active)).toBeNull();
   });
 
   test('visibility: agents see unowned + their own; label rules narrow the unowned set', async () => {

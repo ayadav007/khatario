@@ -714,6 +714,5 @@ export async function sendPendingNotifications(): Promise<number> {
     console.error('[notifications] sendPendingNotifications failed:', err);
   }
 
-  console.log(`[notifications] Sent ${sentCount} notification(s)`);
   return sentCount;
 }

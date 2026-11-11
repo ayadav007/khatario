@@ -29,9 +29,11 @@ export const mainProduct: SectionSchema = {
       options: [
         { value: 'side', label: 'Beside the image' },
         { value: 'bottom', label: 'Below the image' },
+        { value: 'grid', label: 'Photos in a grid' },
       ],
     },
     { id: 'sticky_info', type: 'checkbox', label: 'Keep product info in view while scrolling', default: true },
+    { id: 'sticky_buy_bar', type: 'checkbox', label: 'Show an Add to bag bar on phones', default: false },
   ],
   blocks: [
     {
@@ -49,9 +51,39 @@ export const mainProduct: SectionSchema = {
       type: 'price',
       name: 'Price',
       limit: 1,
-      settings: [{ id: 'show_tax_note', type: 'checkbox', label: 'Show GST note', default: true }],
+      settings: [
+        { id: 'show_tax_note', type: 'checkbox', label: 'Show GST note', default: true },
+        { id: 'show_you_save', type: 'checkbox', label: 'Show “You save ₹N”', default: false },
+      ],
     },
-    { type: 'variant_picker', name: 'Options', limit: 1, settings: [] },
+    {
+      type: 'variant_picker',
+      name: 'Options',
+      limit: 1,
+      settings: [
+        {
+          id: 'style',
+          type: 'select',
+          label: 'Option style',
+          default: 'buttons',
+          options: [
+            { value: 'buttons', label: 'Buttons' },
+            { value: 'tiles', label: 'Tiles with price' },
+          ],
+          info: 'Tiles show each pack with its price. They apply to products with one option (a size or weight).',
+        },
+        {
+          id: 'low_stock_at',
+          type: 'range',
+          label: 'Show "Only N left" at',
+          min: 0,
+          max: 10,
+          step: 1,
+          default: 0,
+          info: '0 hides it',
+        },
+      ],
+    },
     {
       type: 'buy_buttons',
       name: 'Buy buttons',
@@ -72,6 +104,15 @@ export const mainProduct: SectionSchema = {
       name: 'Delivery estimate',
       limit: 1,
       settings: [{ id: 'text', type: 'text', label: 'Text', default: 'Delivered in 1–2 days', max_length: 80 }],
+    },
+    {
+      type: 'delivery_check',
+      name: 'Delivery check',
+      limit: 1,
+      settings: [
+        { id: 'heading', type: 'text', label: 'Heading', default: 'Check delivery', max_length: 40 },
+        { id: 'button_label', type: 'text', label: 'Button label', default: 'Check', max_length: 20 },
+      ],
     },
     {
       type: 'share',

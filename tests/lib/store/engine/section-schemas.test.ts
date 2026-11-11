@@ -18,6 +18,7 @@ describe('main-product schema', () => {
     expect(setting('gallery_position')).toMatchObject({ type: 'select', default: 'left' });
     expect(setting('thumbs')).toMatchObject({ type: 'select', default: 'side' });
     expect(setting('sticky_info')).toMatchObject({ type: 'checkbox', default: true });
+    expect(setting('sticky_buy_bar')).toMatchObject({ type: 'checkbox', default: false });
     const blocks = Object.fromEntries((schema.blocks ?? []).map((b) => [b.type, b]));
     expect(Object.keys(blocks)).toEqual([
       'title',
@@ -27,6 +28,7 @@ describe('main-product schema', () => {
       'description',
       'collapsible_tab',
       'delivery_estimate',
+      'delivery_check',
       'share',
       'custom_text',
     ]);
@@ -37,6 +39,38 @@ describe('main-product schema', () => {
     expect(blocks.custom_text.limit).toBeUndefined();
     expect(blocks.delivery_estimate.settings.find((s) => s.id === 'text')?.default).toBe('Delivered in 1–2 days');
     expect(blocks.collapsible_tab.settings.find((s) => s.id === 'content')?.type).toBe('richtext');
+  });
+
+  it('has a delivery check block, absent from the default product template', () => {
+    const schema = getSectionSchema('main-product')!;
+    const block = (schema.blocks ?? []).find((b) => b.type === 'delivery_check');
+    expect(block).toMatchObject({ name: 'Delivery check', limit: 1 });
+    expect(block!.settings.find((s) => s.id === 'heading')).toMatchObject({ type: 'text', default: 'Check delivery', max_length: 40 });
+    expect(block!.settings.find((s) => s.id === 'button_label')).toMatchObject({ type: 'text', default: 'Check', max_length: 20 });
+    expect(schema.presets.flatMap((p) => (p.blocks ?? []).map((b) => b.type))).not.toContain('delivery_check');
+  });
+
+  it('offers tiles on the Options block, default buttons', () => {
+    const block = (getSectionSchema('main-product')!.blocks ?? []).find((b) => b.type === 'variant_picker')!;
+    const style = block.settings.find((s) => s.id === 'style');
+    expect(style).toMatchObject({
+      type: 'select',
+      default: 'buttons',
+      options: [
+        { value: 'buttons', label: 'Buttons' },
+        { value: 'tiles', label: 'Tiles with price' },
+      ],
+    });
+  });
+
+  it('offers a "You save" line on the Price block, off by default', () => {
+    const block = (getSectionSchema('main-product')!.blocks ?? []).find((b) => b.type === 'price')!;
+    expect(block.settings.find((s) => s.id === 'show_tax_note')).toMatchObject({ type: 'checkbox', default: true });
+    expect(block.settings.find((s) => s.id === 'show_you_save')).toMatchObject({
+      type: 'checkbox',
+      label: 'Show “You save ₹N”',
+      default: false,
+    });
   });
 
   it('presets title, price, options, buy buttons and description in that order', () => {
@@ -91,5 +125,33 @@ describe('small block upgrades', () => {
     expect(getSectionSchema('logo-list')!.blocks![0].settings.map((s) => s.id)).toEqual(expect.arrayContaining(['name', 'caption']));
     expect(getSectionSchema('promo-cards')!.settings.find((s) => s.id === 'columns')).toMatchObject({ max: 4 });
     expect(getSectionSchema('multicolumn')!.blocks![0].settings.find((s) => s.id === 'image')).toMatchObject({ type: 'image' });
+  });
+});
+
+describe('hero countdown block', () => {
+  it('offers one countdown block in the hero and none in rich text', () => {
+    const countdown = getSectionSchema('image-banner')!.blocks?.find((b) => b.type === 'countdown');
+    expect(countdown).toMatchObject({ type: 'countdown', name: 'Countdown', limit: 1 });
+    const ids = (countdown?.settings ?? []).map((s) => s.id);
+    expect(ids).toEqual(['label', 'ends_at', 'style', 'hide_when_over']);
+    expect(countdown?.settings.find((s) => s.id === 'label')).toMatchObject({ default: 'Ends in', max_length: 40 });
+    expect(countdown?.settings.find((s) => s.id === 'style')).toMatchObject({ type: 'select', default: 'boxes' });
+    expect(countdown?.settings.find((s) => s.id === 'hide_when_over')).toMatchObject({ type: 'checkbox', default: true });
+    for (const type of ['rich-text', 'image-with-text']) {
+      expect(getSectionSchema(type)!.blocks?.some((b) => b.type === 'countdown')).toBe(false);
+    }
+  });
+});
+
+describe('header open status', () => {
+  it('header has show_open_status off by default, after the delivery estimate', () => {
+    const settings = getSectionSchema('header')!.settings;
+    expect(settings.find((x) => x.id === 'show_open_status')).toMatchObject({
+      type: 'checkbox',
+      label: 'Show open or closed',
+      default: false,
+    });
+    const ids = settings.map((x) => x.id);
+    expect(ids.indexOf('show_open_status')).toBe(ids.indexOf('delivery_eta') + 1);
   });
 });

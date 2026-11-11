@@ -136,7 +136,14 @@ export async function POST(
       onlineViewUrl
     );
 
-    if (!sent) {
+    if (!sent.success && sent.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') {
+      return NextResponse.json(
+        { error: sent.error, code: sent.code, limit_type: 'email', limit: sent.limit, current: sent.current },
+        { status: 403 },
+      );
+    }
+
+    if (!sent.success) {
       return NextResponse.json(
         {
           error:

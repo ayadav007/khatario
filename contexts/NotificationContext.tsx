@@ -1,6 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import React, {
   createContext,
   useCallback,
@@ -53,7 +52,6 @@ const NotificationContext = createContext<NotificationContextType>({
  * the same NotificationStore, which de-duplicates by notification id and seq.
  */
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('NotificationProvider');
   const { business, user, loading: authLoading, refresh: refreshAuth } = useAuth();
   const businessId = business?.id;
   const userId = user?.id;

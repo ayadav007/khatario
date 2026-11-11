@@ -17,7 +17,7 @@ required_feature: online_store
 4. Choose which items to sell: in Inventory > Items, turn on **Show in online store** on each item (on the item form or directly in the Items list). Turn on **Featured item (online store)** for up to 6 items to show on the home page.
 5. Turn on **Store is live** and tap Save. Use Copy to share the store link with customers on WhatsApp.
 
-The online store is part of the Enterprise plan and can be tried during the free trial. Custom domains (your own .com) are not supported yet; the store runs on your-name.khatario.com.
+The online store is part of the Business plan and can be tried during the free trial. Custom domains (your own .com) are not supported yet; the store runs on your-name.khatario.com.
 
 ## Online store kaise banaye?
 
@@ -32,7 +32,7 @@ Product name, photos, price, MRP and description always come from the item in In
 ## How do customers pay on my store?
 
 - Cash on delivery, if Allow pay on delivery is on.
-- Online payment through Razorpay, if your plan includes the payment gateway and Razorpay is connected in Settings > Payment providers.
+- Online payment through Razorpay or Easebuzz, if your plan includes the payment gateway and one of them is connected in Settings > Payment providers.
 
 Customers verify their mobile number with an OTP before ordering, and can choose delivery or self pickup.
 

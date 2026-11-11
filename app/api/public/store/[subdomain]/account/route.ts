@@ -9,6 +9,11 @@ import { khataPayBy, khataShortDate } from '@/lib/khata/cycle';
 
 export const dynamic = 'force-dynamic';
 
+/** No shopper signed in is a normal state for the storefront, so it is a 200, not a 401 the browser logs in red. */
+function signedOut() {
+  return NextResponse.json({ customer: null, orders: [] });
+}
+
 function cookieClear() {
   return {
     httpOnly: true,
@@ -27,9 +32,7 @@ export async function GET(
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
 
   const session = readStoreCustomer(request.cookies.get(STORE_CUSTOMER_COOKIE)?.value);
-  if (!session || session.businessId !== store.business_id) {
-    return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
-  }
+  if (!session || session.businessId !== store.business_id) return signedOut();
 
   const customer = await queryOne<{
     id: string;
@@ -41,9 +44,7 @@ export async function GET(
     [session.customerId, store.business_id],
   );
 
-  if (!customer) {
-    return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
-  }
+  if (!customer) return signedOut();
 
   const addr = await queryOne<{ address: string; pincode: string | null }>(
     `SELECT address, pincode FROM store_customer_addresses

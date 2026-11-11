@@ -152,7 +152,7 @@ export function SalaryComponentsSettingsPanel() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-950/30 p-4 text-sm text-blue-800 dark:text-blue-300">
         <p className="font-medium">Salary components</p>
         <p className="mt-1 text-blue-700">
           Define earnings and deductions used on employee salary structures and payslips. System
@@ -177,7 +177,7 @@ export function SalaryComponentsSettingsPanel() {
         </div>
 
         {showForm && (
-          <form onSubmit={handleCreate} className="mt-4 grid gap-3 rounded-lg border border-border bg-gray-50 p-4 md:grid-cols-2">
+          <form onSubmit={handleCreate} className="mt-4 grid gap-3 rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 p-4 md:grid-cols-2">
             <Input
               label="Code *"
               value={form.code}
@@ -195,7 +195,7 @@ export function SalaryComponentsSettingsPanel() {
             <label className="block text-sm">
               <span className="text-text-secondary">Type</span>
               <select
-                className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+                className="input mt-1 w-full"
                 value={form.component_type}
                 onChange={(e) =>
                   setForm({
@@ -211,7 +211,7 @@ export function SalaryComponentsSettingsPanel() {
             <label className="block text-sm">
               <span className="text-text-secondary">Calculation</span>
               <select
-                className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+                className="input mt-1 w-full"
                 value={form.calculation_type}
                 onChange={(e) =>
                   setForm({
@@ -317,7 +317,7 @@ function ComponentTable({
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-gray-50 text-left text-text-secondary">
+            <tr className="border-b border-border bg-gray-50 dark:bg-slate-800/50 text-left text-text-secondary">
               <th className="px-3 py-2 font-medium">Code</th>
               <th className="px-3 py-2 font-medium">Name</th>
               <th className="px-3 py-2 font-medium">Calc</th>
@@ -337,7 +337,7 @@ function ComponentTable({
                 <td className="px-3 py-2">
                   {editId === row.id ? (
                     <input
-                      className="w-full rounded border border-border px-2 py-1"
+                      className="input w-full"
                       value={editName}
                       onChange={(e) => onEditName(e.target.value)}
                     />
@@ -348,7 +348,7 @@ function ComponentTable({
                 <td className="px-3 py-2 text-text-secondary">
                   {editId === row.id ? (
                     <select
-                      className="rounded border border-border px-2 py-1"
+                      className="input"
                       value={editCalc}
                       onChange={(e) =>
                         onEditCalc(e.target.value as ComponentRow['calculation_type'])
@@ -365,7 +365,7 @@ function ComponentTable({
                 <td className="px-3 py-2">
                   <span
                     className={
-                      row.is_active ? 'text-green-700' : 'text-text-muted'
+                      row.is_active ? 'text-green-700 dark:text-green-300' : 'text-text-muted'
                     }
                   >
                     {row.is_active ? 'Active' : 'Inactive'}

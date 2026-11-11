@@ -100,7 +100,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    console.log('[Bank Accounts API] POST request received:', body);
     
     const {
       business_id,

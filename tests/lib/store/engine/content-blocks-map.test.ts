@@ -104,4 +104,17 @@ describe('contentBlocksOf', () => {
     const out = contentBlocksOf(section, (b) => (b.settings.text === 'Rejected' ? null : plain(b)));
     expect(out.map((b) => b.id)).toEqual(['eyebrow-1']);
   });
+  it('maps a countdown block and drops it without an end time', () => {
+    const section = sec('image-banner', [
+      ['countdown-1', blk('countdown', { label: 'Ends in', ends_at: '2026-12-31T20:00', style: 'boxes', hide_when_over: true })],
+      ['countdown-2', blk('countdown', { label: 'Ends in', ends_at: '', style: 'boxes', hide_when_over: true })],
+      ['countdown-3', blk('countdown', { label: 'Soon', ends_at: '2026-12-31T20:00', style: 'BOXES' })],
+      ['countdown-4', blk('countdown', { label: 'Soon', ends_at: '2026-12-31T20:00', style: 'inline', hide_when_over: false })],
+    ]);
+    expect(contentBlocksOf(section, plain)).toEqual([
+      { id: 'countdown-1', type: 'countdown', label: 'Ends in', endsAt: '2026-12-31T20:00', style: 'boxes', hideWhenOver: true },
+      { id: 'countdown-3', type: 'countdown', label: 'Soon', endsAt: '2026-12-31T20:00', style: 'boxes', hideWhenOver: true },
+      { id: 'countdown-4', type: 'countdown', label: 'Soon', endsAt: '2026-12-31T20:00', style: 'inline', hideWhenOver: false },
+    ]);
+  });
 });

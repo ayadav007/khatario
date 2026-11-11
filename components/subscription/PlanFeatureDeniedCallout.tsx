@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/Button';
+import { Lock } from 'lucide-react';
 import { useFeatureUpgradeModal } from '@/contexts/FeatureUpgradeModalContext';
 import { getFeatureDisplayName } from '@/lib/feature-upgrade-labels';
 
@@ -10,14 +10,14 @@ export interface PlanFeatureDeniedCalloutProps {
   featureKey: string;
   title?: string;
   description?: string;
-  /** Opens the global {@link UpgradePrompt} once when this callout mounts. */
+  /** Opens the upgrade popup once when this callout mounts. */
   autoOpenUpgradeModal?: boolean;
   className?: string;
 }
 
 /**
- * Inline plan-denied messaging with a primary CTA — use instead of passive error-only banners
- * so users always get {@link UpgradePrompt} / plan selection via {@link FeatureUpgradeModalProvider}.
+ * Inline "not in your plan" note in the upgrade popup's style; its button opens the popup
+ * via {@link FeatureUpgradeModalProvider}.
  */
 export function PlanFeatureDeniedCallout({
   featureKey,
@@ -36,26 +36,25 @@ export function PlanFeatureDeniedCallout({
   }, [autoOpenUpgradeModal, featureKey, openForPlanDenied]);
 
   const displayName = getFeatureDisplayName(featureKey);
-  const headline = title ?? `${displayName} is not available on your current plan`;
 
   return (
-    <div
-      role="alert"
-      className={`rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100 ${className}`}
-    >
-      <p className="font-medium text-red-900 dark:text-red-50">{headline}</p>
-      <p className="mt-1 text-sm opacity-95">
-        {description ??
-          'Upgrade your subscription or add-ons to unlock this feature. You can review plans anytime with the button below.'}
-      </p>
-      <Button
-        type="button"
-        variant="primary"
-        className="mt-3"
-        onClick={() => openForPlanDenied(featureKey)}
-      >
-        View plans & upgrade
-      </Button>
+    <div role="alert" className={`flex items-start gap-3 rounded-xl border border-[#f6c9a2] bg-[#F8F3E9] px-4 py-3 ${className}`}>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary-600 text-accent-500">
+        <Lock className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <p className="font-semibold text-primary-600">{title ?? `Sorry, ${displayName} isn't in your plan`}</p>
+        <p className="mt-0.5 text-sm text-[#5c5247]">
+          {description ?? "Upgrade to use it. Everything you've made stays as it is."}
+        </p>
+        <button
+          type="button"
+          onClick={() => openForPlanDenied(featureKey)}
+          className="mt-2 rounded-lg bg-accent-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-accent-600"
+        >
+          See plans
+        </button>
+      </div>
     </div>
   );
 }

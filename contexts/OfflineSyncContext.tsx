@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, {
   createContext,
   useCallback,
@@ -47,7 +45,6 @@ const OfflineSyncContext = createContext<OfflineSyncContextValue | undefined>(
 );
 
 export function OfflineSyncProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('OfflineSyncProvider');
   const { business, user } = useAuth();
   const { isOnline, isOffline, lastChangedAt } = useNetworkStatus();
   const [connectivityState, setConnectivityState] =

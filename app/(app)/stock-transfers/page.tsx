@@ -218,7 +218,7 @@ export default function StockTransfersPage() {
       <>
         <UpgradePrompt
           limitType="feature"
-          featureName="Stock Transfers"
+          featureName="Stock transfers"
           featureKey="settings_multi_warehouse"
           onClose={() => router.push('/settings')}
           onPurchaseSuccess={async () => {
@@ -416,7 +416,7 @@ export default function StockTransfersPage() {
       {showUpgradePrompt && (
         <UpgradePrompt
           limitType="feature"
-          featureName="Stock Transfers"
+          featureName="Stock transfers"
           featureKey="settings_multi_warehouse"
           onClose={() => setShowUpgradePrompt(false)}
           onPurchaseSuccess={async () => {

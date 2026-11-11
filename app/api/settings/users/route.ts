@@ -273,6 +273,7 @@ export async function POST(request: NextRequest) {
             limit: limitCheck.limit,
             current: limitCheck.current,
             seat_type: seatType,
+            limit_type: seatLimitType(seatType),
             code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
           },
           { status: 403 },

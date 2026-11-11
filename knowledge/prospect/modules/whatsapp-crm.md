@@ -50,3 +50,7 @@ You can open a free Connect account to link a number by QR, then buy the Connect
 ## Can I send bulk messages or campaigns?
 
 Yes, with Connect. Import contacts from CSV, create contact groups and send campaigns with text, images, documents and buttons, with scheduling and pacing. Only message customers who have agreed to hear from you; unsubscribes are tracked. Bulk payment reminders are the exception: those come with the Starter billing plan and above, and do not need Connect.
+
+## Does Connect track leads and a sales pipeline?
+
+Yes. With the Connect plan, every new number that messages you becomes a lead, and so does anyone coming from a click-to-WhatsApp ad, a tracked link or QR code, your website button, IndiaMART or a lead webhook (JustDial, Facebook lead forms, website forms), with its source recorded. Leads move through a pipeline with deal values, owners and follow-up reminders, carry an AI summary of the chat and comments, and convert into customers.

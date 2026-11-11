@@ -4,6 +4,7 @@ import { filterDemoCatalog } from '@/lib/store/theme-demo';
 import { migrateStoreTheme } from './migrate';
 import { sanitizeThemeData } from './sanitize';
 import { getLiveTheme } from './themes-repo';
+import { migrationInputFor } from './migration-input';
 import { resolvePreviewTarget } from './preview-target';
 import { demoThemeData } from './demo-stores';
 import type { ThemeRow } from './types';
@@ -14,6 +15,8 @@ function clean(row: ThemeRow): ThemeRow {
 
 /** The fixed id of a demo store's migrated theme; it is never stored. */
 export const DEMO_ENGINE_THEME_ID = '00000000-0000-4000-8000-0000000000e1';
+/** The fixed id of a switched-on store's converted design before it is stored (M6). */
+export const UNSTORED_ENGINE_THEME_ID = '00000000-0000-4000-8000-0000000000e2';
 
 /**
  * D35: a theme demo store's old design, migrated to an engine theme in memory. Pure and fixed (no db, no clock),
@@ -81,5 +84,23 @@ export async function loadEngineTheme(
   if (!flag?.store_engine) return null;
 
   const live = await getLiveTheme(store.business_id);
-  return live ? { theme: clean(live), preview: false } : null;
+  if (live) return { theme: clean(live), preview: false };
+  // M6: a store switched on with no live theme yet (a new store) shows its design converted in memory; the first
+  // "Edit store design" stores that same conversion as its live theme.
+  const input = await migrationInputFor(store.business_id);
+  if (!input) return null;
+  const migrated = migrateStoreTheme(input.raw, input.ctx);
+  return {
+    theme: clean({
+      id: UNSTORED_ENGINE_THEME_ID,
+      business_id: store.business_id,
+      name: migrated.name,
+      role: 'live',
+      preset: migrated.preset,
+      data: migrated.data,
+      updated_at: '1970-01-01T00:00:00.000Z',
+      is_working: false,
+    }),
+    preview: false,
+  };
 }

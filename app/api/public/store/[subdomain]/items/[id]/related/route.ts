@@ -5,6 +5,7 @@ import { isUuid } from '@/lib/store/review-http';
 import { buildRelatedQuery } from '@/lib/store/related-products';
 import { storeOosPlace } from '@/lib/store/engine/oos-place';
 import { mapStoreItemRow } from '@/lib/store/map-store-product';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,8 @@ export async function GET(
       outOfStock: await storeOosPlace(store, searchParams),
     });
     const rows = await queryRows<Record<string, unknown>>(q.sql, q.params);
-    return NextResponse.json({ items: rows.map(mapStoreItemRow) });
+    const collectsGst = await storeCollectsGst({ businessId: store.business_id, branchId });
+    return NextResponse.json({ items: rows.map((r) => withStoreGst(mapStoreItemRow(r), collectsGst)) });
   } catch (error) {
     console.error('[store related]', error);
     return NextResponse.json({ error: 'Failed to load related products' }, { status: 500 });

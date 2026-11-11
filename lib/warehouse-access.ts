@@ -215,9 +215,11 @@ export async function getDefaultWarehouseForBranch(
       SELECT w.id
       FROM warehouses w
       JOIN branch_warehouses bw ON w.id = bw.warehouse_id
+      JOIN branches b ON b.id = bw.branch_id AND b.business_id = w.business_id
       WHERE bw.branch_id = $1
         AND bw.is_primary = true
         AND w.is_active = true
+      ORDER BY w.created_at ASC, w.id ASC
       LIMIT 1
     `, [branchId]);
 

@@ -26,6 +26,8 @@ export const PRESET_CARD_FIELDS: Record<ThemePreset, { tagline: boolean; swatche
   khatario: { tagline: false, swatches: false },
   blank: { tagline: false, swatches: false },
   heritage: { tagline: true, swatches: true },
+  drop: { tagline: false, swatches: false },
+  bazaar: { tagline: false, swatches: false },
 };
 
 /**

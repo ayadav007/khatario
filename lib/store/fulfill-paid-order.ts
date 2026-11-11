@@ -6,6 +6,7 @@ import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
 import { syncStoreOrderFulfilment } from '@/lib/fulfilment/service';
 import { releaseStoreOrderStock } from '@/lib/store/checkout-stock';
 import { buildStoreInvoicePlan, StoreInvoicePlanError } from '@/lib/store/store-invoice-plan';
+import { storeCollectsGst } from '@/lib/store/seller-gst';
 import { todayIst } from '@/lib/gst/time-limits';
 
 export type StoreOnlinePaymentProvider = 'razorpay' | 'easebuzz';
@@ -547,12 +548,28 @@ export async function createInvoiceForStoreOrder(
       throw new StoreInvoiceError('Store order has no lines to invoice', 'STORE_ORDER_EMPTY');
     }
 
-    const planLines = lines.map((line) => ({
-      unit_price: parseFloat(line.unit_price) || 0,
-      quantity: parseFloat(line.quantity) || 0,
-      tax_rate: parseFloat(line.tax_rate) || 0,
-      gst_included: classifyStoreLine(line) === 'inclusive',
-    }));
+    const branchId = o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
+    // A seller who cannot charge GST bills a Bill of Supply for what the shopper paid, including
+    // orders placed before checkout stopped adding GST for them.
+    const collectsGst = await storeCollectsGst({ businessId, branchId, db: client });
+    const planLines = lines.map((line) => {
+      const quantity = parseFloat(line.quantity) || 0;
+      if (!collectsGst) {
+        const paid = parseFloat(line.line_total) || 0;
+        return {
+          unit_price: quantity > 0 ? roundMoney(paid / quantity) : parseFloat(line.unit_price) || 0,
+          quantity,
+          tax_rate: 0,
+          gst_included: false,
+        };
+      }
+      return {
+        unit_price: parseFloat(line.unit_price) || 0,
+        quantity,
+        tax_rate: parseFloat(line.tax_rate) || 0,
+        gst_included: classifyStoreLine(line) === 'inclusive',
+      };
+    });
     let plan: ReturnType<typeof buildStoreInvoicePlan>;
     try {
       plan = buildStoreInvoicePlan({
@@ -591,7 +608,6 @@ export async function createInvoiceForStoreOrder(
       createdBy = admin.rows[0].id;
     }
 
-    const branchId = o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
     // A khata order goes on the khata customer's ledger, never a phone match.
     const customerId = isKhata
       ? await khataOrderCustomerId(client, businessId, o.khata_customer_id)

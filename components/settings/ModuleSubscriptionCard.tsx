@@ -183,10 +183,10 @@ export function ModuleSubscriptionCard({
         </div>
 
         {subscription.trial_days_remaining != null && subscription.trial_days_remaining > 0 ? (
-          <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-100 p-3">
+          <div className="mb-4 rounded-lg border border-yellow-300 dark:border-yellow-800/60 bg-yellow-100 dark:bg-yellow-900/40 p-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-yellow-600" />
-              <p className="text-sm font-medium text-yellow-800">
+              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
                 {subscription.trial_days_remaining} days left in {label} trial
               </p>
             </div>
@@ -233,10 +233,10 @@ export function ModuleSubscriptionCard({
         </div>
 
         {subscription.scheduled_plan_id ? (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-3">
             <div className="mb-1 flex items-center gap-2">
               <ArrowDown className="h-4 w-4 text-amber-600" />
-              <p className="text-xs font-medium text-amber-800">
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
                 Downgrade to{' '}
                 <strong>
                   {plansForModule.find((p) => p.id === subscription.scheduled_plan_id)
@@ -249,7 +249,7 @@ export function ModuleSubscriptionCard({
               type="button"
               onClick={() => onCancelDowngrade(moduleKey)}
               disabled={cancellingDowngrade}
-              className="text-xs font-medium text-amber-700 underline hover:text-amber-900 disabled:opacity-50"
+              className="text-xs font-medium text-amber-700 dark:text-amber-300 underline hover:text-amber-900 disabled:opacity-50"
             >
               {cancellingDowngrade ? (
                 <span className="inline-flex items-center gap-1">
@@ -263,7 +263,7 @@ export function ModuleSubscriptionCard({
         ) : null}
 
         {isCancelled ? (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <div className="mt-3 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-300">
             Cancellation scheduled — access continues until{' '}
             {formatDate(subscription.end_date)}. You will move to the free plan after that.
           </div>
@@ -303,7 +303,7 @@ export function ModuleSubscriptionCard({
               <Button
                 size="sm"
                 variant="secondary"
-                className="border-red-300 text-red-600 hover:bg-red-50"
+                className="border-red-300 dark:border-red-800/60 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                 disabled={cancellingSubscription}
                 onClick={() => {
                   onCancelSubscription(moduleKey);

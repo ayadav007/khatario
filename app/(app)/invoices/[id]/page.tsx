@@ -97,11 +97,6 @@ export default function InvoiceDetailPage() {
       }
       // Handle both { invoice: {...} } and direct invoice object
       const invoiceData = dataInv.invoice || dataInv;
-      console.log('Invoice data:', {
-        document_type: invoiceData.document_type,
-        invoice_number: invoiceData.invoice_number,
-        is_proforma: invoiceData.document_type === 'proforma_invoice'
-      });
       setInvoice(invoiceData);
       setProfitSummary(parseProfitSummary(dataInv.profit_summary));
 
@@ -347,11 +342,6 @@ export default function InvoiceDetailPage() {
       )}
     </Button>
   ) : null;
-  
-  // Debug log to verify document_type
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Invoice detail - document_type:', invoice.document_type, 'isProforma:', isProforma);
-  }
 
   // Get status badge styling
   const getStatusBadge = () => {

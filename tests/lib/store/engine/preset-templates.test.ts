@@ -1,6 +1,7 @@
 import { defaultTemplate, PAGE_STARTERS } from '@/lib/store/engine/presets/templates';
 import { studioPreset } from '@/lib/store/engine/presets/studio';
 import { blankPreset } from '@/lib/store/engine/presets/blank';
+import { dropPreset } from '@/lib/store/engine/presets/drop';
 import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
 import type { Template } from '@/lib/store/engine/types';
 
@@ -52,6 +53,12 @@ describe('preset templates', () => {
       expect(p.templates.product.order.length).toBeGreaterThan(0);
       expect(p.templates.catalog.order.length).toBe(2);
     }
+  });
+
+  it('the Drop product and catalog templates survive sanitising with every section', () => {
+    const p = dropPreset(ctx);
+    expect(survives('product', p.templates.product)).toBe(4);
+    expect(survives('catalog', p.templates.catalog)).toBe(2);
   });
 
   it('the Studio and Blank headers link All Products to the catalog', () => {

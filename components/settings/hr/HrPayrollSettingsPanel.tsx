@@ -80,7 +80,7 @@ export function HrPayrollSettingsPanel() {
 
   return (
     <form onSubmit={handleSave} className="space-y-8">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-950/30 p-4 text-sm text-blue-800 dark:text-blue-300">
         <p className="font-medium">Statutory payroll (PF, ESI, PT)</p>
         <p className="mt-1 text-blue-700">
           Rates below feed salary prefill and payslips. Employer PF/ESI are shown on payslips as
@@ -116,7 +116,7 @@ export function HrPayrollSettingsPanel() {
             onChange={(e) =>
               patch('monthly_pay_day', e.target.value === '' ? null : Number(e.target.value))
             }
-            className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
+            className="input w-full"
           >
             <option value="">Not set</option>
             {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
@@ -256,7 +256,7 @@ export function HrPayrollSettingsPanel() {
                 )
               }
               disabled={!settings.pt_enabled}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:opacity-50"
+              className="input w-full"
             >
               <option value="">Select state</option>
               <option value="MH">Maharashtra</option>

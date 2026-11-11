@@ -127,3 +127,23 @@ Desktop.ini
 models/face/*.onnx
 models/face/*.part
 tmp-qa/
+
+# Local agent configs (machine paths, debug phone numbers) and worktrees
+.claude/
+.mcp.json
+
+# Scratch scripts and their reports (scripts/tmp-*.mjs, *.json, *.js)
+scripts/tmp-*
+
+# Generated admin push worker (built like the PWA workers above)
+public/worker-*.js
+public/worker-*.js.map
+
+# Local test and verification output
+phone/test/failures/
+gstr1-verification/
+gstr2b-reconciliation/
+brag-output/
+
+# Raw talking-head footage (1.6 GB)
+videos/talking-head-*/

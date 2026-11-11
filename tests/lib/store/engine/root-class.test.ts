@@ -26,6 +26,30 @@ describe('engineRootClass', () => {
     expect(r.quick).toBe(false);
   });
 
+  it('adds eng-preset-drop', () => {
+    const r = engineRootClass({ preset: 'drop', phoneKit: false, editor: false, schemeBackground: '#0d0d0d', style: { label_style: 'caps', frame_style: 'none', texture: 'none' } });
+    const c = classes(r.className);
+    expect(c).toEqual(expect.arrayContaining(['eng-preset-drop', 'eng-labels-caps', 'is-dark']));
+    expect(c).not.toContain('eng-preset-studio');
+    expect(r.quick).toBe(false);
+  });
+
+  it('adds eng-preset-bazaar', () => {
+    const r = engineRootClass({ preset: 'bazaar', phoneKit: false, editor: false, schemeBackground: '#ffffff', style });
+    const c = classes(r.className);
+    expect(c).toContain('eng-preset-bazaar');
+    expect(c).not.toContain('eng-preset-studio');
+    expect(c).not.toContain('is-dark');
+    expect(r.quick).toBe(false);
+  });
+
+  it('adds eng-heading-anton only when the heading font is Anton (it has one weight, so headings must not be bolded)', () => {
+    const base = { preset: 'drop' as const, phoneKit: false, editor: false, schemeBackground: '#0d0d0d', style };
+    expect(classes(engineRootClass({ ...base, headingFont: 'anton' }).className)).toContain('eng-heading-anton');
+    expect(classes(engineRootClass({ ...base, headingFont: 'poppins' }).className)).not.toContain('eng-heading-anton');
+    expect(classes(engineRootClass(base).className)).not.toContain('eng-heading-anton');
+  });
+
   it('grocery follows the phone kit setting', () => {
     const off = engineRootClass({ preset: 'grocery', phoneKit: false, editor: false, schemeBackground: '#f6f7f4', style });
     expect(off.kit).toBe(false);

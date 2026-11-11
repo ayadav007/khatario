@@ -78,13 +78,17 @@ export function cardBadgeList(look: Pick<ResolvedCardLook, 'show_badges' | 'badg
 /**
  * The badges a designed card shows and whether the MRP is struck. The automatic "% OFF" badge is left out when the price
  * line already shows the discount (`discount`, the `cardDiscount` result: keyed on what is shown, so `save` without an
- * MRP keeps the badge). The strike follows `off` alone, as on today's tile.
+ * MRP keeps the badge). The strike follows `off` alone, as on today's tile. `rupeesOff` is MRP minus price in whole rupees,
+ * used when the look's `discount_badge` is `rupees`.
  */
 export function cardBadgeRow(
-  look: Pick<ResolvedCardLook, 'show_badges' | 'badge_shape'>,
-  input: { off: number; badges: StudioBadge[]; hideDiscountBadge?: boolean; discount: CardDiscount | null },
+  look: Pick<ResolvedCardLook, 'show_badges' | 'badge_shape'> & Partial<Pick<ResolvedCardLook, 'discount_badge'>>,
+  input: { off: number; badges: StudioBadge[]; hideDiscountBadge?: boolean; discount: CardDiscount | null; rupeesOff?: number },
 ): { badges: StudioBadge[]; struck: boolean } {
-  const { badges, struck } = tileBadges(input.off, input.badges, !!input.hideDiscountBadge || input.discount != null);
+  const { badges, struck } = tileBadges(input.off, input.badges, !!input.hideDiscountBadge || input.discount != null, {
+    format: look.discount_badge,
+    rupeesOff: input.rupeesOff,
+  });
   return { badges: cardBadgeList(look, badges), struck };
 }
 

@@ -65,22 +65,9 @@ export function startWhatsAppMessageWorker(): Worker<WhatsAppMessageJob> | null 
     async (job: Job<WhatsAppMessageJob>) => {
       const orderKey =
         job.data.orderKey ?? buildWhatsAppOrderKey(job.data.businessId, job.data.conversationId);
-      if (job.attemptsMade > 0) {
-        console.log('[WA] retry attempt', {
-          id: job.id,
-          type: job.data.type,
-          attemptsMade: job.attemptsMade
-        });
-      }
       return withConversationOrder(orderKey, async () => {
-        console.log('[WA] job started', {
-          id: job.id,
-          type: job.data.type,
-          orderKey
-        });
         try {
           await processWhatsAppMessageJob(job.data);
-          console.log('[WA] job completed', { id: job.id, type: job.data.type });
         } catch (e) {
           console.error('[WA] job failed', { id: job.id, type: job.data.type, err: e });
           if (e instanceof UnrecoverableError) {
@@ -115,9 +102,6 @@ export function startWhatsAppMessageWorker(): Worker<WhatsAppMessageJob> | null 
 
   worker.on('failed', (job, err) => {
     console.error('[BullMQ] job failed (worker event)', { id: job?.id, err });
-  });
-  worker.on('completed', (j) => {
-    console.log('[BullMQ] job completed (worker event)', { id: j.id });
   });
 
   return worker;

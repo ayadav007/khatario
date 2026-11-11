@@ -26,7 +26,9 @@ Go to Purchases > Purchase Returns and create a return against the original purc
 
 ## How do I record an expense?
 
-Go to Purchases > Expenses, choose a category (for example rent or electricity), enter the amount and GST if any, and mark it paid or unpaid.
+Go to Purchases > Expenses and tap Add Expense. An expense is entered as its own bill: choose the supplier, the bill number and date, then add one line per expense item (for example rent, electricity or transport) with its amount, HSN/SAC and GST if any. Suppliers, categories and expense items can be searched or added straight from the dropdown. Under Payment choose Paid by cash, UPI or bank transfer, or "Bill received, not paid yet" to pay it later.
+
+Kharcha kaise likhe? Purchases > Expenses > Add Expense mein bill number, date aur har kharche ki line daalo, phir paid ya baad mein dena hai wo chuno.
 
 ## How do I pay a supplier?
 

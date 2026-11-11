@@ -134,8 +134,7 @@ export async function DELETE(
       );
     }
 
-    const deleted = await deleteBusinessCompletely(businessId, auth.admin.id);
-    console.log(`Business ${businessId} (${deleted.name}) deleted successfully`);
+    await deleteBusinessCompletely(businessId, auth.admin.id);
 
     return NextResponse.json({
       success: true,

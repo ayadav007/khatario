@@ -21,6 +21,7 @@ import { findAnchor } from '@/lib/store/engine/anchors';
 import { stickyHeaderState, type StickyMode } from '@/lib/store/engine/header-layout';
 import { withPreviewParams } from '@/lib/store/engine/links';
 import { StoreCartDrawer } from '../StoreCartDrawer';
+import type { EngineCart } from '../CartExtras';
 import { StoreMobileNav } from '../StoreMobileNav';
 import { engineRootClass } from '@/lib/store/engine/root-class';
 import { PRESET_CARD_FIELDS, type EngineCardLook } from '@/lib/store/engine/card-look';
@@ -32,6 +33,7 @@ import '../studio-theme/studio-theme.css';
 import { EngineCardContext } from './EngineCardContext';
 import { ENGINE_BASE_RULES } from './base-rules';
 import { STYLE_RULES } from './style-rules';
+import { demoFreeAbove } from '@/lib/store/quick';
 import { CONTENT_BLOCK_RULES } from './content-block-rules';
 import { PREMIUM_SECTION_RULES } from './premium-section-rules';
 import './presets/quick.css';
@@ -140,7 +142,7 @@ const THEME_RULES =
   '.st-root.eng-root .eng-news-error{flex-basis:100%;margin:0;color:#b91c1c;font-size:14px}' +
   '.st-root.eng-root .eng-countdown{text-align:center}' +
   '.st-root.eng-root .eng-countdown-boxes{display:flex;justify-content:center;gap:12px;margin-bottom:14px}' +
-  '.st-root.eng-root .eng-countdown-boxes>div{min-width:64px;padding:10px 6px;border-radius:var(--btn-radius,10px);background:rgba(0,0,0,.06)}' +
+  '.st-root.eng-root .eng-countdown-boxes>div{min-width:64px;padding:10px 6px;border-radius:var(--btn-radius,10px);background:rgba(0,0,0,.06);background:color-mix(in srgb,currentColor 8%,transparent)}' +
   '.st-root.eng-root .eng-countdown-boxes b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}' +
   '.st-root.eng-root .eng-countdown-boxes span{font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
   '@container store (max-width: 640px){.st-root.eng-root :is(.eng-collections,.eng-logos,.eng-video,.eng-faq,.eng-news,.eng-countdown){padding:0 16px}.st-root.eng-root .eng-collections-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
@@ -277,7 +279,7 @@ export function EngineShell({
   children: ReactNode;
 }) {
   const settings = theme.data.settings;
-  const { cartCount, branches, selectedBranchId, setEngineActive } = useStore();
+  const { cartCount, branches, selectedBranchId, setEngineActive, store } = useStore();
   const pathname = usePathname();
   const [cartOpen, setCartOpen] = useState(false);
   const openCart = useCallback(() => setCartOpen(true), []);
@@ -288,6 +290,7 @@ export function EngineShell({
     editor,
     schemeBackground: settings.color_schemes?.[0]?.background,
     style: { label_style: settings.label_style, frame_style: settings.frame_style, texture: settings.texture },
+    headingFont: settings.font_heading,
   });
   const { kit, quick } = root;
   const cardFields = PRESET_CARD_FIELDS[theme.preset] ?? PRESET_CARD_FIELDS.studio;
@@ -368,6 +371,31 @@ export function EngineShell({
   const hideCartBar = pathname === '/checkout' || pathname === '/cart';
   const branch = branches.find((b) => b.id === selectedBranchId) ?? (branches.length === 1 ? branches[0] : undefined);
   const freeAbove = branch?.free_delivery_above ?? null;
+  const isDemo = !!store?.is_demo;
+  // A demo store has no branch, so the cart's free-delivery bar borrows the demo amount (real stores are unchanged).
+  const cartFreeAbove = demoFreeAbove(isDemo, freeAbove);
+  // The theme's Cart settings for the drawer (and the phone cart sheet). `=== true` / `||`: an unsaved editor value
+  // may not be sanitised yet.
+  const engineCart = useMemo<EngineCart>(
+    () => ({
+      freeAbove: cartFreeAbove,
+      freeShipBar: settings.cart_free_ship_bar === true,
+      suggestions: settings.cart_suggestions === true,
+      suggestionsHeading: settings.cart_suggestions_heading || 'Pair it with',
+      whatsappOrder: settings.cart_whatsapp_order === true,
+      whatsappLink: settings.social?.whatsapp ?? '',
+      isDemo,
+    }),
+    [
+      cartFreeAbove,
+      settings.cart_free_ship_bar,
+      settings.cart_suggestions,
+      settings.cart_suggestions_heading,
+      settings.cart_whatsapp_order,
+      settings.social?.whatsapp,
+      isDemo,
+    ],
+  );
   // Quick mounts its own cart bar (always, as the old Quick shell did); the kit bar is for the other presets.
   const showKitBar = !quick && kit && !hideCartBar && cartCount > 0;
   const deepVars = useMemo(() => deepSchemeVars(settings), [settings]);
@@ -410,7 +438,7 @@ export function EngineShell({
             {children}
           </main>
         )}
-        <div className="st-cq">{footer}</div>
+        <div className="st-cq eng-footer-wrap">{footer}</div>
         {quick ? (
           <>
             {/* Not inside .qk-kit: Quick's bar shows on every width (it hides itself when the cart is empty). */}
@@ -432,6 +460,7 @@ export function EngineShell({
             setCartOpen(false);
             window.location.href = '/checkout';
           }}
+          engineCart={engineCart}
         />
         {preview ? (
           <div

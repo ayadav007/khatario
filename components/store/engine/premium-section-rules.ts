@@ -122,6 +122,19 @@ export const PREMIUM_SECTION_RULES =
   // Phones: two columns (!important beats the inline variable); the strip shows about two cards with the next one peeking, whatever its columns.
   `@container store (max-width:640px){${R} .eng-gallery:not(.eng-gallery--strip){--eng-cols:2!important}` +
   `${R} .eng-gallery--strip .eng-gallery-item{flex:0 0 calc(100%/2.2)}}` +
+  // Store info: one card in the section's scheme. Hours, address and the three buttons stack on a phone and wrap on wide screens.
+  `${R} .eng-info{display:flex;flex-direction:column;align-items:flex-start;gap:12px;max-width:560px;padding:20px;border:1px solid var(--st-line,rgba(0,0,0,.14));border-radius:var(--card-radius,var(--btn-radius,12px));background:var(--st-card,transparent)}` +
+  `${R} .eng-info-heading,${R} .eng-info-today,${R} .eng-info-address{margin:0}` +
+  `${R} .eng-info-heading{font-weight:700;line-height:1.15;font-size:clamp(22px,3.4cqi,32px);overflow-wrap:anywhere}` +
+  `${R} .eng-info-today{font-weight:600}` +
+  `${R} .eng-info-address{opacity:.8;overflow-wrap:anywhere}` +
+  `${R} .eng-info-hours{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}` +
+  `${R} .eng-info-live>span{margin-left:0!important}` +
+  `${R} .eng-info-actions{display:flex;flex-wrap:wrap;gap:8px}` +
+  `${R} .eng-info-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 20px;border-radius:var(--btn-radius,10px);font-weight:600;text-decoration:none}` +
+  `${R} .eng-info-btn--line{border:1px solid currentColor;color:inherit}` +
+  `${R} .eng-info-btn:focus-visible{outline:2px solid var(--c-text,#1c1c18);outline-offset:2px}` +
+  `@container store (max-width:640px){${R} .eng-info-actions{width:100%}${R} .eng-info-btn{flex:1 1 0}}` +
   // Side gutters, as .st-section has them (38 / 22 / 14 px, centred at 1240px on wide Studio-based stores), so these
   // sections line up with the rest of the page instead of touching the store's edges; Full width drops them (last, so
   // it wins the equal-specificity rules above).
@@ -129,4 +142,10 @@ export const PREMIUM_SECTION_RULES =
   `@container store (max-width:900px){${R} :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:22px}}` +
   `@container store (max-width:640px){${R} :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:14px}}` +
   `@container store (min-width:1320px){${R}.store-studio :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:calc((100cqw - 1240px) / 2)}}` +
-  `${R} .eng-sec--full :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:0}`;
+  `${R} .eng-sec--full :is(.eng-collage,.eng-look-sec,.eng-gallery){padding-inline:0}` +
+  // Store info keeps the same gutters on its outer wrapper, so the card inside keeps its own padding and border.
+  `${R} .eng-info-sec{padding-inline:38px}` +
+  `@container store (max-width:900px){${R} .eng-info-sec{padding-inline:22px}}` +
+  `@container store (max-width:640px){${R} .eng-info-sec{padding-inline:14px}}` +
+  `@container store (min-width:1320px){${R}.store-studio .eng-info-sec{padding-inline:calc((100cqw - 1240px) / 2)}}` +
+  `${R} .eng-sec--full .eng-info-sec{padding-inline:0}`;

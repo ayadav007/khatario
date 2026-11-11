@@ -9,6 +9,7 @@ import {
   DOUBLE_TAP_ZOOM,
   clampPan,
   clampScale,
+  galleryGridSpans,
   isDoubleTap,
   stepIndex,
   swipeDirection,
@@ -23,8 +24,11 @@ type Props = {
   images: string[];
   videoUrl?: string | null;
   alt: string;
-  /** 'side' puts thumbnails in a column on the left from 1024 px; default is below. */
-  thumbs?: 'side' | 'bottom';
+  /**
+   * 'side' puts thumbnails in a column on the left from 1024 px; default is below.
+   * 'grid' shows every photo in two columns from 768 px (no thumbnails) and the swipe gallery below that.
+   */
+  thumbs?: 'side' | 'bottom' | 'grid';
 };
 
 const HOVER_ZOOM = '(hover: hover) and (pointer: fine) and (min-width: 1024px)';
@@ -38,6 +42,21 @@ const CARD: React.CSSProperties = {
   border: '1px solid var(--c-border, rgba(0,0,0,.08))',
   boxShadow: '0 12px 32px -20px rgba(0,0,0,.4)',
 };
+
+const WIDE_QUERY = '(min-width: 768px)';
+
+/** True from md up, after mount (false on the server and on the first client render, so the carousel comes first). */
+function useWideScreen(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  return wide;
+}
 
 /** Product photos (and an optional video, always last) with swipe, hover zoom and a lightbox. */
 export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Props) {
@@ -53,6 +72,8 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
   const start = useRef<{ id: number; x: number; y: number } | null>(null);
   const swiped = useRef(false);
   const side = thumbs === 'side';
+  const grid = thumbs === 'grid';
+  const wide = useWideScreen();
 
   const firstKey = slides[0]?.src ?? '';
   useEffect(() => {
@@ -94,7 +115,20 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
     setZoomAtPos(`${x}% ${y}%`);
   };
 
-  return (
+  const lightboxEl =
+    lightbox !== null ? (
+      <Lightbox
+        images={pics}
+        start={lightbox}
+        alt={alt}
+        onClose={(i) => {
+          setLightbox(null);
+          setIndex(i);
+        }}
+      />
+    ) : null;
+
+  const carousel = (
     <div className={clsx('flex flex-col gap-2', side && 'lg:flex-row-reverse lg:items-start')}>
       <div className="min-w-0 flex-1">
         <div
@@ -286,18 +320,67 @@ export function ProductGallery({ images, videoUrl, alt, thumbs = 'bottom' }: Pro
         </div>
       ) : null}
 
-      {lightbox !== null ? (
-        <Lightbox
-          images={pics}
-          start={lightbox}
-          alt={alt}
-          onClose={(i) => {
-            setLightbox(null);
-            setIndex(i);
-          }}
-        />
-      ) : null}
+      {lightboxEl}
     </div>
+  );
+
+  // Grid: the swipe gallery on phones, every photo (then the video) in columns from md. The grid mounts only once the
+  // screen is known to be wide, so a phone never loads the video or iframe a hidden grid would hold. The lightbox
+  // portal renders from either layout.
+  if (!grid || !wide) return carousel;
+
+  const { columns, wideLast } = galleryGridSpans(count);
+  return (
+    <>
+      {lightboxEl}
+      <div className={clsx('grid gap-3', columns === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
+        {slides.map((s, i) =>
+          s.kind === 'image' ? (
+            <button
+              key={`${s.kind}-${s.src}-${i}`}
+              type="button"
+              aria-label={`Open ${label(s, i).toLowerCase()}`}
+              onClick={() => setLightbox(i)}
+              className={clsx(
+                'cursor-zoom-in overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]',
+                wideLast && i === count - 1 ? 'col-span-2 aspect-[8/5]' : 'aspect-[4/5]',
+              )}
+              style={CARD}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={s.src}
+                alt={count > 1 ? `${alt} – photo ${i + 1}` : alt}
+                loading={i < 2 ? undefined : 'lazy'}
+                draggable={false}
+                className="h-full w-full object-cover"
+              />
+            </button>
+          ) : (
+            <div
+              key={`${s.kind}-${s.src}-${i}`}
+              className={clsx(
+                'flex items-center overflow-hidden rounded-2xl bg-black',
+                wideLast && i === count - 1 ? 'col-span-2 aspect-[8/5]' : 'aspect-[4/5]',
+              )}
+            >
+              {s.kind === 'youtube' ? (
+                <iframe
+                  src={s.src}
+                  title={`${alt} video`}
+                  loading="lazy"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  allowFullScreen
+                  className="aspect-video w-full border-0"
+                />
+              ) : (
+                <video src={s.src} controls playsInline preload="metadata" className="max-h-full w-full" aria-label={`${alt} video`} />
+              )}
+            </div>
+          ),
+        )}
+      </div>
+    </>
   );
 }
 

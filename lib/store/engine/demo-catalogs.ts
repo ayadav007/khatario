@@ -12,38 +12,53 @@ export interface DemoCatalog {
   heroes: string[];
 }
 
-const pic = (folder: string, file: string) => `/theme-demos/${folder}/${file}.webp`;
+/** A photo in the catalogue's own folder, or `folder/file` for one shared from another catalogue's folder. */
+const pic = (folder: string, file: string) => `/theme-demos/${file.includes('/') ? file : `${folder}/${file}`}.webp`;
 
 type Row = [id: string, name: string, price: number, mrp: number | null, category: string, file: string, extra?: Partial<StoreProduct>];
 
-function catalog(folder: DemoCatalogId, categories: { id: string; name: string }[], rows: Row[], heroes: string[]): DemoCatalog {
+/**
+ * `newestLast`: the rows are listed oldest first, so the demo's "new" sort (the end of the list first) leads with the
+ * last rows. Ratings and the featured flag follow each row's place from the newest end, as if listed newest first.
+ */
+function catalog(
+  folder: DemoCatalogId,
+  categories: { id: string; name: string }[],
+  rows: Row[],
+  heroes: string[],
+  newestLast = false,
+): DemoCatalog {
   const nameOf = (id: string) => categories.find((c) => c.id === id)?.name ?? null;
-  const products = rows.map(([id, name, price, mrp, category, file, extra], i): StoreProduct => ({
-    id,
-    name,
-    code: null,
-    description: 'Sample product in a Khatario theme demo store. Checkout is off.',
-    selling_price: price,
-    mrp,
-    unit: 'PCS',
-    image_url: pic(folder, file),
-    category_id: category,
-    category_name: nameOf(category),
-    current_stock: 20,
-    has_variants: false,
-    tax_rate: folder === 'grocery' ? 5 : 3,
-    gst_included: true,
-    images: [],
-    // A spread of believable ratings, the same every time.
-    rating_avg: [4.8, 4.6, 4.9, 4.4, 4.7, 4.2, 4.5][i % 7],
-    rating_count: 8 + ((i * 17) % 90),
-    featured_in_store: i < 8,
-    store_badge: null,
-    store_tagline: null,
-    store_swatches: [],
-    variants: [],
-    ...extra,
-  }));
+  const products = rows.map(([id, name, price, mrp, category, file, extra], at): StoreProduct => {
+    const i = newestLast ? rows.length - 1 - at : at;
+    return {
+      id,
+      name,
+      code: null,
+      description: 'Sample product in a Khatario theme demo store. Checkout is off.',
+      selling_price: price,
+      mrp,
+      unit: 'PCS',
+      image_url: pic(folder, file),
+      category_id: category,
+      category_name: nameOf(category),
+      current_stock: 20,
+      has_variants: false,
+      tax_rate: folder === 'grocery' || folder === 'kirana' ? 5 : 3,
+      gst_included: true,
+      images: [],
+      // A spread of believable ratings, the same every time.
+      rating_avg: [4.8, 4.6, 4.9, 4.4, 4.7, 4.2, 4.5][i % 7],
+      rating_count: 8 + ((i * 17) % 90),
+      featured_in_store: i < 8,
+      store_badge: null,
+      store_tagline: null,
+      store_fit_note: null,
+      store_swatches: [],
+      variants: [],
+      ...extra,
+    };
+  });
   return { categories, products, heroes: heroes.map((h) => pic('heroes', h)) };
 }
 
@@ -159,11 +174,122 @@ const GENERAL = catalog(
   ['general-1', 'general-2'],
 );
 
+const TEE_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
+const WAISTS = ['28', '30', '32', '34', '36'];
+
+/** The sized fields of a product: one variant per size (`stock` lists the units left in each, in the same order). */
+function sized(id: string, price: number, sizes: string[], stock: number[]): Partial<StoreProduct> {
+  return {
+    has_variants: true,
+    current_stock: stock.reduce((sum, n) => sum + n, 0),
+    variants: sizes.map((size, i) => ({
+      id: `${id}-${size}`,
+      variant_name: size,
+      selling_price: price,
+      current_stock: stock[i],
+      attributes: { size },
+    })),
+  };
+}
+
+const STREETWEAR = catalog(
+  'streetwear',
+  [
+    { id: 'sw-cat-tees', name: 'Tees' },
+    { id: 'sw-cat-coords', name: 'Co-ords' },
+    { id: 'sw-cat-denim', name: 'Denim' },
+    { id: 'sw-cat-accessories', name: 'Accessories' },
+  ],
+  [
+    ['sw-13', 'Sunny curved cap', 499, null, 'sw-cat-accessories', 'cap-yellow'],
+    ['sw-12', 'Mesh trucker cap', 449, 549, 'sw-cat-accessories', 'cap-white'],
+    ['sw-11', 'Washed dad cap', 499, null, 'sw-cat-accessories', 'cap-grey', { store_tagline: 'One size, adjustable strap' }],
+    ['sw-10', 'Carpenter jeans', 1999, null, 'sw-cat-denim', 'promo-denim', { ...sized('sw-10', 1999, WAISTS, [5, 7, 9, 6, 4]) }],
+    ['sw-9', 'Distressed light-wash jeans', 1899, 2299, 'sw-cat-denim', 'denim-distressed', { ...sized('sw-9', 1899, WAISTS, [3, 6, 0, 5, 2]), store_fit_note: 'Runs a little small: go one waist size up.' }],
+    ['sw-8', 'Slim indigo jeans', 1699, null, 'sw-cat-denim', 'denim-straight', { ...sized('sw-8', 1699, WAISTS, [4, 8, 10, 7, 3]), store_fit_note: 'Slim through the thigh with a little stretch. Order your usual waist.' }],
+    ['sw-7', 'Doodle print set', 2799, 3299, 'sw-cat-coords', 'coord-orange', { ...sized('sw-7', 2799, TEE_SIZES, [2, 4, 5, 3, 1]), store_badge: 'Selling fast' }],
+    ['sw-6', 'Sunshine fleece set', 2299, null, 'sw-cat-coords', 'coord-yellow', { ...sized('sw-6', 2299, TEE_SIZES, [4, 6, 3, 0, 0]), store_badge: 'New' }],
+    ['sw-5', 'Navy zip co-ord', 2499, 2999, 'sw-cat-coords', 'coord-navy', { ...sized('sw-5', 2499, TEE_SIZES, [3, 5, 6, 4, 2]), store_fit_note: 'Relaxed fit. The model is 5 ft 6 in and wears S.' }],
+    ['sw-4', 'Sage cotton tee', 549, null, 'sw-cat-tees', 'tee-duo-green', { ...sized('sw-4', 549, TEE_SIZES, [5, 8, 9, 5, 2]), store_badge: 'New' }],
+    ['sw-3', 'Black and white tee', 549, 699, 'sw-cat-tees', 'tee-duo-bw', { ...sized('sw-3', 549, TEE_SIZES, [0, 7, 11, 8, 5]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-2', 'Graphic print tee', 499, null, 'sw-cat-tees', 'tee-graphic-black', { ...sized('sw-2', 499, TEE_SIZES, [8, 14, 10, 6, 3]), store_badge: 'Any 3 @ ₹999' }],
+    ['sw-1', 'Heavyweight boxy tee', 599, 799, 'sw-cat-tees', 'tee-boxy-white', { ...sized('sw-1', 599, TEE_SIZES, [6, 9, 12, 4, 0]), store_badge: 'Selling fast', store_fit_note: 'Boxy cut: take your usual size for a loose fit, size down for a snug one.' }],
+  ],
+  ['streetwear-1', 'streetwear-2', 'streetwear-3'],
+  // Listed oldest first: Drop Culture's "Just dropped" row sorts by new, which the demo shows from the end of the list.
+  true,
+);
+
+/** The pack fields of a product: one variant per pack, `[label, price, units left]` smallest pack first (the product's own price is the first pack's). */
+function packs(id: string, rows: [label: string, price: number, stock: number][]): Partial<StoreProduct> {
+  return {
+    has_variants: true,
+    selling_price: rows[0][1],
+    current_stock: rows.reduce((sum, [, , n]) => sum + n, 0),
+    variants: rows.map(([label, price, stock], i) => ({
+      id: `${id}-${i + 1}`,
+      variant_name: label,
+      selling_price: price,
+      current_stock: stock,
+      attributes: { size: label },
+    })),
+  };
+}
+
+// Unbranded on purpose: a demo store must not show another company's name or pack. Photos are the new kirana/ set and the
+// grocery/ photos that show no brand marks (not the milk carton or the crisp packets).
+const KIRANA = catalog(
+  'kirana',
+  [
+    { id: 'ki-cat-veg', name: 'Vegetables' },
+    { id: 'ki-cat-fruit', name: 'Fruits' },
+    { id: 'ki-cat-dairy', name: 'Dairy & eggs' },
+    { id: 'ki-cat-staples', name: 'Atta rice & dal' },
+    { id: 'ki-cat-masala', name: 'Masala' },
+    { id: 'ki-cat-snacks', name: 'Snacks & drinks' },
+  ],
+  [
+    // Fresh vegetables, fruit, eggs and milk are GST-exempt (tax_rate 0); packaged goods keep 5%.
+    ['ki-1', 'Chakki atta', 245, 270, 'ki-cat-staples', 'atta', { ...packs('ki-1', [['5 kg', 245, 14], ['10 kg', 470, 9]]), store_badge: 'Bestseller' }],
+    ['ki-2', 'Basmati rice', 110, 125, 'ki-cat-staples', 'grocery/rice', { ...packs('ki-2', [['1 kg', 110, 18], ['5 kg', 520, 7], ['10 kg', 990, 0]]) }],
+    ['ki-3', 'Toor dal', 78, null, 'ki-cat-staples', 'dal', { ...packs('ki-3', [['500 g', 78, 16], ['1 kg', 150, 12], ['2 kg', 288, 5]]) }],
+    ['ki-4', 'Sunflower oil', 140, 155, 'ki-cat-staples', 'oil', { ...packs('ki-4', [['1 L', 140, 20], ['5 L', 670, 6]]), store_badge: 'Deal' }],
+    ['ki-5', 'Sugar', 48, null, 'ki-cat-staples', 'sugar', { ...packs('ki-5', [['1 kg', 48, 25], ['5 kg', 230, 0]]) }],
+    ['ki-6', 'Toned milk', 30, null, 'ki-cat-dairy', 'milk', { ...packs('ki-6', [['500 ml', 30, 30], ['1 L', 58, 22]]), store_badge: 'Fresh today', tax_rate: 0 }],
+    ['ki-7', 'Brown eggs', 72, 84, 'ki-cat-dairy', 'grocery/eggs', { ...packs('ki-7', [['6 pcs', 72, 20], ['12 pcs', 138, 14], ['30 pcs', 330, 4]]), tax_rate: 0 }],
+    ['ki-8', 'Tomatoes', 22, 26, 'ki-cat-veg', 'grocery/tomatoes', { ...packs('ki-8', [['500 g', 22, 24], ['1 kg', 40, 18], ['2 kg', 76, 8]]), tax_rate: 0 }],
+    ['ki-9', 'Onions', 38, null, 'ki-cat-veg', 'onions', { ...packs('ki-9', [['1 kg', 38, 30], ['2 kg', 72, 15], ['5 kg', 170, 6]]), tax_rate: 0 }],
+    ['ki-10', 'Spinach bunch', 25, null, 'ki-cat-veg', 'grocery/spinach', { store_badge: 'Fresh today', tax_rate: 0 }],
+    ['ki-11', 'Mixed veg basket', 199, 249, 'ki-cat-veg', 'grocery/vegetables', { store_tagline: 'Seasonal vegetables, about 3 kg', tax_rate: 0 }],
+    ['ki-12', 'Bananas, 1 dozen', 60, null, 'ki-cat-fruit', 'grocery/bananas', { unit: 'DOZ', tax_rate: 0 }],
+    ['ki-13', 'Red apples', 95, null, 'ki-cat-fruit', 'grocery/apples', { ...packs('ki-13', [['500 g', 95, 12], ['1 kg', 180, 10]]), tax_rate: 0 }],
+    ['ki-14', 'Mosambi, 1 kg', 85, null, 'ki-cat-fruit', 'grocery/limes', { unit: 'KG', tax_rate: 0 }],
+    ['ki-15', 'Fruit yogurt cups', 90, 110, 'ki-cat-dairy', 'grocery/yogurt'],
+    ['ki-16', 'Red chilli powder', 38, null, 'ki-cat-masala', 'grocery/spice-powders', { ...packs('ki-16', [['100 g', 38, 20], ['200 g', 68, 15], ['500 g', 160, 6]]) }],
+    ['ki-17', 'Masala jar set', 349, 399, 'ki-cat-masala', 'grocery/spice-jars', { store_tagline: 'Ten everyday spices' }],
+    ['ki-18', 'Tea leaves', 120, null, 'ki-cat-snacks', 'tea', { ...packs('ki-18', [['250 g', 120, 14], ['500 g', 230, 9], ['1 kg', 440, 4]]) }],
+    ['ki-19', 'Roasted peanuts', 45, null, 'ki-cat-snacks', 'peanuts', { ...packs('ki-19', [['200 g', 45, 18], ['500 g', 105, 8]]), store_badge: 'New' }],
+    ['ki-20', 'Orange juice', 30, 36, 'ki-cat-snacks', 'grocery/orange-juice', { ...packs('ki-20', [['200 ml', 30, 24], ['1 L', 125, 10]]) }],
+  ],
+  ['grocery-1', 'grocery-2'],
+);
+
 export const DEMO_CATALOGS: Record<DemoCatalogId, DemoCatalog> = {
   jewellery: JEWELLERY,
   fashion: FASHION,
   grocery: GROCERY,
   general: GENERAL,
+  streetwear: STREETWEAR,
+  kirana: KIRANA,
+};
+
+/**
+ * Product ids a demo store's Buy again section shows (the demo has no shopper or orders), newest first; ids must be in
+ * that catalogue. A catalogue without a list shows no Buy again section.
+ */
+export const DEMO_BUY_AGAIN: Partial<Record<DemoCatalogId, string[]>> = {
+  // Milk, eggs, atta, dal, tomatoes, onions: what a regular orders every week.
+  kirana: ['ki-6', 'ki-7', 'ki-1', 'ki-3', 'ki-8', 'ki-9'],
 };
 
 export function demoCatalog(id: DemoCatalogId): DemoCatalog {

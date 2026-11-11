@@ -28,13 +28,11 @@ function SearchContent() {
     setLoading(true);
     try {
       const searchUrl = `/api/search?q=${encodeURIComponent(query)}&business_id=${business.id}`;
-      console.log('[Search] Fetching:', searchUrl);
       
       const res = await fetch(searchUrl);
       
       if (res.ok) {
         const data = await res.json();
-        console.log('[Search] Results:', data);
         setResults(data);
       } else {
         const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));

@@ -148,7 +148,6 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermissi
       
       if (unsubscribedCount > 0) {
         filteredRecipients = validRecipients.filter((r: any) => !unsubscribedPhones.has(r.phone));
-        console.log(`[Campaign API] Filtered out ${unsubscribedCount} unsubscribed numbers`);
       }
     } catch (error) {
       console.error('[Campaign API] Error checking unsubscribe list:', error);

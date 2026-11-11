@@ -39,3 +39,15 @@ If your supplier is also on Khatario and connected to you, Khatario can notify t
 ## Can I import my item list?
 
 Yes. Import items from a CSV file using the template Khatario provides.
+
+## Can I add my existing stock by scanning barcodes?
+
+Yes. Scan & Add Items (web and phone app, every plan) scans each barcode, tells you if the shop already has it, fills new products from product databases or by reading photos of the label, and saves them with opening stock, batch and expiry.
+
+## Can I sell in boxes and pieces, or repack bulk stock?
+
+Yes. Give an item alternate units (BOX = 12 PCS, BAG = 50 KG) and pick the unit on each bill line; stock is always kept in the base unit. Repack turns a bulk bag into your own packets in one step, with wastage recorded and the cost carried into the packets.
+
+## Does Khatario handle manufacturing, held stock and goods in transit?
+
+Yes. Bills of materials and production entries are costed through work in progress, with by-products and scrap. Stock can be put on hold (quarantine, damaged, returns awaiting inspection), others' goods in your godown are registered, purchases can be booked before the goods arrive, and returnable challans track stock out with job workers or on approval. Reports cover Form 3CD quantity details, the bank stock statement and ITC-04 job work.

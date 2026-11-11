@@ -1,9 +1,9 @@
 import { THEME_CATALOG, type CatalogTheme } from '@/lib/store/engine/theme-catalog';
 import { DEMO_CATALOGS } from '@/lib/store/engine/demo-catalogs';
-import { applyHref, categoryCounts, filterThemes, popularityOrder, previewPath, themeNameFor, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
+import { applyHref, categoryCounts, filterThemes, popularityOrder, previewPath, themeNameFor, themeStorePaths, type ThemeSort, type ThemeTab } from '@/lib/store/engine/theme-store';
 
 const popularity = { grocery: 9, studio: 4, heritage: 4 };
-const today = '2026-11-01';
+const today = '2026-11-03';
 const run = (o: Partial<{ category: Parameters<typeof filterThemes>[1]['category']; tab: ThemeTab; query: string; sort: ThemeSort }> = {}) =>
   filterThemes(THEME_CATALOG, { category: 'all', tab: 'all', query: '', sort: 'popular', popularity, today, ...o }).map((t) => t.preset);
 
@@ -25,9 +25,10 @@ describe('filterThemes', () => {
 
   it('tabs: free hides premium, premium shows only premium, new keeps themes added in the last 90 days', () => {
     expect(run({ tab: 'free' })).not.toContain('heritage');
-    expect(run({ tab: 'free' })).toHaveLength(THEME_CATALOG.length - 1);
-    expect(run({ tab: 'premium' })).toEqual(['heritage']);
-    expect(run({ tab: 'new' })).toEqual(['heritage']);
+    expect(run({ tab: 'free' })).toHaveLength(THEME_CATALOG.length - 3);
+    expect(run({ tab: 'free' })).not.toContain('drop');
+    expect(run({ tab: 'premium' }).sort()).toEqual(['bazaar', 'drop', 'heritage']);
+    expect(run({ tab: 'new' }).sort()).toEqual(['bazaar', 'drop', 'heritage']);
     expect(filterThemes(THEME_CATALOG, { category: 'all', tab: 'new', query: '', sort: 'popular', popularity, today: '2026-06-15' }).length).toBe(
       THEME_CATALOG.length,
     );
@@ -46,7 +47,7 @@ describe('filterThemes', () => {
     expect(byName[byName.length - 1]).toBe('blank');
     const names = byName.slice(0, -1).map((p) => THEME_CATALOG.find((t) => t.preset === p)!.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
-    expect(run({ sort: 'newest' })[0]).toBe('heritage');
+    expect(run({ sort: 'newest' }).slice(0, 3)).toEqual(['bazaar', 'drop', 'heritage']);
     expect(run({ sort: 'newest' }).slice(-1)).toEqual(['blank']);
   });
 
@@ -64,7 +65,7 @@ describe('categoryCounts', () => {
     expect(counts[0]).toEqual({ id: 'all', label: 'All themes', count: THEME_CATALOG.length });
     expect(counts.every((c) => c.count > 0)).toBe(true);
     expect(counts.find((c) => c.id === 'pharmacy')).toBeUndefined();
-    expect(counts.find((c) => c.id === 'grocery')?.count).toBe(2);
+    expect(counts.find((c) => c.id === 'grocery')?.count).toBe(3);
   });
 });
 
@@ -106,5 +107,22 @@ describe('previewPath', () => {
     expect(previewPath('catalog', 'grocery')).toBe('/catalog');
     expect(previewPath('product', 'jewellery')).toBe(`/products/${DEMO_CATALOGS.jewellery.products[0].id}`);
     expect(previewPath('product', 'general')).toMatch(/^\/products\/ge-/);
+  });
+});
+
+describe('themeStorePaths', () => {
+  it('on the website: /themes pages, and Apply through applyHref', () => {
+    const p = themeStorePaths(false);
+    expect(p.store).toBe('/themes');
+    expect(p.detail('quick')).toBe('/themes/quick');
+    expect(p.apply('quick', false)).toBe(applyHref('quick', false));
+    expect(p.apply('quick', true)).toBe(applyHref('quick', true));
+  });
+
+  it('inside the app: the explore pages, and Apply always straight to the app page (the merchant is signed in)', () => {
+    const p = themeStorePaths(true);
+    expect(p.store).toBe('/settings/online-store/themes/explore');
+    expect(p.detail('heritage-couture')).toBe('/settings/online-store/themes/explore/heritage-couture');
+    expect(p.apply('heritage-couture', false)).toBe('/settings/online-store/themes/apply/heritage-couture');
   });
 });

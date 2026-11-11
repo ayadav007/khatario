@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { CalendarOff, Loader2, Save } from 'lucide-react';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -58,7 +58,7 @@ export default function WeeklyOffSettingsPage() {
 
   if (loading) {
     return (
-      <SettingsPageShell title="Weekly off" description="Business default weekly off pattern" icon={Loader2}>
+      <SettingsPageShell title="Weekly off" description="Business default weekly off pattern" icon={CalendarOff} width="form">
         <Loader2 className="h-5 w-5 animate-spin" />
       </SettingsPageShell>
     );
@@ -68,11 +68,12 @@ export default function WeeklyOffSettingsPage() {
     <SettingsPageShell
       title="Weekly off"
       description="Default weekly off for all employees. Individual overrides can be set on the employee profile."
-      icon={Save}
+      icon={CalendarOff}
+      width="form"
     >
-      <form onSubmit={handleSave} className="max-w-xl space-y-6">
+      <form onSubmit={handleSave} className="card space-y-6 p-card-md md:p-card-lg">
         <div>
-          <p className="mb-2 text-sm font-medium">Fixed weekly off days</p>
+          <p className="mb-2 text-sm font-medium text-text-primary">Fixed weekly off days</p>
           <div className="flex flex-wrap gap-3">
             {DAY_LABELS.map((label, idx) => (
               <label key={idx} className="flex items-center gap-2 text-sm">
@@ -93,9 +94,9 @@ export default function WeeklyOffSettingsPage() {
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Nth weekday rules (e.g. 2nd & 4th Saturday)</p>
+          <p className="mb-2 text-sm font-medium text-text-primary">Nth weekday rules (e.g. 2nd & 4th Saturday)</p>
           {policy.nth_rules.map((rule, i) => (
-            <div key={i} className="mb-2 flex flex-wrap gap-2">
+            <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
               <Input
                 type="number"
                 className="w-24"
@@ -106,9 +107,11 @@ export default function WeeklyOffSettingsPage() {
                   setPolicy({ ...policy, nth_rules: nth });
                 }}
                 placeholder="Week (2,4,-1)"
+                aria-label={`Rule ${i + 1}: week of the month (2, 4, or -1 for last)`}
               />
               <select
-                className="input"
+                className="input w-auto min-w-[9rem]"
+                aria-label={`Rule ${i + 1}: weekday`}
                 value={rule.weekday}
                 onChange={(e) => {
                   const nth = [...policy.nth_rules];

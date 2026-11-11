@@ -523,7 +523,7 @@ export const BusinessProfileTab: React.FC = () => {
   const initials = (saved.name || 'B').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className="w-full max-w-5xl space-y-6">
+    <div className="w-full space-y-6">
       {hasBilling && (
         gaps.length === 0 ? (
           <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-900/50 dark:bg-green-950/30">
@@ -594,7 +594,7 @@ export const BusinessProfileTab: React.FC = () => {
         <button
           type="button"
           onClick={() => setMobilePane(null)}
-          className="mb-2 text-sm font-medium text-primary-700 lg:hidden"
+          className="mb-2 text-sm font-medium text-primary-700 dark:text-primary-200 lg:hidden"
         >
           All business settings
         </button>
@@ -1086,7 +1086,7 @@ export const BusinessProfileTab: React.FC = () => {
             {showWarehouseUpgradePrompt && (
               <UpgradePrompt
                 featureKey="settings_multi_warehouse"
-                featureName="Multi-Warehouse"
+                featureName="Warehouses"
                 onClose={() => setShowWarehouseUpgradePrompt(false)}
               />
             )}

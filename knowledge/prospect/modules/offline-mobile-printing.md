@@ -2,7 +2,7 @@
 title: Mobile app and printing
 audience: [prospect, tenant_user]
 locale: en
-tags: [mobile, android, printer, thermal, bluetooth, pwa, internet]
+tags: [mobile, android, phone app, play store, printer, thermal, bluetooth, pwa, internet, iphone]
 url: /
 ---
 
@@ -10,11 +10,13 @@ url: /
 
 ## Does Khatario work on my phone?
 
-Yes. Khatario runs in the browser on your phone, tablet or computer, and you can add it to your home screen like an app. There is also an Android app. Your data is the same on every device, so you can bill at the counter and check reports from home.
+Yes. The Khatario phone app for Android (on the Play Store) covers the daily work at the counter: bills, purchases (including scanning a supplier bill), items with barcode scanning, customers and suppliers, payments, expenses, reports and GST returns, WhatsApp chats, the Supplier Hub and online store orders. Your data is the same on every device, so you can bill at the counter and check reports from home.
+
+On paid plans Khatario also runs in the browser on a computer, tablet or phone, and you can add it to your home screen like an app. The Free plan works only in the Android phone app.
 
 ## Is there an iPhone (iOS) app?
 
-There is no separate iPhone app. On an iPhone or iPad, open Khatario in Safari and add it to the home screen; it works like an app from there.
+There is no iPhone app. On a paid plan, open Khatario in Safari on iPhone or iPad and add it to the home screen; it works like an app from there.
 
 ## What happens if the internet goes down?
 

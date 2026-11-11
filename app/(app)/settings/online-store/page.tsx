@@ -1,19 +1,59 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox, Star, ShoppingCart, Palette } from 'lucide-react';
+import {
+  Store,
+  ExternalLink,
+  Loader2,
+  Copy,
+  Check,
+  Sparkles,
+  Inbox,
+  Star,
+  ShoppingCart,
+  Palette,
+  Settings2,
+  Brush,
+  Megaphone,
+  FileText,
+  Truck,
+  BadgeCheck,
+  AlertCircle,
+  CircleDot,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor';
-import { StoreAppearanceStudio } from '@/components/store/admin/StoreAppearanceStudio';
+import { StoreDesignCard } from '@/components/store/admin/StoreDesignCard';
 import { StoreLivePreview } from '@/components/store/admin/StoreLivePreview';
 import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager';
-import { StoreKhataSettings } from '@/components/store/admin/StoreKhataSettings';
+import {
+  StoreKhataSettings,
+  type StoreKhataCounts,
+  type StoreKhataRules,
+} from '@/components/store/admin/StoreKhataSettings';
+import {
+  AffixInput,
+  SetupBlock,
+  SetupGroup,
+  SetupRow,
+  SetupSwitch,
+  setupSelectClass,
+} from '@/components/store/admin/StoreSetupLayout';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
+import {
+  StoreHoursCard,
+  storeHoursDraft,
+  storeHoursFromDraft,
+  type StoreHoursDraft,
+} from '@/components/store/admin/StoreHoursCard';
+import type { StoreHours } from '@/lib/store/store-hours';
 import { storeHostSuffix } from '@/lib/store/subdomain';
 import { editorPath, openWorkingDraft } from '@/components/store/studio2/api';
 import { pendingBadgeText } from '@/lib/store/review-admin-helpers';
@@ -23,11 +63,6 @@ import {
   sanitizeStorePromoSheet,
   type StorePromoSheetConfig,
 } from '@/lib/store/promo-sheet';
-import {
-  DEFAULT_STORE_THEME,
-  sanitizeStoreTheme,
-  type StoreTheme,
-} from '@/lib/store/store-theme';
 import clsx from 'clsx';
 
 type EditorTab = 'appearance' | 'promo' | 'setup' | 'pages';
@@ -38,12 +73,12 @@ interface StoreSettings {
   store_tagline: string | null;
   store_hero_image_url: string | null;
   store_min_order_amount: number;
+  store_hours?: StoreHours | null;
   store_allow_cod?: boolean;
   store_return_window_days?: number;
   store_delivery_provider?: string;
   store_about_md?: string | null;
   store_contact_md?: string | null;
-  store_theme?: unknown;
   store_hide_khatario_badge?: boolean;
   store_shiprocket_email?: string | null;
   shiprocket_webhook_configured?: boolean;
@@ -51,16 +86,18 @@ interface StoreSettings {
   store_cart_reminder_enabled?: boolean;
   store_cart_reminder_hours?: number;
   store_engine?: boolean;
-  logo_url?: string | null;
-  categories?: Array<{ id: string; name: string }>;
+  store_product_count?: number | null;
 }
 
-const TABS: Array<{ id: EditorTab; label: string }> = [
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'promo', label: 'Promo' },
-  { id: 'setup', label: 'Store setup' },
-  { id: 'pages', label: 'Pages' },
+const TABS: Array<{ id: EditorTab; label: string; icon: LucideIcon }> = [
+  { id: 'setup', label: 'Store setup', icon: Settings2 },
+  { id: 'appearance', label: 'Appearance', icon: Brush },
+  { id: 'promo', label: 'Promo', icon: Megaphone },
+  { id: 'pages', label: 'Pages', icon: FileText },
 ];
+
+/** The phone preview and "Edit store design" only matter on the tabs that change how the store looks. */
+const DESIGN_TABS: EditorTab[] = ['appearance', 'promo'];
 
 const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -70,37 +107,12 @@ function generateWebhookToken(length = 40): string {
   return Array.from(bytes, (b) => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join('');
 }
 
-function Toggle({
-  on,
-  onToggle,
-}: {
-  on: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={clsx(
-        'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent',
-        on ? 'bg-green-500' : 'bg-gray-200',
-      )}
-    >
-      <span
-        className={clsx(
-          'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow',
-          on ? 'translate-x-5' : 'translate-x-0',
-        )}
-      />
-    </button>
-  );
-}
-
 export default function OnlineStoreSettingsPage() {
   const { business, user } = useAuth();
   const router = useRouter();
   const [storeEngine, setStoreEngine] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [pendingReviews, setPendingReviews] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -108,13 +120,14 @@ export default function OnlineStoreSettingsPage() {
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
   const [hostSuffix, setHostSuffix] = useState('.khatario.com');
-  const [tab, setTab] = useState<EditorTab>('appearance');
+  const [tab, setTab] = useState<EditorTab>('setup');
   const [showPreview, setShowPreview] = useState(true);
 
   const [subdomain, setSubdomain] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [tagline, setTagline] = useState('');
   const [minOrder, setMinOrder] = useState('');
+  const [hours, setHours] = useState<StoreHoursDraft>(() => storeHoursDraft(null));
   const [heroUrl, setHeroUrl] = useState('');
   const [aboutMd, setAboutMd] = useState('');
   const [contactMd, setContactMd] = useState('');
@@ -133,11 +146,15 @@ export default function OnlineStoreSettingsPage() {
   const [shipWebhookConfigured, setShipWebhookConfigured] = useState(false);
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
-  const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [businessLogo, setBusinessLogo] = useState('');
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [productCount, setProductCount] = useState<number | null>(null);
+  const [activeZones, setActiveZones] = useState<number | null>(null);
+  const [khata, setKhata] = useState<StoreKhataRules | null>(null);
+  const [savedKhata, setSavedKhata] = useState<StoreKhataRules | null>(null);
+  const [khataCounts, setKhataCounts] = useState<StoreKhataCounts>({ open: 0, requests: 0 });
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const takeBaseline = useRef(false);
+  const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
     if (!business?.id) return;
@@ -167,6 +184,7 @@ export default function OnlineStoreSettingsPage() {
         setEnabled(data.store_enabled);
         setTagline(data.store_tagline ?? '');
         setMinOrder(data.store_min_order_amount ? String(data.store_min_order_amount) : '');
+        setHours(storeHoursDraft(data.store_hours));
         setHeroUrl(data.store_hero_image_url ?? '');
         setAboutMd(data.store_about_md ?? '');
         setContactMd(data.store_contact_md ?? '');
@@ -176,19 +194,6 @@ export default function OnlineStoreSettingsPage() {
         setAllowCod(data.store_allow_cod !== false);
         setReturnDays(String(data.store_return_window_days ?? 7));
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
-        const nextTheme = sanitizeStoreTheme(data.store_theme);
-        if (nextTheme.hero_slides.length === 0 && data.store_hero_image_url) {
-          nextTheme.hero_slides = [
-            {
-              image_url: data.store_hero_image_url,
-              title: data.store_tagline ?? '',
-              subtitle: nextTheme.hero_subtitle,
-              viewport: 'both',
-            },
-          ];
-        }
-        setTheme(nextTheme);
-        setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
         setCartReminderOn(data.store_cart_reminder_enabled === true);
         setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
@@ -196,10 +201,13 @@ export default function OnlineStoreSettingsPage() {
         setShipEmail(data.store_shiprocket_email ?? '');
         setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
         setShipWebhookToken('');
+        setShipPassword('');
+        setProductCount(typeof data.store_product_count === 'number' ? data.store_product_count : null);
+        takeBaseline.current = true;
+        setLoadVersion((v) => v + 1);
         const nextPromo = sanitizeStorePromoSheet(data.store_promo_sheet);
         setPromo(nextPromo);
         setSavedPromo(nextPromo);
-        setCategories(data.categories ?? []);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(typeof data.error === 'string' ? data.error : 'Failed to load settings');
@@ -211,9 +219,23 @@ export default function OnlineStoreSettingsPage() {
     }
   }, [business?.id, user?.id]);
 
+  const fetchKhata = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/khata', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setKhata(data.settings);
+      setSavedKhata(data.settings);
+      setKhataCounts({ open: data.open_khatas ?? 0, requests: data.khata_requests ?? 0 });
+    } catch {
+      /* the khata group keeps showing its loading line */
+    }
+  }, []);
+
   useEffect(() => {
     void fetchSettings();
-  }, [fetchSettings]);
+    void fetchKhata();
+  }, [fetchSettings, fetchKhata]);
 
   useEffect(() => {
     setHostSuffix(storeHostSuffix(window.location.hostname));
@@ -232,6 +254,32 @@ export default function OnlineStoreSettingsPage() {
     }
   }, [business?.id, router]);
 
+  /** Everything the Save button writes to store settings, so the save bar can tell when something changed. */
+  const snapshot = useMemo(
+    () =>
+      JSON.stringify([
+        subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
+        allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail,
+        sanitizeStorePromoSheet(promo), storeHoursFromDraft(hours),
+      ]),
+    [
+      subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
+      allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail, promo,
+      hours,
+    ],
+  );
+
+  useEffect(() => {
+    if (!takeBaseline.current) return;
+    takeBaseline.current = false;
+    setSavedSnapshot(snapshot);
+  }, [snapshot, loadVersion]);
+
+  const khataDirty = !!khata && JSON.stringify(khata) !== JSON.stringify(savedKhata);
+  const settingsDirty =
+    (savedSnapshot !== null && snapshot !== savedSnapshot) || !!shipPassword || !!shipWebhookToken;
+  const dirty = settingsDirty || khataDirty;
+
   const handleSave = useCallback(async () => {
     if (!business?.id) return;
     setSaving(true);
@@ -249,7 +297,8 @@ export default function OnlineStoreSettingsPage() {
           store_enabled: enabled,
           store_tagline: tagline.trim() || null,
           store_min_order_amount: parseFloat(minOrder) || 0,
-          store_hero_image_url: theme.hero_slides[0]?.image_url || heroUrl.trim() || null,
+          store_hours: storeHoursFromDraft(hours),
+          store_hero_image_url: heroUrl.trim() || null,
           store_about_md: aboutMd || null,
           store_contact_md: contactMd || null,
           store_privacy_md: privacyMd || null,
@@ -258,7 +307,6 @@ export default function OnlineStoreSettingsPage() {
           store_allow_cod: allowCod,
           store_return_window_days: Number(returnDays) || 0,
           store_delivery_provider: deliveryProvider,
-          store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
           store_cart_reminder_enabled: cartReminderOn,
           store_cart_reminder_hours: Math.min(72, Math.max(1, Math.round(Number(cartReminderHours)) || 3)),
@@ -278,6 +326,23 @@ export default function OnlineStoreSettingsPage() {
         return;
       }
 
+      if (khataDirty && khata) {
+        const khataRes = await fetch('/api/settings/khata', {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(khata),
+        });
+        const khataData = await khataRes.json().catch(() => ({}));
+        if (!khataRes.ok) {
+          setError(khataData.error || 'Store saved, but the khata rules could not be saved');
+          void fetchSettings();
+          return;
+        }
+        setKhata(khataData.settings);
+        setSavedKhata(khataData.settings);
+      }
+
       setSuccess(true);
       void fetchSettings();
       setTimeout(() => setSuccess(false), 3000);
@@ -292,6 +357,7 @@ export default function OnlineStoreSettingsPage() {
     enabled,
     tagline,
     minOrder,
+    hours,
     heroUrl,
     aboutMd,
     contactMd,
@@ -301,7 +367,6 @@ export default function OnlineStoreSettingsPage() {
     allowCod,
     returnDays,
     deliveryProvider,
-    theme,
     hideBadge,
     cartReminderOn,
     cartReminderHours,
@@ -310,8 +375,16 @@ export default function OnlineStoreSettingsPage() {
     shipWebhookToken,
     promo,
     savedPromo,
+    khata,
+    khataDirty,
     fetchSettings,
   ]);
+
+  const discardChanges = useCallback(() => {
+    setError(null);
+    setKhata(savedKhata);
+    void fetchSettings();
+  }, [savedKhata, fetchSettings]);
 
   const storeUrl = subdomain ? `${subdomain}${hostSuffix}` : null;
 
@@ -332,58 +405,38 @@ export default function OnlineStoreSettingsPage() {
     return () => window.clearTimeout(id);
   }, [loading, storefrontBase]);
 
-  const handleUpdatePreview = useCallback(async () => {
-    const base = storefrontBase();
-    if (!base) {
-      setError('Set a store URL under Store setup first.');
+  const switchToNewDesign = useCallback(async () => {
+    if (!business?.id) return;
+    if (
+      !window.confirm(
+        'Switch your store to the new design? Your current design is copied into it and shoppers see it straight away. After this you edit your design in the store design editor.',
+      )
+    ) {
       return;
     }
-    setPreviewBusy(true);
+    setSwitching(true);
     setError(null);
     try {
-      const res = await fetch('/api/settings/online-store/preview-draft', {
+      const res = await fetch('/api/settings/online-store/switch-engine', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business?.id,
-          theme: sanitizeStoreTheme({
-            ...theme,
-            logo_url: theme.logo_url || businessLogo,
-          }),
-        }),
+        body: JSON.stringify({ business_id: business.id }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || typeof data.token !== 'string') {
-        setError(typeof data.error === 'string' ? data.error : 'Could not update preview');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === 'string' ? data.error : 'Could not switch to the new design');
         return;
       }
-      setPreviewSrc(`${base}/?td=${encodeURIComponent(data.token)}`);
+      setStoreEngine(true);
+      const base = storefrontBase();
+      if (base) setPreviewSrc(`${base}/?v=${Date.now()}`);
     } catch {
-      setError('Could not update preview');
+      setError('Could not switch to the new design');
     } finally {
-      setPreviewBusy(false);
+      setSwitching(false);
     }
-  }, [storefrontBase, business?.id, theme, businessLogo]);
-
-  const sectionsSig = theme.homepage_sections.map((s) => `${s.id}:${s.enabled ? 1 : 0}`).join('|');
-  const previewContentSig = [
-    sectionsSig,
-    theme.category_style,
-    JSON.stringify(theme.category_images),
-    JSON.stringify(theme.overlay_bands),
-  ].join('|');
-  const skipSectionPreview = useRef(true);
-  useEffect(() => {
-    if (loading) return;
-    if (skipSectionPreview.current) {
-      skipSectionPreview.current = false;
-      return;
-    }
-    const t = window.setTimeout(() => void handleUpdatePreview(), 400);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- previewContentSig only
-  }, [previewContentSig, loading]);
+  }, [business?.id, storefrontBase]);
 
   const handleCopy = useCallback(() => {
     if (storeUrl) {
@@ -393,16 +446,14 @@ export default function OnlineStoreSettingsPage() {
     }
   }, [storeUrl]);
 
-  const previewTheme: StoreTheme = {
-    ...theme,
-    logo_url: theme.logo_url || businessLogo,
-  };
+  const designTab = DESIGN_TABS.includes(tab);
+  const previewOn = designTab && showPreview;
 
-  if (loading) {
+  if (loading && savedSnapshot === null) {
     return (
       <SettingsPageShell title="Online Store" icon={Store}>
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       </SettingsPageShell>
     );
@@ -411,11 +462,11 @@ export default function OnlineStoreSettingsPage() {
   return (
     <SettingsPageShell
       title="Store editor"
-      description="Pick and customise your theme in Studio. The settings here (logo, banners, collections, fonts) are saved with Save."
+      description="Set up how your store takes orders, then style it in the store design editor."
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
-          {storeEngine ? (
+          {storeEngine && designTab ? (
             <button
               type="button"
               onClick={() => void openStoreDesignEditor()}
@@ -423,35 +474,28 @@ export default function OnlineStoreSettingsPage() {
               className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60"
             >
               {openingEditor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              Edit store design (beta)
+              Edit store design
             </button>
           ) : null}
           {storeEngine ? (
             <Link
               href="/settings/online-store/themes"
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
             >
               <Palette className="h-3.5 w-3.5" />
-              Themes (beta)
+              Themes
             </Link>
           ) : null}
           <Link
-            href="/settings/online-store/studio"
-            className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Themes &amp; Studio
-          </Link>
-          <Link
             href="/settings/online-store/enquiries"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Inbox className="h-3.5 w-3.5" />
             Enquiries
           </Link>
           <Link
             href="/settings/online-store/reviews"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <Star className="h-3.5 w-3.5" />
             Reviews
@@ -463,66 +507,63 @@ export default function OnlineStoreSettingsPage() {
           </Link>
           <Link
             href="/settings/online-store/abandoned-carts"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
           >
             <ShoppingCart className="h-3.5 w-3.5" />
             Abandoned carts
           </Link>
-          <button
-            type="button"
-            className="text-xs text-gray-500"
-            onClick={() => setShowPreview((v) => !v)}
-          >
-            {showPreview ? 'Hide preview' : 'Show preview'}
-          </button>
-          <Button onClick={() => void handleSave()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-          </Button>
+          {designTab ? (
+            <button
+              type="button"
+              className="text-xs text-text-secondary"
+              onClick={() => setShowPreview((v) => !v)}
+            >
+              {showPreview ? 'Hide preview' : 'Show preview'}
+            </button>
+          ) : null}
         </div>
       }
     >
       {error ? (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       ) : null}
       {success ? (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+        <div className="mb-4 rounded-lg border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-4 py-3 text-sm text-green-700 dark:text-green-300">
           Store saved
         </div>
       ) : null}
 
-      <div className={clsx('gap-6', showPreview && 'xl:grid xl:grid-cols-[minmax(0,1fr)_440px]')}>
-        <div>
-          <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1">
+      <div className={clsx('gap-6', previewOn && '2xl:grid 2xl:grid-cols-[minmax(0,1fr)_440px]')}>
+        <div className={clsx(!designTab && 'max-w-3xl')}>
+          <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1" role="tablist">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={clsx(
-                  'flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium',
-                  tab === t.id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50',
+                  'inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium',
+                  tab === t.id ? 'bg-gray-900 text-white' : 'text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60',
                 )}
               >
+                <t.icon className="h-4 w-4" aria-hidden />
                 {t.label}
               </button>
             ))}
           </div>
 
           {tab === 'appearance' ? (
-            <StoreAppearanceStudio
-              theme={theme}
-              setTheme={setTheme}
-              hideBadge={hideBadge}
-              setHideBadge={setHideBadge}
-              tagline={tagline}
-              setTagline={setTagline}
-              categories={categories}
-              hostSuffix={hostSuffix}
-              storeUrl={storeUrl}
-              onUpdate={() => void handleUpdatePreview()}
-              updating={previewBusy}
+            <StoreDesignCard
+              storeEngine={storeEngine}
+              storeHref={storefrontBase()}
+              opening={openingEditor}
+              switching={switching}
+              onEdit={() => void openStoreDesignEditor()}
+              onSwitch={() => void switchToNewDesign()}
             />
           ) : null}
 
@@ -530,30 +571,31 @@ export default function OnlineStoreSettingsPage() {
             <Card className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Opening promo sheet</h3>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <h3 className="text-sm font-semibold text-text-primary">Opening promo sheet</h3>
+                  <p className="mt-1 text-xs text-text-secondary">
                     Slides up as a large poster (about half to three-quarters of the screen). A full-bleed photo works best.
                   </p>
                 </div>
-                <Toggle
+                <SetupSwitch
+                  label="Opening promo sheet"
                   on={promo.enabled}
                   onToggle={() => setPromo((p) => ({ ...p, enabled: !p.enabled }))}
                 />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs text-gray-500 sm:col-span-2">
+                <label className="block text-xs text-text-secondary sm:col-span-2">
                   Title
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.title}
                     maxLength={80}
                     onChange={(e) => setPromo((p) => ({ ...p, title: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500 sm:col-span-2">
+                <label className="block text-xs text-text-secondary sm:col-span-2">
                   Message
                   <textarea
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     rows={3}
                     maxLength={400}
                     value={promo.body}
@@ -567,19 +609,19 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(url) => setPromo((p) => ({ ...p, image_url: url }))}
                   />
                 </div>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button text
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.cta_label}
                     onChange={(e) => setPromo((p) => ({ ...p, cta_label: e.target.value }))}
                     placeholder="Shop now"
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   When they tap it
                   <select
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={
                       promo.cta_action === 'shop' ||
                       promo.cta_action === 'whatsapp' ||
@@ -600,7 +642,7 @@ export default function OnlineStoreSettingsPage() {
                     <option value="url">Open a product or page</option>
                     <option value="none">No button</option>
                   </select>
-                  <span className="mt-1 block text-[11px] text-gray-400">
+                  <span className="mt-1 block text-[11px] text-text-muted">
                     {promo.cta_action === 'shop'
                       ? 'Closes the promo and scrolls to products. A coupon code is saved for checkout.'
                       : promo.cta_action === 'whatsapp'
@@ -611,34 +653,34 @@ export default function OnlineStoreSettingsPage() {
                   </span>
                 </label>
                 {promo.cta_action === 'url' ? (
-                  <label className="block text-xs text-gray-500 sm:col-span-2">
+                  <label className="block text-xs text-text-secondary sm:col-span-2">
                     Custom link
                     <input
-                      className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                      className="input mt-1 w-full"
                       value={promo.cta_url}
                       onChange={(e) => setPromo((p) => ({ ...p, cta_url: e.target.value }))}
                       placeholder="/products/… or https://"
                     />
                   </label>
                 ) : null}
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Coupon to apply at checkout
                   <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm uppercase"
+                    className="input mt-1 w-full uppercase"
                     value={promo.coupon_code}
                     onChange={(e) =>
                       setPromo((p) => ({ ...p, coupon_code: e.target.value.toUpperCase() }))
                     }
                     placeholder="Optional"
                   />
-                  <span className="mt-1 block text-[11px] text-gray-400">
+                  <span className="mt-1 block text-[11px] text-text-muted">
                     Saved when they tap the button. It is applied when they actually check out — not by opening an empty cart.
                   </span>
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   How often
                   <select
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.frequency}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -653,14 +695,14 @@ export default function OnlineStoreSettingsPage() {
                     <option value="until_dismissed">Until they dismiss it</option>
                   </select>
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Wait before showing (seconds)
                   <input
                     type="number"
                     min={0}
                     max={8}
                     step={0.1}
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={Math.round((promo.delay_ms / 1000) * 10) / 10}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -670,7 +712,7 @@ export default function OnlineStoreSettingsPage() {
                     }
                   />
                 </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-text-secondary sm:col-span-2">
                   <input
                     type="checkbox"
                     checked={promo.dismissible}
@@ -678,7 +720,7 @@ export default function OnlineStoreSettingsPage() {
                   />
                   Customer can dismiss it
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Background
                   <input
                     type="color"
@@ -687,7 +729,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, background_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Text
                   <input
                     type="color"
@@ -696,7 +738,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, text_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button
                   <input
                     type="color"
@@ -705,7 +747,7 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, button_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Button text
                   <input
                     type="color"
@@ -714,11 +756,11 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setPromo((p) => ({ ...p, button_text_color: e.target.value }))}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Show from
                   <input
                     type="datetime-local"
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.start_at ? promo.start_at.slice(0, 16) : ''}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -728,11 +770,11 @@ export default function OnlineStoreSettingsPage() {
                     }
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
+                <label className="block text-xs text-text-secondary">
                   Show until
                   <input
                     type="datetime-local"
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
                     value={promo.end_at ? promo.end_at.slice(0, 16) : ''}
                     onChange={(e) =>
                       setPromo((p) => ({
@@ -748,144 +790,209 @@ export default function OnlineStoreSettingsPage() {
 
           {tab === 'setup' ? (
             <div className="space-y-4">
-              <Card className="p-5 space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900">Store URL</h3>
-                <div className="flex flex-1 items-center overflow-hidden rounded-lg border border-gray-200">
-                  <input
-                    type="text"
-                    value={subdomain}
-                    onChange={(e) =>
-                      setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
-                    }
-                    placeholder="my-store"
-                    className="flex-1 border-0 bg-white px-3 py-2.5 text-sm focus:outline-none"
-                  />
-                  <span className="flex-shrink-0 border-l border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                    {hostSuffix}
-                  </span>
-                </div>
-                {storeUrl ? (
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`https://${storeUrl}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      {storeUrl}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      className="inline-flex items-center gap-1 text-xs text-gray-500"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="h-3 w-3 text-green-600" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          Copy
-                        </>
-                      )}
-                    </button>
+              <section
+                className="overflow-hidden rounded-xl border border-border bg-surface"
+                data-testid="store-setup-status"
+              >
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <div
+                    className={clsx(
+                      'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg',
+                      enabled ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary',
+                    )}
+                  >
+                    <Store className="h-5 w-5" aria-hidden />
                   </div>
-                ) : null}
-                <label className="flex items-center justify-between text-sm">
-                  <span>
-                    Store is live
-                    <span className="block text-xs text-gray-500">
-                      {enabled ? 'Customers can visit and order.' : 'Store is offline.'}
-                    </span>
-                  </span>
-                  <Toggle on={enabled} onToggle={() => setEnabled((v) => !v)} />
-                </label>
-                <label className="block text-xs text-gray-500">
-                  Minimum order (₹)
-                  <input
-                    type="number"
-                    min="0"
-                    className="mt-1 w-32 rounded-lg border px-3 py-2 text-sm"
-                    value={minOrder}
-                    onChange={(e) => setMinOrder(e.target.value)}
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={allowCod}
-                    onChange={(e) => setAllowCod(e.target.checked)}
-                  />
-                  Allow pay on delivery
-                </label>
-                <label className="block text-xs text-gray-500">
-                  Returns accepted for (days after delivery)
-                  <input
-                    type="number"
-                    min="0"
-                    max="90"
-                    className="mt-1 w-32 rounded-lg border px-3 py-2 text-sm"
-                    value={returnDays}
-                    onChange={(e) => setReturnDays(e.target.value)}
-                  />
-                  <span className="mt-1 block">Buyers can ask for a return from their account. 0 turns online returns off.</span>
-                </label>
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>
-                      Remind shoppers about carts they leave
-                      <span className="block text-xs text-gray-500">
-                        One reminder per cart, by app notification if they have your app, else WhatsApp.
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-text-primary">
+                        {enabled ? 'Your store is live' : 'Your store is offline'}
+                      </h3>
+                      <span
+                        className={clsx(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                          enabled ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-slate-800 text-text-secondary',
+                        )}
+                      >
+                        <span className={clsx('h-1.5 w-1.5 rounded-full', enabled ? 'bg-green-500' : 'bg-gray-400')} />
+                        {enabled ? 'Taking orders' : 'Not taking orders'}
                       </span>
-                    </span>
-                    <Toggle on={cartReminderOn} onToggle={() => setCartReminderOn((v) => !v)} />
-                  </label>
-                  {cartReminderOn ? (
-                    <label className="flex items-center gap-2 text-xs text-gray-500">
-                      after
-                      <input
-                        type="number"
-                        min="1"
-                        max="72"
-                        className="w-20 rounded-lg border px-3 py-2 text-sm"
-                        value={cartReminderHours}
-                        onChange={(e) => setCartReminderHours(e.target.value)}
-                      />
-                      hours
-                    </label>
-                  ) : null}
+                    </div>
+                    <p className="mt-0.5 text-xs text-text-secondary">
+                      {enabled ? 'Customers can visit and order.' : 'Customers see that the store is closed.'}
+                    </p>
+                  </div>
+                  <SetupSwitch label="Store is live" on={enabled} onToggle={() => setEnabled((v) => !v)} />
                 </div>
-                <label className="block text-xs text-gray-500">
-                  Delivery partner
+                <div className="border-t border-border px-5 py-4">
+                  <label htmlFor="store-subdomain" className="block text-sm font-medium text-text-primary">
+                    Web address
+                  </label>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex h-10 flex-1 items-stretch overflow-hidden rounded-lg border border-border focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
+                      <input
+                        id="store-subdomain"
+                        type="text"
+                        value={subdomain}
+                        onChange={(e) =>
+                          setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+                        }
+                        placeholder="my-store"
+                        className="min-w-0 flex-1 border-0 bg-surface px-3 text-sm text-text-primary focus:outline-none focus:ring-0"
+                      />
+                      <span className="flex flex-shrink-0 items-center border-l border-border bg-gray-50 dark:bg-slate-800/50 px-3 text-sm text-text-secondary">
+                        {hostSuffix}
+                      </span>
+                    </div>
+                    {storeUrl ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopy}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+                        >
+                          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                          {copied ? 'Copied' : 'Copy'}
+                        </button>
+                        <a
+                          href={`https://${storeUrl}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Visit
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 border-t border-border px-5 py-3" data-testid="store-setup-checklist">
+                  {[
+                    {
+                      key: 'address',
+                      ok: !!subdomain,
+                      okText: 'Web address',
+                      todo: 'Choose a web address',
+                      href: undefined,
+                    },
+                    {
+                      key: 'products',
+                      ok: productCount === null || productCount > 0,
+                      okText:
+                        productCount === null
+                          ? 'Products'
+                          : `${productCount} product${productCount === 1 ? '' : 's'} in store`,
+                      todo: 'No products shown yet · Go to Items',
+                      href: '/items',
+                    },
+                    {
+                      key: 'delivery',
+                      ok: activeZones === null || activeZones > 0,
+                      okText: 'Delivery area',
+                      todo: 'Add a delivery area',
+                      href: '#store-delivery-areas',
+                    },
+                  ].map((c) =>
+                    c.ok ? (
+                      <span
+                        key={c.key}
+                        className="inline-flex items-center gap-1 rounded-full border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-2.5 py-1 text-xs text-green-700 dark:text-green-300"
+                      >
+                        <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                        {c.okText}
+                      </span>
+                    ) : c.href ? (
+                      <Link
+                        key={c.key}
+                        href={c.href}
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/30"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+                        {c.todo}
+                      </Link>
+                    ) : (
+                      <span
+                        key={c.key}
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+                        {c.todo}
+                      </span>
+                    ),
+                  )}
+                </div>
+              </section>
+
+              <SetupGroup icon={ShoppingCart} title="Orders and payment" testId="store-setup-orders">
+                <SetupRow label="Minimum order" hint="Cart total needed before checkout. 0 means no minimum." htmlFor="store-min-order">
+                  <AffixInput id="store-min-order" min={0} prefix="₹" value={minOrder} placeholder="0" onChange={setMinOrder} />
+                </SetupRow>
+                <SetupRow label="Cash on delivery" hint="Shoppers can pay when the order arrives.">
+                  <SetupSwitch label="Cash on delivery" on={allowCod} onToggle={() => setAllowCod((v) => !v)} />
+                </SetupRow>
+                <SetupRow
+                  label="Abandoned cart reminder"
+                  hint="One reminder per cart, by app notification if they have your app, else WhatsApp."
+                >
+                  <SetupSwitch
+                    label="Abandoned cart reminder"
+                    on={cartReminderOn}
+                    onToggle={() => setCartReminderOn((v) => !v)}
+                  />
+                </SetupRow>
+                {cartReminderOn ? (
+                  <SetupRow label="Send the reminder after" htmlFor="store-cart-hours">
+                    <AffixInput
+                      id="store-cart-hours"
+                      min={1}
+                      max={72}
+                      suffix="hours"
+                      value={cartReminderHours}
+                      onChange={setCartReminderHours}
+                    />
+                  </SetupRow>
+                ) : null}
+              </SetupGroup>
+
+              <StoreHoursCard value={hours} onChange={setHours} />
+
+              <SetupGroup icon={Truck} title="Delivery and returns" testId="store-setup-delivery">
+                <SetupRow label="Delivered by" htmlFor="store-delivery-provider">
                   <select
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    id="store-delivery-provider"
+                    className={setupSelectClass}
                     value={deliveryProvider}
                     onChange={(e) => setDeliveryProvider(e.target.value)}
                   >
-                    <option value="self">Self (own staff)</option>
+                    <option value="self">Own staff</option>
                     <option value="shiprocket">Shiprocket</option>
                   </select>
-                </label>
+                </SetupRow>
                 {deliveryProvider === 'shiprocket' ? (
-                  <div className="space-y-2">
-                    <input
-                      className="w-full rounded-lg border px-3 py-2 text-sm"
-                      placeholder="Shiprocket email"
-                      value={shipEmail}
-                      onChange={(e) => setShipEmail(e.target.value)}
-                    />
-                    <input
-                      type="password"
-                      className="w-full rounded-lg border px-3 py-2 text-sm"
-                      placeholder="API password (leave blank to keep)"
-                      value={shipPassword}
-                      onChange={(e) => setShipPassword(e.target.value)}
-                    />
-                    <div className="rounded-lg border border-gray-200 p-3 text-xs text-gray-600">
-                      <p className="font-medium text-gray-800">Tracking webhook token</p>
+                  <SetupBlock muted>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs text-text-secondary">
+                        Shiprocket email
+                        <input
+                          className="input mt-1 w-full"
+                          value={shipEmail}
+                          onChange={(e) => setShipEmail(e.target.value)}
+                        />
+                      </label>
+                      <label className="block text-xs text-text-secondary">
+                        API password
+                        <input
+                          type="password"
+                          className="input mt-1 w-full"
+                          placeholder="Leave blank to keep"
+                          value={shipPassword}
+                          onChange={(e) => setShipPassword(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 text-xs text-text-secondary">
+                      <p className="font-medium text-text-primary">Tracking webhook token</p>
                       <p className="mt-1">
                         {shipWebhookConfigured
                           ? 'A token is saved. Generate a new one only if you are replacing it in Shiprocket.'
@@ -895,7 +1002,7 @@ export default function OnlineStoreSettingsPage() {
                         <input
                           readOnly
                           data-testid="shiprocket-webhook-token"
-                          className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
+                          className="input w-full font-mono"
                           placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
                           value={shipWebhookToken}
                         />
@@ -908,100 +1015,122 @@ export default function OnlineStoreSettingsPage() {
                         </Button>
                       </div>
                       {shipWebhookToken ? (
-                        <p className="mt-2 text-amber-700">
+                        <p className="mt-2 text-amber-700 dark:text-amber-300">
                           Copy this token into Shiprocket, then save. It is not shown again.
                         </p>
                       ) : null}
                     </div>
-                  </div>
+                  </SetupBlock>
                 ) : null}
-              </Card>
-              <Card className="p-5">
-                {business?.id ? <StoreCouponManager businessId={business.id} /> : null}
-              </Card>
-              <Card className="p-5">
-                <StoreKhataSettings />
-              </Card>
-              <Card className="p-5">
-                <h3 className="text-sm font-semibold text-gray-900">Delivery zones</h3>
-                <p className="mt-1 mb-4 text-xs text-gray-500">Area and charges for each branch.</p>
-                {business?.id ? <DeliveryZoneEditor businessId={business.id} /> : null}
-              </Card>
-              <Card className="p-5">
-                <h3 className="text-sm font-semibold text-gray-900">Products</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  In Items, turn on “Show in Store” for each product customers should see.
-                </p>
-              </Card>
+                <SetupRow
+                  label="Return window"
+                  hint="Days after delivery a buyer can ask for a return from their account. 0 turns online returns off."
+                  htmlFor="store-return-days"
+                >
+                  <AffixInput
+                    id="store-return-days"
+                    min={0}
+                    max={90}
+                    suffix="days"
+                    value={returnDays}
+                    onChange={setReturnDays}
+                  />
+                </SetupRow>
+                <div id="store-delivery-areas" className="scroll-mt-24">
+                  <SetupBlock>
+                    <p className="text-sm font-medium text-text-primary">Delivery areas</p>
+                    <p className="mt-0.5 mb-3 text-xs text-text-secondary">
+                      Area and charges for each branch. Each branch saves with its own Save.
+                    </p>
+                    {business?.id ? (
+                      <DeliveryZoneEditor businessId={business.id} onActiveZonesChange={setActiveZones} />
+                    ) : null}
+                  </SetupBlock>
+                </div>
+              </SetupGroup>
+
+              {business?.id ? <StoreCouponManager businessId={business.id} /> : null}
+
+              <StoreKhataSettings value={khata} counts={khataCounts} onChange={setKhata} />
+
+              <SetupGroup icon={Sparkles} title="Branding" testId="store-setup-branding">
+                <SetupRow label="Hide “Powered by Khatario”" hint="Removes the Khatario line from your store's footer.">
+                  <SetupSwitch
+                    label="Hide Powered by Khatario"
+                    on={hideBadge}
+                    onToggle={() => setHideBadge((v) => !v)}
+                  />
+                </SetupRow>
+              </SetupGroup>
             </div>
           ) : null}
-
           {tab === 'pages' ? (
             <Card className="p-5 space-y-4">
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 About page
                 <textarea
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={5}
                   value={aboutMd}
                   onChange={(e) => setAboutMd(e.target.value)}
                 />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Contact page
                 <textarea
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={5}
                   value={contactMd}
                   onChange={(e) => setContactMd(e.target.value)}
                 />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Privacy policy
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Refund policy
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
               </label>
-              <label className="block text-xs text-gray-500">
+              <label className="block text-xs text-text-secondary">
                 Terms and conditions
-                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
+                <textarea className="input mt-1 w-full" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
               </label>
             </Card>
           ) : null}
         </div>
 
-        {showPreview ? (
-          <aside className="mt-6 hidden xl:block">
+        {previewOn ? (
+          <aside className="mt-6 hidden 2xl:block">
             <div className="sticky top-24">
-              <StoreLivePreview
-                storeName={business?.name ?? 'Your store'}
-                tagline={tagline}
-                heroUrl={heroUrl}
-                theme={previewTheme}
-                categories={categories}
-                iframeSrc={previewSrc}
-                updating={previewBusy}
-              />
+              <StoreLivePreview iframeSrc={previewSrc} />
             </div>
           </aside>
         ) : null}
       </div>
 
-      <div className="mt-6 xl:hidden">
-        {showPreview ? (
-          <StoreLivePreview
-            storeName={business?.name ?? 'Your store'}
-            tagline={tagline}
-            heroUrl={heroUrl}
-            theme={previewTheme}
-            categories={categories}
-            iframeSrc={previewSrc}
-            updating={previewBusy}
-          />
+      <div className="mt-6 2xl:hidden">
+        {previewOn ? (
+          <StoreLivePreview iframeSrc={previewSrc} />
         ) : null}
       </div>
+
+      {dirty || saving ? (
+        <SettingsFloatingSaveBar align="between">
+          <span className="flex min-w-0 items-center gap-2 text-sm text-text-secondary" data-testid="store-save-bar">
+            <CircleDot className="h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden />
+            {saving ? 'Saving your changes' : 'You have unsaved changes'}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={discardChanges} disabled={saving}>
+              Discard
+            </Button>
+            <Button type="button" onClick={() => void handleSave()} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save changes'}
+            </Button>
+          </div>
+        </SettingsFloatingSaveBar>
+      ) : null}
     </SettingsPageShell>
   );
 }

@@ -22,6 +22,10 @@ class KhatarioApi {
   void Function(ApiException error)? onSessionEnded;
   bool _sessionEndSent = false;
 
+  /// Set by the signed-in shell: a write the plan does not allow ("not in your plan" or
+  /// "limit reached") calls this so the upgrade sheet opens on every screen.
+  void Function(String method, ApiException error)? onUpgradeNeeded;
+
   void watchSession(void Function(ApiException error)? onEnded) {
     onSessionEnded = onEnded;
     _sessionEndSent = false;
@@ -110,7 +114,7 @@ class KhatarioApi {
     final bytes = res.data ?? const <int>[];
     if ((res.statusCode ?? 500) >= 400) {
       final parsed = _errorFromBytes(bytes);
-      throw _fail(res.statusCode, parsed?.$1, parsed?.$2);
+      throw _fail(res.statusCode, parsed?.$1, parsed?.$2, method: 'POST', body: _bodyFromBytes(bytes));
     }
     return bytes;
   }
@@ -125,14 +129,25 @@ class KhatarioApi {
     }
   }
 
-  ApiException _fail(int? status, String? error, String? code) {
+  static Map<String, dynamic> _bodyFromBytes(List<int> bytes) {
+    try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  ApiException _fail(int? status, String? error, String? code, {String method = 'GET', Map<String, dynamic> body = const {}}) {
     final message = (error == null || error.isEmpty) ? 'Request failed ($status)' : error;
-    final exception = ApiException(message, status: status, code: code);
+    final exception = ApiException(message, status: status, code: code, body: body);
     final ended = onSessionEnded;
     if (ended != null && !_sessionEndSent && sessionWasEnded(status, code, message)) {
       _sessionEndSent = true;
       ended(exception);
     }
+    final upgrade = onUpgradeNeeded;
+    if (upgrade != null && status == 403 && upgradeReplyCodes.contains(code)) upgrade(method.toUpperCase(), exception);
     return exception;
   }
 
@@ -140,11 +155,15 @@ class KhatarioApi {
     final data = res.data;
     final body = data is Map<String, dynamic> ? data : (data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{});
     if ((res.statusCode ?? 500) >= 400) {
-      throw _fail(res.statusCode, body['error']?.toString(), body['code']?.toString());
+      throw _fail(res.statusCode, body['error']?.toString(), body['code']?.toString(),
+          method: res.requestOptions.method, body: body);
     }
     return body;
   }
 }
+
+/// Server codes that mean the plan, not the user, stopped the request.
+const upgradeReplyCodes = {'FEATURE_NOT_IN_PLAN', 'FEATURE_NOT_AVAILABLE', 'SUBSCRIPTION_LIMIT_EXCEEDED'};
 
 /// True when the server rejected this device's login. A wrong password is not this.
 bool sessionWasEnded(int? status, String? code, String message) {
@@ -158,10 +177,13 @@ bool sessionWasEnded(int? status, String? code, String message) {
 }
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.status, this.code});
+  ApiException(this.message, {this.status, this.code, this.body = const {}});
   final String message;
   final int? status;
   final String? code;
+
+  /// The error reply's JSON (feature, limit_type, limit, current…).
+  final Map<String, dynamic> body;
 
   @override
   String toString() => message;

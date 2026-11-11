@@ -43,10 +43,8 @@ export async function GET(request: NextRequest) {
       try {
         const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
         accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-        console.log(`[Dashboard Overview] User ${userId} accessible branches:`, accessibleBranchIds);
         if (accessibleBranchIds.length === 0) {
           // User has no branch access - return empty results
-          console.log(`[Dashboard Overview] User ${userId} has no branch access, returning empty results`);
           return NextResponse.json({
             sales: 0,
             purchases: 0,

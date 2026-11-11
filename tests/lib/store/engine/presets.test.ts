@@ -3,6 +3,11 @@ import { sanitizeThemeData, ID_RE } from '@/lib/store/engine/sanitize';
 import { section, template } from '@/lib/store/engine/presets/shared';
 import { heritagePreset } from '@/lib/store/engine/presets/heritage';
 import { getSectionSchema } from '@/lib/store/engine/registry';
+import { dropPreset } from '@/lib/store/engine/presets/drop';
+import { bazaarPreset } from '@/lib/store/engine/presets/bazaar';
+import { defaultSettings } from '@/lib/store/engine/shared';
+import { CARD_LINE_IDS } from '@/lib/store/engine/product-card';
+import type { Section, ThemeData, ThemePreset } from '@/lib/store/engine/types';
 
 // The product and catalog templates' section ids are fresh per call (newId), so determinism is checked on their sections in order.
 function stable(p: ReturnType<typeof presetTheme>) {
@@ -330,5 +335,426 @@ describe('heritage preset', () => {
     }
     const cols = Object.values(h.sections.multicolumn.blocks).map((b) => b.settings.title);
     expect(cols).toEqual(['Delivery', 'Materials', 'Made to measure', 'Personal service']);
+  });
+});
+
+const allSections = (t: ThemeData): Section[] => [
+  ...Object.values(t.header_group.sections),
+  ...Object.values(t.footer_group.sections),
+  ...Object.values(t.templates).flatMap((tpl) => Object.values(tpl.sections)),
+];
+
+/** A section's settings with its schema defaults filled in, as the storefront reads them. */
+function resolved(s: Section): Record<string, unknown> {
+  return { ...defaultSettings(getSectionSchema(s.type)!.settings), ...s.settings };
+}
+
+/** Every block of `type` in `s`, with its schema defaults filled in. */
+function blocksOf(s: Section, type: string): Record<string, unknown>[] {
+  const schema = getSectionSchema(s.type)!.blocks?.find((b) => b.type === type);
+  return s.block_order
+    .map((id) => s.blocks[id])
+    .filter((b) => b.type === type)
+    .map((b) => ({ ...defaultSettings(schema!.settings), ...b.settings }));
+}
+
+const sectionTypes = (tpl: ThemeData['templates'][string]) => tpl.order.map((id) => tpl.sections[id].type);
+
+describe('drop preset', () => {
+  const CTX = ctx;
+  const bare = { businessName: 'X', tagline: '' };
+  const home = () => dropPreset(CTX).templates.home;
+
+  it('drop uses only registry sections and unique ids', () => {
+    const long = { businessName: `A & B <Drops> ${'x'.repeat(200)}`, tagline: `Heavy & <loud> ${'x'.repeat(600)}` };
+    for (const c of [CTX, bare, { businessName: '', tagline: '' }, long]) {
+      const p = presetTheme('drop', c);
+      expect(sanitizeThemeData(p)).toEqual(p);
+    }
+    for (const s of allSections(presetTheme('drop', CTX))) {
+      const schema = getSectionSchema(s.type);
+      expect(schema).not.toBeNull();
+      for (const b of Object.values(s.blocks)) expect(schema!.blocks?.some((bs) => bs.type === b.type)).toBe(true);
+    }
+    const p = presetTheme('drop', CTX);
+    const ids = [...p.header_group.order, ...p.templates.home.order, ...p.footer_group.order];
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const tpl of [p.header_group, p.footer_group, ...Object.values(p.templates)]) {
+      for (const id of tpl.order) expect(id).toMatch(ID_RE);
+      expect(new Set(tpl.order).size).toBe(tpl.order.length);
+      for (const s of Object.values(tpl.sections)) {
+        for (const id of s.block_order) expect(id).toMatch(ID_RE);
+        expect(new Set(s.block_order).size).toBe(s.block_order.length);
+      }
+    }
+    expect(stable(presetTheme('drop', CTX))).toEqual(stable(presetTheme('drop', CTX)));
+    expect(JSON.stringify(p).length).toBeLessThan(65536);
+  });
+
+  it('drop turns on its card and product settings', () => {
+    const p = sanitizeThemeData(presetTheme('drop', CTX));
+    const card = p.settings.product_card;
+    expect(card).toMatchObject({ design: 'dark', image_shape: 'portrait', image_hover: 'second', badge_shape: 'corner', button_style: 'icon', oos_look: 'label', oos_place: 'end' });
+    expect(card.lines).toEqual([
+      { id: 'name', on: true },
+      { id: 'price', on: true },
+      { id: 'sizes', on: true },
+      { id: 'buttons', on: true },
+      { id: 'brand', on: false },
+      { id: 'unit', on: false },
+      { id: 'rating', on: false },
+      { id: 'tagline', on: false },
+      { id: 'packs', on: false },
+      { id: 'swatches', on: false },
+    ]);
+    expect(card.lines.map((l) => l.id).sort()).toEqual([...CARD_LINE_IDS].sort());
+    const product = p.templates.product;
+    expect(sectionTypes(product)).toEqual(['main-product', 'related-products', 'product-reviews', 'recently-viewed']);
+    const main = product.sections['main-product'];
+    expect(main.settings).toMatchObject({ thumbs: 'grid', sticky_info: true, sticky_buy_bar: true });
+    expect(main.block_order.map((id) => main.blocks[id].type)).toEqual([
+      'title', 'price', 'variant_picker', 'buy_buttons', 'description', 'delivery_check', 'collapsible_tab', 'collapsible_tab', 'collapsible_tab',
+    ]);
+    expect(blocksOf(main, 'variant_picker')).toEqual([expect.objectContaining({ low_stock_at: 3 })]);
+    expect(blocksOf(main, 'collapsible_tab').map((b) => b.heading)).toEqual(['Details', 'Fabric and care', 'Exchange and returns']);
+    expect(product.sections['related-products'].settings.heading).toBe('Complete the fit');
+    const hero = p.templates.home.sections['image-banner'];
+    expect(hero.color_scheme).toBe('scheme-6');
+    const heroBlocks = hero.block_order.map((id) => hero.blocks[id]);
+    expect(heroBlocks.map((b) => b.type)).toEqual(['eyebrow', 'heading', 'countdown', 'button']);
+    expect(heroBlocks.filter((b) => b.type === 'countdown')).toHaveLength(1);
+    expect(blocksOf(hero, 'countdown')[0].ends_at).toBe('');
+  });
+
+  it('has the home order, schemes and copy from the spec', () => {
+    const p = presetTheme('drop', CTX);
+    const h = p.templates.home;
+    expect(sectionTypes(h)).toEqual([
+      'image-banner', 'marquee', 'featured-products', 'category-grid', 'video', 'promo-cards', 'shop-the-look', 'countdown', 'image-gallery', 'testimonials', 'multicolumn', 'newsletter',
+    ]);
+    const s = h.sections;
+    const hero = s['image-banner'];
+    expect(hero.settings).toMatchObject({ layout: 'image-text', image: '/store-presets/drop/hero-1.svg' });
+    const heroBlocks = hero.block_order.map((id) => hero.blocks[id].settings);
+    expect(heroBlocks[0]).toMatchObject({ text: 'New drop' });
+    expect(heroBlocks[1]).toMatchObject({ text: 'Rose Mart', size: 'xxl' });
+    expect(heroBlocks[3]).toMatchObject({ label: 'Shop the drop', link: '/catalog' });
+    const bareHero = dropPreset({ businessName: '  ', tagline: '' }).templates.home.sections['image-banner'];
+    expect(bareHero.blocks['heading-1'].settings.text).toBe('Summer drop');
+    expect(s.marquee.color_scheme).toBe('scheme-1');
+    expect(s.marquee.block_order.map((id) => s.marquee.blocks[id].settings.text)).toEqual(['New drop', 'Heavyweight cotton', 'Ships in 24 hours', '7-day exchange']);
+    expect(s['featured-products'].settings).toMatchObject({ heading: 'Just dropped', columns: 4, show_badges: true });
+    const grid = s['category-grid'];
+    expect(grid.block_order.map((id) => grid.blocks[id].settings.image)).toEqual([1, 2, 3].map((n) => `/store-presets/drop/category-${n}.svg`));
+    expect(s.video.color_scheme).toBe('scheme-2');
+    expect(resolved(s.video)).toMatchObject({ heading: 'On the streets', video_url: '' });
+    const promos = s['promo-cards'];
+    expect(promos.settings).toMatchObject({ style: 'overlay', columns: 2 });
+    expect(promos.block_order.map((id) => promos.blocks[id].settings)).toEqual([
+      expect.objectContaining({ eyebrow: 'Combo', heading: 'Any 3 @ ₹999', image: '/store-presets/drop/promo-1.svg' }),
+      expect.objectContaining({ eyebrow: 'Last call', heading: 'Up to 40% off', image: '/store-presets/drop/promo-2.svg' }),
+    ]);
+    expect(s['shop-the-look'].settings).toMatchObject({ heading: 'Shop the fit', image: '/store-presets/drop/look-1.svg' });
+    expect(s.countdown.color_scheme).toBe('scheme-4');
+    expect(resolved(s.countdown)).toMatchObject({ heading: 'Next drop', ends_at: '', link: '', button_label: 'Get drop alerts' });
+    expect(s['image-gallery'].settings).toMatchObject({ layout: 'grid', columns: 4 });
+    expect(s['image-gallery'].block_order).toHaveLength(4);
+    expect(s.testimonials.settings.show_summary).toBe(true);
+    expect(s.multicolumn.block_order.map((id) => s.multicolumn.blocks[id].settings.title)).toEqual(['Cash on delivery', '7-day exchange', 'Ships in 24 hours']);
+    expect(s.newsletter.color_scheme).toBe('scheme-3');
+    expect(s.newsletter.settings.heading).toBe('Join the crew');
+    expect(p.header_group.order).toEqual(['announcement', 'header']);
+    const a = p.header_group.sections.announcement;
+    expect(a.color_scheme).toBe('scheme-4');
+    expect(a.settings).toMatchObject({ scrolling: true, text: 'Free shipping over ₹699 · COD available · Any 3 tees @ ₹999' });
+    const f = p.footer_group.sections.footer;
+    expect(f.color_scheme).toBe('scheme-1');
+    expect(f.settings.show_payment_icons).toBe(true);
+    expect(sectionTypes(p.templates.catalog)).toEqual(['catalog-banner', 'main-catalog']);
+    const [banner, catalogGrid] = p.templates.catalog.order.map((id) => p.templates.catalog.sections[id]);
+    expect(banner.color_scheme).toBe('scheme-6');
+    expect(catalogGrid.settings).toMatchObject({ columns_desktop: 4, columns_mobile: 2 });
+  });
+
+  it('the Main catalog has one promo tile, after the fifth product', () => {
+    const p = presetTheme('drop', CTX);
+    const grid = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
+    expect(grid.block_order).toHaveLength(1);
+    const tile = grid.blocks[grid.block_order[0]];
+    expect(tile.type).toBe('promo');
+    expect(tile.settings).toEqual({
+      image: '/store-presets/drop/promo-1.svg',
+      heading: 'Any 3 tees @ ₹999',
+      text: 'Mix any tees',
+      link: '/catalog',
+      position: 5,
+    });
+    const kept = sanitizeThemeData(p).templates.catalog.sections;
+    const keptGrid = Object.values(kept).find((s) => s.type === 'main-catalog')!;
+    expect(keptGrid.block_order).toHaveLength(1);
+    expect(keptGrid.blocks[keptGrid.block_order[0]].settings).toMatchObject({ heading: 'Any 3 tees @ ₹999', position: 5 });
+    // A demo store's own picture replaces the sample one.
+    const demo = presetTheme('drop', { ...CTX, images: { 'promo-1': '/theme-demos/streetwear/promo-denim.webp' } });
+    const demoGrid = Object.values(demo.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(demoGrid.blocks[demoGrid.block_order[0]].settings.image).toBe('/theme-demos/streetwear/promo-denim.webp');
+  });
+
+  it('ignores the store accent', () => {
+    expect(presetTheme('drop', CTX).settings.color_schemes).toEqual(presetTheme('drop', bare).settings.color_schemes);
+    expect(presetTheme('drop', CTX).settings.color_schemes[0].accent).toBe('#d4ff3a');
+  });
+
+  it('points every sample image at a small file that ships', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const urls = new Set(JSON.stringify(dropPreset(CTX)).match(/\/store-presets\/drop\/[a-z0-9-]+\.svg/g) ?? []);
+    expect([...urls].sort()).toEqual(
+      ['hero-1', 'promo-1', 'promo-2', 'look-1', 'gallery-1', 'gallery-2', 'gallery-3', 'gallery-4', 'category-1', 'category-2', 'category-3']
+        .map((n) => `/store-presets/drop/${n}.svg`)
+        .sort(),
+    );
+    for (const u of urls) {
+      const file = path.join(process.cwd(), 'public', u);
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeLessThan(4096);
+    }
+  });
+
+  it('invents no reviews or press', () => {
+    const quotes = Object.values(home().sections.testimonials.blocks);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0].settings).toMatchObject({ text: 'Tell shoppers what a customer said about you.', name: 'A customer' });
+    expect(quotes[0].settings.photo).toBeUndefined();
+    expect(allSections(dropPreset(CTX)).map((s) => s.type)).not.toContain('logo-list');
+  });
+});
+
+describe('existing presets keep the new pieces off', () => {
+  const EXISTING: ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage'];
+
+  it.each(EXISTING)('%s', (name) => {
+    const p = sanitizeThemeData(presetTheme(name, ctx));
+    expect(p.settings.product_card.lines.find((l) => l.id === 'sizes')).toEqual({ id: 'sizes', on: false });
+    const sections = allSections(p);
+    for (const s of sections.filter((x) => x.type === 'image-banner' || x.type === 'slideshow')) {
+      expect(Object.values(s.blocks).some((b) => b.type === 'countdown')).toBe(false);
+    }
+    const mains = sections.filter((x) => x.type === 'main-product');
+    expect(mains.length).toBeGreaterThan(0);
+    for (const m of mains) {
+      expect(Object.values(m.blocks).some((b) => b.type === 'delivery_check')).toBe(false);
+      for (const v of blocksOf(m, 'variant_picker')) expect(v.low_stock_at).toBe(0);
+      // `thumbs` was `side` (the default, never set by a preset) before the photo grid existed.
+      expect(resolved(m)).toMatchObject({ sticky_buy_bar: false, thumbs: 'side' });
+    }
+  });
+});
+
+describe('existing presets keep the Bazaar pieces off', () => {
+  const EXISTING: ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop'];
+
+  it.each(EXISTING)('%s', (name) => {
+    const p = sanitizeThemeData(presetTheme(name, ctx));
+    const card = p.settings.product_card;
+    expect(card.lines.find((l) => l.id === 'packs')).toEqual({ id: 'packs', on: false });
+    expect(card.unit_price).toBe(false);
+    expect(card.discount_badge).toBe('percent');
+    expect(p.settings).toMatchObject({
+      cart_free_ship_bar: false,
+      cart_suggestions: false,
+      cart_suggestions_heading: 'Pair it with',
+      cart_whatsapp_order: false,
+    });
+    const sections = allSections(p);
+    const headers = sections.filter((x) => x.type === 'header');
+    expect(headers.length).toBeGreaterThan(0);
+    for (const h of headers) expect(resolved(h).show_open_status).toBe(false);
+    const mains = sections.filter((x) => x.type === 'main-product');
+    expect(mains.length).toBeGreaterThan(0);
+    for (const m of mains) for (const v of blocksOf(m, 'variant_picker')) expect(v.style).toBe('buttons');
+    for (const m of mains) for (const pr of blocksOf(m, 'price')) expect(pr.show_you_save).toBe(false);
+    expect(sections.map((s) => s.type)).not.toContain('buy-again');
+    expect(sections.map((s) => s.type)).not.toContain('store-info');
+  });
+});
+
+describe('bazaar preset', () => {
+  const bare = { businessName: 'X', tagline: '' };
+
+  it('bazaar uses only registry sections and unique ids', () => {
+    for (const s of allSections(presetTheme('bazaar', ctx))) {
+      const schema = getSectionSchema(s.type);
+      expect(schema).not.toBeNull();
+      for (const b of Object.values(s.blocks)) expect(schema!.blocks?.some((bs) => bs.type === b.type)).toBe(true);
+    }
+    const p = presetTheme('bazaar', ctx);
+    const ids = [...p.header_group.order, ...p.templates.home.order, ...p.footer_group.order];
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const tpl of [p.header_group, p.footer_group, ...Object.values(p.templates)]) {
+      for (const id of tpl.order) expect(id).toMatch(ID_RE);
+      expect(new Set(tpl.order).size).toBe(tpl.order.length);
+      for (const s of Object.values(tpl.sections)) {
+        for (const id of s.block_order) expect(id).toMatch(ID_RE);
+        expect(new Set(s.block_order).size).toBe(s.block_order.length);
+      }
+    }
+    expect(stable(presetTheme('bazaar', ctx))).toEqual(stable(presetTheme('bazaar', ctx)));
+    expect(JSON.stringify(p).length).toBeLessThan(65536);
+  });
+
+  it('sanitizeThemeData(bazaar) equals bazaar', () => {
+    const long = { businessName: `Sharma & Sons <Kirana> ${'x'.repeat(200)}`, tagline: `Atta & <dal> ${'x'.repeat(600)}` };
+    for (const c of [ctx, bare, { businessName: '', tagline: '' }, long]) {
+      const p = presetTheme('bazaar', c);
+      expect(sanitizeThemeData(p)).toEqual(p);
+    }
+  });
+
+  it('bazaar ignores the store accent', () => {
+    expect(presetTheme('bazaar', ctx).settings.color_schemes).toEqual(presetTheme('bazaar', bare).settings.color_schemes);
+    expect(presetTheme('bazaar', ctx).settings.color_schemes[0].accent).toBe('#e8590c');
+  });
+
+  it('bazaar turns on its pieces', () => {
+    const p = sanitizeThemeData(presetTheme('bazaar', ctx));
+    const card = p.settings.product_card;
+    expect(card).toMatchObject({
+      design: 'grocery',
+      image_shape: 'square',
+      image_bg: '#fff6ea',
+      radius: 18,
+      border: 1,
+      badge_shape: 'pill',
+      discount_badge: 'rupees',
+      unit_price: true,
+      button_style: 'full',
+      after_add: 'stepper',
+      oos_look: 'faded',
+      oos_place: 'end',
+    });
+    expect(card.lines).toEqual([
+      { id: 'name', on: true },
+      { id: 'packs', on: true },
+      { id: 'price', on: true },
+      { id: 'buttons', on: true },
+      { id: 'brand', on: false },
+      { id: 'unit', on: false },
+      { id: 'rating', on: false },
+      { id: 'tagline', on: false },
+      { id: 'sizes', on: false },
+      { id: 'swatches', on: false },
+    ]);
+    expect(card.lines.map((l) => l.id).sort()).toEqual([...CARD_LINE_IDS].sort());
+    expect(p.settings).toMatchObject({
+      cart_free_ship_bar: true,
+      cart_suggestions: true,
+      cart_suggestions_heading: 'You may also need',
+      cart_whatsapp_order: true,
+    });
+    const header = p.header_group.sections.header;
+    expect(header.color_scheme).toBe('scheme-3');
+    expect(header.settings).toMatchObject({ show_open_status: true, show_category_chips: true, search_placeholder: 'Search atta, dal, milk, masala…' });
+    const main = p.templates.product.sections[p.templates.product.order[0]];
+    expect(main.type).toBe('main-product');
+    expect(blocksOf(main, 'variant_picker')).toEqual([expect.objectContaining({ style: 'tiles', low_stock_at: 3 })]);
+    expect(blocksOf(main, 'price')).toEqual([expect.objectContaining({ show_you_save: true })]);
+    expect(sectionTypes(p.templates.home)).toEqual(expect.arrayContaining(['buy-again', 'store-info']));
+    const grid = Object.values(p.templates.catalog.sections).find((s) => s.type === 'main-catalog')!;
+    expect(grid.settings.layout).toBe('rail');
+  });
+
+  it('has the pages from the spec', () => {
+    const p = presetTheme('bazaar', ctx);
+    expect(p.header_group.order).toEqual(['announcement', 'header']);
+    const a = p.header_group.sections.announcement;
+    expect(a.color_scheme).toBe('scheme-4');
+    expect(a.settings.text).toBe('Free delivery above ₹299 · Cash, UPI or khata on delivery');
+    expect(p.header_group.sections.header.settings.logo_url).toBe('https://example.com/logo.png');
+
+    const h = p.templates.home;
+    expect(sectionTypes(h)).toEqual([
+      'category-grid', 'image-banner', 'buy-again', 'featured-products', 'promo-cards', 'category-shelves', 'multicolumn', 'store-info', 'newsletter',
+    ]);
+    const s = h.sections;
+    const cats = s['category-grid'];
+    expect(cats.settings).toMatchObject({ heading: 'Shop by category', style: 'tiles', columns: 8 });
+    expect(cats.block_order.map((id) => cats.blocks[id].settings.image)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/store-presets/bazaar/category-${n}.svg`));
+
+    const hero = s['image-banner'];
+    expect(hero.color_scheme).toBe('scheme-4');
+    expect(hero.settings).toMatchObject({ layout: 'over', image: '/store-presets/bazaar/hero-1.svg' });
+    const heroBlocks = hero.block_order.map((id) => hero.blocks[id]);
+    expect(heroBlocks.map((b) => b.type)).toEqual(['eyebrow', 'heading', 'countdown', 'button']);
+    expect(heroBlocks[0].settings).toMatchObject({ text: 'Maha Bachat Week' });
+    expect(heroBlocks[1].settings).toMatchObject({ text: 'Up to 40% off on staples', size: 'xl' });
+    expect(heroBlocks[2].settings.ends_at).toBe('');
+    expect(heroBlocks[3].settings).toMatchObject({ label: 'Shop deals', link: '/catalog' });
+
+    expect(s['featured-products'].settings).toMatchObject({ heading: "Today's deals", source: 'discounted', columns: 5, mobile_columns: '2' });
+    const promos = s['promo-cards'];
+    expect(promos.block_order.map((id) => promos.blocks[id].settings)).toEqual([
+      expect.objectContaining({ heading: 'Fresh every morning', text: 'Sabzi from the mandi', image: '/store-presets/bazaar/promo-1.svg' }),
+      expect.objectContaining({ heading: 'Monthly ration pack', text: 'Save on atta, rice and dal', image: '/store-presets/bazaar/promo-2.svg' }),
+    ]);
+    expect(s['category-shelves'].settings.max_categories).toBe(2);
+    expect(s.multicolumn.color_scheme).toBe('scheme-2');
+    expect(s.multicolumn.block_order.map((id) => s.multicolumn.blocks[id].settings.title)).toEqual([
+      'Cash, UPI or khata on delivery', 'Fresh or we replace it', 'Free delivery above ₹299', 'Order on call or WhatsApp',
+    ]);
+    expect(s.newsletter.color_scheme).toBe('scheme-2');
+    expect(s.newsletter.settings.heading).toBe('Get offers first');
+
+    const grid = Object.values(p.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(grid.settings).toMatchObject({ layout: 'rail', columns_desktop: 4, columns_mobile: 2, show_filters: true, show_sort: true });
+    expect(grid.block_order).toHaveLength(1);
+    expect(grid.blocks[grid.block_order[0]]).toEqual({
+      type: 'promo',
+      settings: { image: '/store-presets/bazaar/catalog-promo.svg', heading: 'Monthly ration', text: 'Atta + rice + dal, save ₹250', link: '/catalog', position: 5 },
+    });
+
+    const product = p.templates.product;
+    expect(sectionTypes(product)).toEqual(['main-product', 'related-products', 'recently-viewed']);
+    const main = product.sections['main-product'];
+    expect(main.settings).toMatchObject({ thumbs: 'bottom', sticky_info: true, sticky_buy_bar: true });
+    expect(main.block_order.map((id) => main.blocks[id].type)).toEqual([
+      'title', 'price', 'variant_picker', 'buy_buttons', 'delivery_check', 'description', 'collapsible_tab', 'collapsible_tab', 'collapsible_tab',
+    ]);
+    expect(blocksOf(main, 'collapsible_tab').map((b) => b.heading)).toEqual(['Product details', 'Storage and shelf life', 'Returns']);
+    expect(product.sections['related-products'].settings.heading).toBe('You may also need');
+
+    const f = p.footer_group.sections.footer;
+    expect(f.color_scheme).toBe('scheme-4');
+    expect(f.settings).toMatchObject({ show_payment_icons: true, about: 'Fresh finds, fast delivery' });
+    expect(presetTheme('bazaar', bare).footer_group.sections.footer.settings.about).toBeUndefined();
+  });
+
+  it('a demo store swaps the sample pictures for its own', () => {
+    const demo = presetTheme('bazaar', { ...ctx, images: { 'hero-1': '/theme-demos/kirana/hero.webp', 'catalog-promo': '/theme-demos/kirana/promo.webp' } });
+    expect(demo.templates.home.sections['image-banner'].settings.image).toBe('/theme-demos/kirana/hero.webp');
+    const grid = Object.values(demo.templates.catalog.sections).find((x) => x.type === 'main-catalog')!;
+    expect(grid.blocks[grid.block_order[0]].settings.image).toBe('/theme-demos/kirana/promo.webp');
+  });
+
+  it('points every sample image at a small file that ships', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const urls = new Set(JSON.stringify(bazaarPreset(ctx)).match(/\/store-presets\/bazaar\/[a-z0-9-]+\.svg/g) ?? []);
+    expect([...urls].sort()).toEqual(
+      ['hero-1', 'promo-1', 'promo-2', 'catalog-promo', ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `category-${n}`)]
+        .map((n) => `/store-presets/bazaar/${n}.svg`)
+        .sort(),
+    );
+    for (const u of urls) {
+      const file = path.join(process.cwd(), 'public', u);
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeLessThan(4096);
+    }
+  });
+
+  it('invents no reviews or press', () => {
+    const types = allSections(bazaarPreset(ctx)).map((s) => s.type);
+    expect(types).not.toContain('testimonials');
+    expect(types).not.toContain('product-reviews');
+    expect(types).not.toContain('logo-list');
   });
 });

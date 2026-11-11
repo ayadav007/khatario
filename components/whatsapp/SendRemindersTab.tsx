@@ -144,7 +144,9 @@ export function SendRemindersTab() {
       } else if (data.code === 'WHATSAPP_NOT_CONNECTED') {
         setWhatsappReady(false);
         setConnectOpen(true);
-      } else if (data.code === 'LIMIT_EXCEEDED' || data.code === 'BATCH_TOO_LARGE') {
+      } else if (data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') {
+        // The upgrade popup opens on its own for this reply (FeatureUpgradeModalProvider).
+      } else if (data.code === 'BATCH_TOO_LARGE') {
         setToast({ message: `Cannot send reminders: ${data.error}`, type: 'error' });
       } else {
         setToast({ message: `Failed to send reminders: ${data.error}`, type: 'error' });

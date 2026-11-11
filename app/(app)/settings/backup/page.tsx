@@ -127,10 +127,8 @@ export default function BackupRestorePage() {
     try {
       const response = await fetch(`/api/backup/history?business_id=${business?.id}&limit=10`);
       const data = await response.json();
-      console.log('Backup history response:', data); // DEBUG
       if (data.success) {
         setHistory(data.backups);
-        console.log('Loaded backups:', data.backups); // DEBUG
       } else {
         console.error('Failed to load history:', data); // DEBUG
       }
@@ -373,7 +371,6 @@ export default function BackupRestorePage() {
       title="Backup & restore"
       description="Keep your data safe with automated backups and cloud storage"
       icon={DatabaseIcon}
-      className="p-4 sm:p-6"
     >
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -385,7 +382,7 @@ export default function BackupRestorePage() {
           <button
             onClick={handleCreateBackup}
             disabled={creating}
-            className="flex items-center space-x-2 px-6 py-3 bg-surface dark:bg-slate-900/70 text-primary-600 rounded-lg hover:bg-slate-50 transition disabled:opacity-50 font-semibold"
+            className="flex items-center space-x-2 px-6 py-3 bg-surface text-primary-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 transition disabled:opacity-50 font-semibold"
           >
             <Download className="w-5 h-5" />
             <span>{creating ? 'Creating...' : 'Create Backup'}</span>
@@ -402,7 +399,7 @@ export default function BackupRestorePage() {
           <p className="text-purple-100 text-sm mb-4">
             Upload and restore from backup file
           </p>
-          <label className="flex items-center space-x-2 px-6 py-3 bg-surface dark:bg-slate-900/70 text-purple-600 rounded-lg hover:bg-purple-50 transition cursor-pointer font-semibold">
+          <label className="flex items-center space-x-2 px-6 py-3 bg-surface text-purple-600 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/30 transition cursor-pointer font-semibold">
             <Upload className="w-5 h-5" />
             <span>Select Backup File</span>
             <input
@@ -423,8 +420,8 @@ export default function BackupRestorePage() {
       {/* Google Credentials Modal */}
       {showGoogleCredentialsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-2xl max-w-2xl w-full">
-            <div className="sticky top-0 bg-surface dark:bg-slate-900/70 border-b px-6 py-4 flex items-center justify-between rounded-t-xl">
+          <div className="bg-surface rounded-xl shadow-2xl max-w-2xl w-full">
+            <div className="sticky top-0 bg-surface border-b px-6 py-4 flex items-center justify-between rounded-t-xl">
               <h3 className="text-lg font-bold">Configure Google Drive</h3>
               <button onClick={() => setShowGoogleCredentialsModal(false)} className="text-text-muted hover:text-text-secondary">
                 <X className="w-5 h-5" />
@@ -432,15 +429,15 @@ export default function BackupRestorePage() {
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="bg-slate-50 border border-primary-200 rounded-lg p-4">
-                <h4 className="font-semibold text-primary-900 mb-2">Setup Instructions</h4>
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-4">
+                <h4 className="font-semibold text-primary-900 dark:text-primary-200 mb-2">Setup Instructions</h4>
                 <ol className="text-sm text-primary-800 space-y-2 list-decimal list-inside">
                   <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a></li>
                   <li>Create a new project or select existing</li>
                   <li>Enable <strong>Google Drive API</strong></li>
                   <li>Go to Credentials → Create OAuth 2.0 Client ID</li>
                   <li>Application type: <strong>Web application</strong></li>
-                  <li>Add Authorized redirect URI: <code className="bg-surface dark:bg-slate-900/70 px-2 py-1 rounded">{googleCredentials.redirect_uri}</code></li>
+                  <li>Add Authorized redirect URI: <code className="bg-surface px-2 py-1 rounded">{googleCredentials.redirect_uri}</code></li>
                   <li>Copy Client ID and Client Secret below</li>
                 </ol>
               </div>
@@ -452,7 +449,7 @@ export default function BackupRestorePage() {
                   value={googleCredentials.client_id}
                   onChange={(e) => setGoogleCredentials({...googleCredentials, client_id: e.target.value})}
                   placeholder="xxxxx.apps.googleusercontent.com"
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
 
@@ -463,7 +460,7 @@ export default function BackupRestorePage() {
                   value={googleCredentials.client_secret}
                   onChange={(e) => setGoogleCredentials({...googleCredentials, client_secret: e.target.value})}
                   placeholder="Your client secret"
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
 
@@ -473,7 +470,7 @@ export default function BackupRestorePage() {
                   type="text"
                   value={googleCredentials.redirect_uri}
                   readOnly
-                  className="w-full px-3 py-2 border rounded-lg bg-gray-50 dark:bg-slate-800/40"
+                  className="input w-full bg-gray-50 dark:bg-slate-800/40"
                 />
                 <p className="text-xs text-text-secondary mt-1">Copy this URL and add it to your Google Cloud Console</p>
               </div>
@@ -500,8 +497,8 @@ export default function BackupRestorePage() {
       {/* Restore Preview Modal */}
       {showPreview && previewData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-surface dark:bg-slate-900/70 border-b px-6 py-4 flex items-center justify-between">
+          <div className="bg-surface rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-surface border-b px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-bold">Restore Preview</h3>
               <button onClick={() => setShowPreview(false)} className="text-text-muted hover:text-text-secondary">
                 <X className="w-5 h-5" />
@@ -509,8 +506,8 @@ export default function BackupRestorePage() {
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="bg-slate-50 border border-primary-200 rounded-lg p-4">
-                <h4 className="font-semibold text-primary-900 mb-2">Backup Information</h4>
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-primary-200 dark:border-slate-600 rounded-lg p-4">
+                <h4 className="font-semibold text-primary-900 dark:text-primary-200 mb-2">Backup Information</h4>
                 <div className="text-sm text-primary-800 space-y-1">
                   <p>Version: {previewData.backup_info?.version}</p>
                   <p>Created: {new Date(previewData.backup_info?.created_at).toLocaleString()}</p>
@@ -522,7 +519,7 @@ export default function BackupRestorePage() {
                 <div className="space-y-2">
                   {previewData.warnings.map((warning: any, i: number) => (
                     <div key={i} className={`border rounded-lg p-3 ${
-                      warning.level === 'critical' ? 'bg-red-50 border-red-200' :
+                      warning.level === 'critical' ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/60' :
                       warning.level === 'warning' ? 'bg-yellow-50 border-yellow-200' :
                       'bg-slate-50 border-primary-200'
                     }`}>
@@ -537,7 +534,7 @@ export default function BackupRestorePage() {
                 <select
                   value={restoreMode}
                   onChange={(e) => setRestoreMode(e.target.value as any)}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value="replace_all">Replace All (Delete existing, insert from backup)</option>
                   <option value="merge_smart">Merge Smart (Update existing, insert new)</option>
@@ -561,26 +558,26 @@ export default function BackupRestorePage() {
 
       {/* Restore File Selected */}
       {restoreFile && !showPreview && (
-        <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <FileText className="w-8 h-8 text-purple-600" />
-              <div>
-                <p className="font-semibold">{restoreFile.name}</p>
+        <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center space-x-3">
+              <FileText className="w-8 h-8 shrink-0 text-purple-600" />
+              <div className="min-w-0">
+                <p className="truncate font-semibold" title={restoreFile.name}>{restoreFile.name}</p>
                 <p className="text-sm text-text-secondary">{formatBytes(restoreFile.size)}</p>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handlePreviewRestore}
-                className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
+                className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
               >
                 <Eye className="w-4 h-4" />
                 <span>Preview</span>
               </button>
               <button
                 onClick={() => setRestoreFile(null)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
+                className="min-h-11 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
               >
                 <X className="w-4 h-4" />
                 <span>Cancel</span>
@@ -591,7 +588,7 @@ export default function BackupRestorePage() {
       )}
 
       {/* Cloud Storage */}
-      <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6">
+      <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <Cloud className="w-6 h-6 text-primary-600" />
@@ -600,25 +597,25 @@ export default function BackupRestorePage() {
         </div>
         
         <div className="space-y-3">
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 border border-border rounded-lg">
+            <div className="flex min-w-0 items-center space-x-3">
+              <div className="w-10 h-10 shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center">
                 <Cloud className="w-6 h-6 text-primary-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="font-medium">Google Drive</p>
                 <p className="text-sm text-text-secondary">
                   {googleConnected ? 'Connected' : googleConfigured ? 'Configured (not connected)' : 'Not configured'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               {!googleConnected ? (
                 <>
                   <button
                     onClick={handleConnectGoogleDrive}
                     disabled={connectingGoogle}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center space-x-2"
+                    className="min-h-11 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center space-x-2"
                   >
                     <LinkIcon className="w-4 h-4" />
                     <span>{connectingGoogle ? 'Connecting...' : googleConfigured ? 'Connect' : 'Setup'}</span>
@@ -626,7 +623,7 @@ export default function BackupRestorePage() {
                   {googleConfigured && (
                     <button
                       onClick={() => setShowGoogleCredentialsModal(true)}
-                      className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 text-sm"
+                      className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 text-sm"
                     >
                       Edit Credentials
                     </button>
@@ -635,7 +632,7 @@ export default function BackupRestorePage() {
               ) : (
                 <button 
                   onClick={handleDisconnectGoogleDrive}
-                  className="px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
+                  className="min-h-11 px-4 py-2 border border-border rounded-lg bg-surface hover:bg-gray-50 dark:hover:bg-slate-800/80 flex items-center space-x-2"
                 >
                   <X className="w-4 h-4" />
                   <span>Disconnect</span>
@@ -647,7 +644,7 @@ export default function BackupRestorePage() {
       </div>
 
       {/* Scheduled Backups */}
-      <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6">
+      <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <Calendar className="w-6 h-6 text-green-600" />
@@ -663,10 +660,10 @@ export default function BackupRestorePage() {
         </div>
 
         {schedule && !showScheduleForm && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/60 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
               <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="font-medium text-green-900">Active Schedule</p>
+              <p className="font-medium text-green-900 dark:text-green-300">Active Schedule</p>
             </div>
             <div className="text-sm text-green-800 space-y-1">
               <p>Frequency: {schedule.frequency}</p>
@@ -685,7 +682,7 @@ export default function BackupRestorePage() {
                 <select
                   value={scheduleForm.frequency}
                   onChange={(e) => setScheduleForm({...scheduleForm, frequency: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
@@ -698,7 +695,7 @@ export default function BackupRestorePage() {
                   type="time"
                   value={scheduleForm.time_of_day}
                   onChange={(e) => setScheduleForm({...scheduleForm, time_of_day: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 />
               </div>
             </div>
@@ -709,7 +706,7 @@ export default function BackupRestorePage() {
                 <select
                   value={scheduleForm.day_of_week}
                   onChange={(e) => setScheduleForm({...scheduleForm, day_of_week: parseInt(e.target.value)})}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="input w-full"
                 >
                   <option value={0}>Sunday</option>
                   <option value={1}>Monday</option>
@@ -727,7 +724,7 @@ export default function BackupRestorePage() {
               <select
                 value={scheduleForm.storage_destination}
                 onChange={(e) => setScheduleForm({...scheduleForm, storage_destination: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="input w-full"
               >
                 <option value="local">Local Download</option>
                 <option value="google_drive" disabled={!googleConnected}>Google Drive</option>
@@ -740,7 +737,7 @@ export default function BackupRestorePage() {
                 type="number"
                 value={scheduleForm.retention_days}
                 onChange={(e) => setScheduleForm({...scheduleForm, retention_days: parseInt(e.target.value)})}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="input w-full"
                 min="1"
                 max="365"
               />
@@ -766,7 +763,7 @@ export default function BackupRestorePage() {
       </div>
 
       {/* Backup History */}
-      <div className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6">
+      <div className="bg-surface rounded-xl shadow-sm border border-border p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <Clock className="w-6 h-6 text-text-secondary" />
@@ -787,10 +784,10 @@ export default function BackupRestorePage() {
         ) : (
           <div className="space-y-2">
             {history.slice(0, expandedHistory ? undefined : 5).map((backup) => (
-              <div key={backup.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+              <div key={backup.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800/70">
                 <div className="flex items-center space-x-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    backup.status === 'completed' ? 'bg-green-100' :
+                    backup.status === 'completed' ? 'bg-green-100 dark:bg-green-900/40' :
                     backup.status === 'failed' ? 'bg-red-100' :
                     'bg-yellow-100'
                   }`}>
@@ -811,7 +808,7 @@ export default function BackupRestorePage() {
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    backup.status === 'completed' ? 'bg-green-100 text-green-800' :
+                    backup.status === 'completed' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300' :
                     backup.status === 'failed' ? 'bg-red-100 text-red-800' :
                     'bg-yellow-100 text-yellow-800'
                   }`}>
@@ -819,7 +816,8 @@ export default function BackupRestorePage() {
                   </span>
                   <button
                     onClick={() => handleDeleteBackup(backup.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    aria-label="Delete backup"
+                    className="flex h-11 w-11 items-center justify-center text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -830,7 +828,7 @@ export default function BackupRestorePage() {
             {history.length > 5 && (
               <button
                 onClick={() => setExpandedHistory(!expandedHistory)}
-                className="w-full py-2 text-sm text-primary-600 hover:bg-slate-50 rounded-lg flex items-center justify-center space-x-2"
+                className="w-full py-2 text-sm text-primary-600 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded-lg flex items-center justify-center space-x-2"
               >
                 {expandedHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 <span>{expandedHistory ? 'Show Less' : `Show All (${history.length})`}</span>

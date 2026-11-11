@@ -108,6 +108,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
         throw new EnforceAccessError(403, 'SUBSCRIPTION_LIMIT_EXCEEDED', lim.message || 'Limit reached', {
           limit: lim.limit,
           current: lim.current,
+          limit_type: limitType,
         });
       }
     } else {
@@ -116,6 +117,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
         throw new EnforceAccessError(403, 'SUBSCRIPTION_LIMIT_EXCEEDED', lim.message || 'Limit reached', {
           limit: lim.limit,
           current: lim.current,
+          limit_type: limitType,
         });
       }
     }

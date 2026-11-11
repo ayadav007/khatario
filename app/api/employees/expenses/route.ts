@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeExpense } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -209,17 +209,22 @@ export async function POST(request: NextRequest) {
       billable_to_project,
     } = body;
 
-    if (actor) {
-      business_id = actor.businessId;
-      if (actor.isPortal) {
-        try {
-          await assertPortalFeatureForRequest(request, actor.businessId, 'expenses');
-        } catch (error) {
-          if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
-          throw error;
-        }
-        employee_id = actor.userId;
+    // These paths are on the employee-portal allowlist, so middleware forwards them on cookie
+    // shape alone. Without a business session or a database-validated portal session there is no
+    // caller to act for: never fall back to an employee or business named in the body.
+    if (!actor) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+
+    business_id = actor.businessId;
+    if (actor.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'expenses');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
       }
+      employee_id = actor.userId;
     }
 
     if (!business_id || !employee_id || !expense_date || !amount || !description) {
@@ -229,8 +234,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use employee_id as fallback if actor not in body (for self-submission)
-    const authUserId = resolveCreatedByUserId(request, body) || employee_id;
+    // The acting user: the session user, or the portal employee. Never a body value.
+    const authUserId = actor.userId;
 
     // AUTHORIZATION: Employee self-service - allow if user is employee submitting own expense OR has permission
     const { isEmployee } = await import('@/lib/access-boundary');

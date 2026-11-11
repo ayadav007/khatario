@@ -183,6 +183,7 @@ export default function ClassicProductPage() {
                   unit: product.unit,
                   maxStock: offer.stock,
                   taxRate: product.tax_rate,
+                  gstIncluded: !!product.gst_included,
                 })
               }
               inCart={!!cartItem}

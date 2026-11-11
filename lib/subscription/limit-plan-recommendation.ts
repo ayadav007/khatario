@@ -3,6 +3,8 @@ import { formatPlanLabel } from '@/lib/format-plan-label';
 import { LIMIT_KEY_BY_TYPE, type LimitCheckType } from '@/lib/subscription/limit-registry';
 import { resolvePlanLimitValue } from '@/lib/subscription';
 import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
+import { getLimitOwnerModule } from '@/lib/subscription/module-entitlements';
+import { productLineForModule } from '@/lib/platform-modules';
 
 export interface LimitPlanRecommendation {
   planId: string;
@@ -13,25 +15,18 @@ export interface LimitPlanRecommendation {
   planLimit: number;
 }
 
-const PURCHASABLE_LIMIT_TYPES = new Set<LimitCheckType>([
-  'invoices',
-  'customers',
-  'items',
-  'users',
-  'whatsapp',
-]);
-
 /**
  * Lowest paid plan (by sort_order) whose limit for `limitType` exceeds `currentCount`
- * or is unlimited (-1).
+ * or is unlimited (-1). Only plans of the product that owns the limit are considered,
+ * so an employee limit offers HR plans and an estimate limit offers billing plans.
  */
 export async function getLowestPlanForLimit(
   limitType: LimitCheckType,
   currentCount: number,
 ): Promise<LimitPlanRecommendation | null> {
-  if (!PURCHASABLE_LIMIT_TYPES.has(limitType)) return null;
-
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
+  if (!limitKey) return null;
+  const productLine = productLineForModule(getLimitOwnerModule(limitType) ?? 'billing');
   const minNeeded = Math.max(0, currentCount) + 1;
 
   type PlanRow = {
@@ -39,10 +34,11 @@ export async function getLowestPlanForLimit(
     display_name: string;
     price_monthly: string | number | null;
     sort_order: number | null;
+    product_line: string | null;
   };
   const listPlans = (onlyPublic: boolean) =>
     db.queryRows<PlanRow>(
-      `SELECT id, display_name, price_monthly, sort_order
+      `SELECT id, display_name, price_monthly, sort_order, product_line
        FROM subscription_plans
        WHERE is_active = true ${onlyPublic ? 'AND is_public = true' : ''}
        ORDER BY sort_order ASC NULLS LAST, price_monthly ASC NULLS LAST`,
@@ -58,6 +54,7 @@ export async function getLowestPlanForLimit(
 
   for (const plan of plans) {
     if (!isPurchasableUpgradePlan(plan.id)) continue;
+    if ((plan.product_line ?? 'billing') !== productLine) continue;
 
     const planLimit = await resolvePlanLimitValue(plan.id, limitKey);
     if (planLimit === null) continue;

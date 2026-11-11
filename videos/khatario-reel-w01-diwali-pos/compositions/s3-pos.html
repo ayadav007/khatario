@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+#root{position:absolute;inset:0;background:#F7F4EE;overflow:hidden;font-family:Inter,sans-serif;color:#063F35}
+.k-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(6,63,53,.10) 2px,transparent 2.5px);background-size:36px 36px}
+.k-stage{position:absolute;inset:0}
+.k-text{position:absolute;left:80px;top:220px;width:920px;height:300px}
+.k-line{position:absolute;left:0;top:0;width:920px}
+.k-head{font:900 104px/1.04 Montserrat,sans-serif;letter-spacing:-.02em;color:#063F35}
+.k-head span{display:inline-block}
+#s3-line-a .k-head{display:flex;gap:28px}
+.k-hot{color:#B4470E}
+.k-sub{margin-top:24px;font:700 40px/1.25 Inter,sans-serif;color:#3D5C56}
+.k-tab{position:absolute;left:90px;top:520px;width:900px;height:810px;background:#FFFFFF;border:4px solid #E4DDD0;border-radius:32px;box-shadow:0 18px 40px rgba(6,63,53,.12);overflow:hidden}
+.k-bar{height:96px;display:flex;align-items:center;justify-content:space-between;padding:0 36px;background:#063F35;color:#F7F4EE}
+.k-bar b{font:700 40px/1 Inter,sans-serif}
+.k-chip{padding:10px 22px;border-radius:999px;background:#EEF2F1;color:#063F35;font:700 28px/1 Inter,sans-serif}
+.k-scan{position:relative;height:96px;margin:18px 28px 6px;border:3px solid #E4DDD0;border-radius:18px;display:flex;align-items:center;padding:0 24px;gap:22px;overflow:hidden}
+.k-scan-flash{position:absolute;inset:0;background:#FEECDE;opacity:0}
+.k-codes{position:relative;width:70px;height:48px;display:flex;gap:5px;align-items:stretch}
+.k-codes i{display:block;background:#063F35;border-radius:2px}
+.k-laser{position:absolute;left:-6px;top:22px;width:82px;height:5px;background:#F58220;border-radius:3px;opacity:0}
+.k-ph{position:relative;font:400 32px/1 Inter,sans-serif;color:#7C918D}
+.k-items{height:264px;padding:0 28px}
+.k-row{height:88px;display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #EEF2F1;opacity:0}
+.k-name{font:700 34px/1.1 Inter,sans-serif;color:#063F35}
+.k-meta{margin-top:6px;font:400 28px/1 Inter,sans-serif;color:#3D5C56}
+.k-gst{display:inline-block;margin-left:12px;padding:4px 12px;border-radius:999px;background:#EEF2F1;font:700 28px/1.1 Inter,sans-serif;color:#063F35}
+.k-amt{font:700 38px/1 Inter,sans-serif;color:#063F35}
+.k-tot{padding:14px 40px 0}
+.k-t{display:flex;justify-content:space-between;font:400 30px/1.6 Inter,sans-serif;color:#3D5C56}
+.k-t.k-grand{margin-top:4px;font:900 46px/1.4 Inter,sans-serif;color:#063F35}
+.k-tax{border-radius:10px}
+.k-btn{position:absolute;left:28px;right:28px;bottom:26px;height:92px;border-radius:20px;background:#F58220;color:#063F35;font:900 40px/92px Inter,sans-serif;text-align:center}
+.k-ring{position:absolute;left:28px;right:28px;bottom:26px;height:92px;border-radius:20px;border:6px solid #F58220;opacity:0}
+</style>
+      <div data-hf-id="hf-22lm" id="root" data-composition-id="s3-pos" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-5n5k" class="k-dots"></div>
+        <div data-hf-id="hf-gj53" class="k-stage" id="s3-stage">
+          <div data-hf-id="hf-k6m1" class="k-text">
+            <div data-hf-id="hf-ughn" class="k-line" id="s3-line-a">
+              <div data-hf-id="hf-5usi" class="k-head"><span data-hf-id="hf-89a5" id="s3-w0">Scan.</span> <span data-hf-id="hf-cwfe" id="s3-w1" style="opacity:.25">Scan.</span> <span data-hf-id="hf-g4ex" id="s3-w2" class="k-hot" style="opacity:.25">Scan.</span></div>
+              <div data-hf-id="hf-adg3" class="k-sub" id="s3-sub-a">Barcode se item, rate aur HSN.</div>
+            </div>
+            <div data-hf-id="hf-geex" class="k-line" id="s3-line-b" style="opacity:0">
+              <div data-hf-id="hf-phca" class="k-head"><span data-hf-id="hf-liw4" class="k-hot">GST</span> apne aap.</div>
+              <div data-hf-id="hf-lxjl" class="k-sub">CGST + SGST, bina calculator.</div>
+            </div>
+            <div data-hf-id="hf-6il4" class="k-line" id="s3-line-c" style="opacity:0">
+              <div data-hf-id="hf-n417" class="k-head">Ek tap. <span data-hf-id="hf-9xph" class="k-hot">Print.</span></div>
+              <div data-hf-id="hf-0env" class="k-sub">58 mm ya 80 mm slip, Bluetooth se.</div>
+            </div>
+          </div>
+          <div data-hf-id="hf-9gdz" class="k-tab" id="s3-tab">
+            <div data-hf-id="hf-yp83" class="k-bar"><b data-hf-id="hf-qzgw">Invoice</b><span data-hf-id="hf-48sz" class="k-chip">Cash sale</span></div>
+            <div data-hf-id="hf-7yg7" class="k-scan">
+              <div data-hf-id="hf-jyyj" class="k-scan-flash" id="s3-flash"></div>
+              <div data-hf-id="hf-ktcy" class="k-codes"><i data-hf-id="hf-d2tf" style="width:6px"></i><i data-hf-id="hf-pzu6" style="width:3px"></i><i data-hf-id="hf-g6a5" style="width:8px"></i><i data-hf-id="hf-owqa" style="width:3px"></i><i data-hf-id="hf-nwzk" style="width:5px"></i><i data-hf-id="hf-qyyk" style="width:9px"></i><i data-hf-id="hf-pb1b" style="width:3px"></i><i data-hf-id="hf-v9xf" style="width:6px"></i><div data-hf-id="hf-54ln" class="k-laser" id="s3-laser"></div></div>
+              <div data-hf-id="hf-lndv" class="k-ph">Scan barcode ya item ka naam</div>
+            </div>
+            <div data-hf-id="hf-klxc" class="k-items">
+              <div data-hf-id="hf-98ov" class="k-row" id="s3-r0"><div data-hf-id="hf-yeow"><div data-hf-id="hf-va1u" class="k-name">Kaju 500 g</div><div data-hf-id="hf-3ugj" class="k-meta">1 x 450.00<span data-hf-id="hf-p14h" class="k-gst">GST 5%</span></div></div><div data-hf-id="hf-0p5w" class="k-amt">₹450.00</div></div>
+              <div data-hf-id="hf-5aku" class="k-row" id="s3-r1"><div data-hf-id="hf-y7yw"><div data-hf-id="hf-93c7" class="k-name">Ghee 1 L</div><div data-hf-id="hf-dgb3" class="k-meta">1 x 560.00<span data-hf-id="hf-brad" class="k-gst">GST 5%</span></div></div><div data-hf-id="hf-7x84" class="k-amt">₹560.00</div></div>
+              <div data-hf-id="hf-1cgt" class="k-row" id="s3-r2"><div data-hf-id="hf-x11t"><div data-hf-id="hf-pv94" class="k-name">Sugar 1 kg</div><div data-hf-id="hf-3ns8" class="k-meta">2 x 45.00<span data-hf-id="hf-cy7g" class="k-gst">GST 5%</span></div></div><div data-hf-id="hf-c6ui" class="k-amt">₹90.00</div></div>
+            </div>
+            <div data-hf-id="hf-agyh" class="k-tot">
+              <div data-hf-id="hf-ranc" class="k-t"><span data-hf-id="hf-2ss1">Subtotal</span><span data-hf-id="hf-f582" id="s3-sub">₹0.00</span></div>
+              <div data-hf-id="hf-1eqp" class="k-t k-tax" id="s3-taxrow"><span data-hf-id="hf-339o">Total Tax</span><span data-hf-id="hf-g5px" id="s3-tax">₹0.00</span></div>
+              <div data-hf-id="hf-kwye" class="k-t k-grand"><span data-hf-id="hf-81yj">Grand Total</span><span data-hf-id="hf-2h0m" id="s3-grand">₹0.00</span></div>
+            </div>
+            <div data-hf-id="hf-6q5j" class="k-btn" id="s3-btn">Print bill</div>
+            <div data-hf-id="hf-pb6l" class="k-ring" id="s3-ring"></div>
+          </div>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        const fmt = (v) => "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const money = { s: 0, t: 0, g: 0 };
+        const paint = () => {
+          document.getElementById("s3-sub").textContent = fmt(Math.round(money.s * 100) / 100);
+          document.getElementById("s3-tax").textContent = fmt(Math.round(money.t * 100) / 100);
+          document.getElementById("s3-grand").textContent = fmt(Math.round(money.g * 100) / 100);
+        };
+        tl.fromTo("#s3-tab", { opacity: 0, y: 60 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0);
+        tl.fromTo("#s3-sub-a", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0.3);
+        const steps = [
+          { at: 0.7, w: "#s3-w0", r: "#s3-r0", from: [0, 0, 0], to: [450, 22.5, 472.5] },
+          { at: 1.6, w: "#s3-w1", r: "#s3-r1", from: [450, 22.5, 472.5], to: [1010, 50.5, 1060.5] },
+          { at: 2.5, w: "#s3-w2", r: "#s3-r2", from: [1010, 50.5, 1060.5], to: [1100, 55, 1155] },
+        ];
+        steps.forEach((st, i) => {
+          if (i > 0) tl.set(st.w, { opacity: 1 }, st.at);
+          tl.fromTo(st.w, { scale: 1 }, { scale: 1.12, transformOrigin: "50% 60%", duration: 0.15, ease: "power2.out", yoyo: true, repeat: 1, immediateRender: false }, st.at);
+          tl.fromTo("#s3-laser", { opacity: 1, y: -18 }, { opacity: 0, y: 18, duration: 0.3, ease: "power1.inOut", immediateRender: false }, st.at - 0.1);
+          tl.fromTo("#s3-flash", { opacity: 0.9 }, { opacity: 0, duration: 0.4, ease: "power1.out", immediateRender: false }, st.at);
+          tl.fromTo(st.r, { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.35, ease: "power3.out", immediateRender: false }, st.at + 0.05);
+          tl.fromTo(money, { s: st.from[0], t: st.from[1], g: st.from[2] }, { s: st.to[0], t: st.to[1], g: st.to[2], duration: 0.45, ease: "power2.out", onUpdate: paint, immediateRender: false }, st.at + 0.05);
+        });
+        tl.to("#s3-line-a", { opacity: 0, y: -24, duration: 0.3, ease: "power2.in" }, 3.6);
+        tl.fromTo("#s3-line-b", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out", immediateRender: false }, 3.9);
+        tl.fromTo("#s3-taxrow", { backgroundColor: "rgba(245,130,32,0)" }, { backgroundColor: "rgba(245,130,32,0.22)", duration: 0.35, ease: "sine.inOut", yoyo: true, repeat: 3 }, 4.1);
+        tl.to("#s3-line-b", { opacity: 0, y: -24, duration: 0.3, ease: "power2.in" }, 5.1);
+        tl.fromTo("#s3-line-c", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out", immediateRender: false }, 5.35);
+        tl.fromTo("#s3-btn", { scale: 1 }, { scale: 0.94, transformOrigin: "50% 50%", duration: 0.12, ease: "power2.out", yoyo: true, repeat: 1 }, 6.5);
+        tl.fromTo("#s3-ring", { opacity: 0.9, scale: 1 }, { opacity: 0, scale: 1.12, transformOrigin: "50% 50%", duration: 0.5, ease: "power2.out", immediateRender: false }, 6.6);
+        tl.to("#s3-stage", { opacity: 0, duration: 0.3, ease: "power1.in" }, 7.7);
+        window.__timelines["s3-pos"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

@@ -13,6 +13,11 @@ import { useEngineCardLook } from './engine/EngineCardContext';
 import { productCardLook } from '@/lib/store/engine/card-look';
 import { isDesignedCard } from '@/lib/store/engine/card-render';
 import { cardBadges } from '@/lib/store/engine/card-badges';
+import { cardSizes } from '@/lib/store/engine/card-sizes';
+import { cartLineFor, packPriceShowsMrp, packsLineOn, productCardPacks } from '@/lib/store/engine/card-packs';
+import { initialVariantId } from './features/product/product-logic';
+import { packLabelFromName } from '@/lib/store/unit-price';
+import type { StoreVariantInput } from '@/lib/store/variant-options';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -46,6 +51,8 @@ export interface StoreProduct {
   seo_image_url?: string | null;
   store_badge?: string | null;
   store_tagline?: string | null;
+  /** Fit advice shown under the size buttons on the product page. */
+  store_fit_note?: string | null;
   store_swatches?: StoreSwatch[];
   /** False when the shop marked the product as not returnable online (treated as returnable when absent). */
   returnable?: boolean;
@@ -69,6 +76,8 @@ interface StoreProductCardProps {
   /** Studio: show the product's tagline / colour swatches; undefined follows the theme preset. */
   showTagline?: boolean;
   showSwatches?: boolean;
+  /** A card with the `packs` line starts on this pack when the product has it (Buy again: the pack ordered before). */
+  initialPackId?: string | null;
 }
 
 /** Items with options open a bottom-sheet picker on Quick and with the phone kit on phones. */
@@ -170,6 +179,7 @@ function ProductCard({
   highlight,
   showTagline,
   showSwatches,
+  initialPackId,
   onOptions,
 }: StoreProductCardProps & { onOptions?: () => void }) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
@@ -196,15 +206,70 @@ function ProductCard({
     return cart.find((c) => c.itemId === product.id && !c.variantId) ?? null;
   }, [cart, product]);
 
-  const outOfStock = product.current_stock <= 0 && !product.has_variants;
-  const discount = sectionEnabled(theme, 'offers')
-    ? storeDiscountPercent(product.mrp, product.selling_price)
+  // The `packs` line of a card design: a product with exactly one option axis shows its packs (500 g / 1 kg / 5 kg) as
+  // chips and adds the chosen pack itself, each pack its own cart line. Off, or with two axes, the card is as before.
+  // (packsLineOn and productCardPacks are shared with the Buy again section, which needs the same answer.)
+  const packsOn = look.studioTile && product.has_variants && packsLineOn(engineLook);
+  const packChips = useMemo(
+    () =>
+      packsOn
+        ? productCardPacks({ has_variants: true, selling_price: product.selling_price, variants: product.variants })
+        : null,
+    [packsOn, product.variants, product.selling_price],
+  );
+  const [chosenPackId, setChosenPackId] = useState<string | null>(null);
+  // Starts on `initialPackId` when it is one of the chips, else on the product page's first choice (the first pack in
+  // stock); one that is not a chip falls back to the first chip in stock.
+  const pack = useMemo(() => {
+    if (!packChips) return null;
+    const { packs } = packChips;
+    const start = initialVariantId(product.variants as StoreVariantInput[]);
+    return (
+      packs.find((p) => p.id === chosenPackId) ??
+      (initialPackId ? packs.find((p) => p.id === initialPackId) : undefined) ??
+      packs.find((p) => p.id === start) ??
+      packs.find((p) => !p.soldOut) ??
+      packs[0]
+    );
+  }, [packChips, chosenPackId, initialPackId, product.variants]);
+  // The MRP belongs to the product's own price; a pack at another price shows none.
+  const packMrp = pack && packPriceShowsMrp(pack.price, product.selling_price) ? product.mrp : null;
+  const packLine = pack ? cartLineFor(cart, product.id, pack.id) ?? null : null;
+  // The cart line the stepper controls: the chosen pack's, or the product's own when it has no options.
+  const stepLine = pack ? packLine : cartItem;
+  const stepVariantId = pack ? pack.id : undefined;
+
+  const outOfStock = pack ? pack.soldOut : product.current_stock <= 0 && !product.has_variants;
+  const shownPrice = pack ? pack.price : product.selling_price;
+  const shownMrp = pack ? packMrp : product.mrp;
+  // M6: on the new design the old Store editor's "Today's offers" and "Add to bag" switches no longer apply; the
+  // card's own design and lines decide.
+  const discount = engineLook || sectionEnabled(theme, 'offers')
+    ? storeDiscountPercent(shownMrp, shownPrice)
     : 0;
+  const listingAdd = engineLook ? true : theme.show_listing_add;
 
   const handleAdd = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (pack) {
+        if (pack.soldOut) return;
+        addToCart({
+          itemId: product.id,
+          variantId: pack.id,
+          name: product.name,
+          variantName: pack.label,
+          price: pack.price,
+          quantity: 1,
+          imageUrl: product.image_url ?? undefined,
+          unit: product.unit,
+          maxStock: pack.stock,
+          taxRate: product.tax_rate,
+          mrp: packMrp != null && packMrp > pack.price ? packMrp : undefined,
+        });
+        return;
+      }
       if (product.has_variants) {
         // The bottom-sheet picker (Quick, phone kit) instead of opening the product.
         if (onOptions) onOptions();
@@ -220,60 +285,65 @@ function ProductCard({
         unit: product.unit,
         maxStock: product.current_stock,
         taxRate: product.tax_rate,
+        gstIncluded: !!product.gst_included,
         mrp: product.mrp != null && product.mrp > product.selling_price ? product.mrp : undefined,
       });
     },
-    [product, addToCart, onViewDetail, onOptions],
+    [product, pack, packMrp, addToCart, onViewDetail, onOptions],
   );
 
   // Buy now, as on the product page (StoreKhatarioProductView.buyNow): put one in the cart unless it is already there, then
   // go to checkout. A product with options opens the option chooser first, as Add does.
   const handleBuy = useCallback(
     (e: React.MouseEvent) => {
-      if (product.has_variants) {
+      if (product.has_variants && !pack) {
         handleAdd(e);
         return;
       }
       e.preventDefault();
       e.stopPropagation();
-      if (!cartItem) handleAdd(e);
+      if (pack?.soldOut) return;
+      if (!stepLine) handleAdd(e);
       window.location.href = '/checkout';
     },
-    [product.has_variants, cartItem, handleAdd],
+    [product.has_variants, pack, stepLine, handleAdd],
   );
 
   const handleIncrement = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!cartItem) return;
-      updateCartQuantity(product.id, undefined, cartItem.quantity + 1);
+      if (!stepLine) return;
+      updateCartQuantity(product.id, stepVariantId, stepLine.quantity + 1);
     },
-    [product.id, cartItem, updateCartQuantity],
+    [product.id, stepLine, stepVariantId, updateCartQuantity],
   );
 
   const handleDecrement = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!cartItem) return;
-      updateCartQuantity(product.id, undefined, cartItem.quantity - 1);
+      if (!stepLine) return;
+      updateCartQuantity(product.id, stepVariantId, stepLine.quantity - 1);
     },
-    [product.id, cartItem, updateCartQuantity],
+    [product.id, stepLine, stepVariantId, updateCartQuantity],
   );
 
   if (look.studioTile) {
-    const open = inCart > 0 && !product.has_variants;
-    const add = !theme.show_listing_add ? null : open ? (
+    // With pack chips the card's count, stepper and options are the chosen pack's alone.
+    const tileInCart = pack ? packLine?.quantity ?? 0 : inCart;
+    const tileOptions = product.has_variants && !pack;
+    const open = tileInCart > 0 && !tileOptions;
+    const add = !listingAdd ? null : open ? (
       <div className="stepper">
         <button type="button" onClick={handleDecrement} aria-label="Decrease quantity">
           <Minus strokeWidth={2.4} />
         </button>
-        <b aria-live="polite">{inCart}</b>
+        <b aria-live="polite">{tileInCart}</b>
         <button
           type="button"
           onClick={handleIncrement}
-          disabled={!cartItem || cartItem.quantity >= cartItem.maxStock}
+          disabled={!stepLine || stepLine.quantity >= stepLine.maxStock}
           aria-label="Increase quantity"
         >
           <Plus strokeWidth={2.4} />
@@ -286,7 +356,7 @@ function ProductCard({
             ? quick
               ? 'Sold out'
               : 'Out of stock'
-            : product.has_variants
+            : tileOptions
               ? quick
                 ? `${product.variants.length} options`
                 : 'Choose options'
@@ -308,6 +378,8 @@ function ProductCard({
     const designed = engineLook && isDesignedCard(engineLook.card) ? { look: engineLook.card, schemes: engineLook.schemes } : undefined;
     const tagline = designed ? product.store_tagline : (showTagline ?? engineLook?.tagline ?? false) ? product.store_tagline : null;
     const swatches = designed ? product.store_swatches : (showSwatches ?? engineLook?.swatches ?? false) ? product.store_swatches : undefined;
+    // Size chips for the `sizes` line: only a product with options has sizes; one without a size option gets none.
+    const sizeChips = product.has_variants ? cardSizes(product.variants as StoreVariantInput[]) : null;
     const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
     // A card design draws its own buttons from these (its button style, Buy now, the stepper); Theme's own gets none of it.
     const designedExtras = designed
@@ -318,9 +390,9 @@ function ProductCard({
           placeholderLogo: store?.logo_url ?? null,
           actions: add
             ? {
-                inCart,
-                hasOptions: product.has_variants,
-                canInc: !!cartItem && cartItem.quantity < cartItem.maxStock,
+                inCart: tileInCart,
+                hasOptions: tileOptions,
+                canInc: !!stepLine && stepLine.quantity < stepLine.maxStock,
                 onAdd: handleAdd,
                 onBuy: handleBuy,
                 onInc: handleIncrement,
@@ -333,8 +405,8 @@ function ProductCard({
       <StudioProductTile
         name={product.name}
         unit={product.has_variants ? `${product.variants.length} options` : product.unit}
-        price={product.selling_price}
-        mrp={product.mrp}
+        price={shownPrice}
+        mrp={shownMrp}
         image={gallery[0] ?? product.image_url}
         hoverImage={gallery[1]}
         href={`/products/${product.id}`}
@@ -343,13 +415,21 @@ function ProductCard({
         badges={badges}
         tagline={tagline}
         swatches={swatches}
+        sizes={sizeChips?.sizes}
+        moreSizes={sizeChips?.more}
+        packs={packChips?.packs}
+        morePacks={packChips?.more}
+        packId={pack?.id}
+        onPack={setChosenPackId}
+        onMorePacks={onOptions}
         rating={product.rating_avg}
         ratingCount={product.rating_count}
-        lowStock={lowStockCount(product)}
+        lowStock={pack ? lowStockCount({ current_stock: pack.stock }) : lowStockCount(product)}
         outOfStock={outOfStock}
         fav={favoriteIds.includes(product.id)}
         onFav={() => void toggleFavorite(product.id)}
         add={add}
+        packLabel={pack ? pack.label : product.has_variants ? null : packLabelFromName(product.name)}
         {...designedExtras}
       />
     );
@@ -423,7 +503,7 @@ function ProductCard({
               </span>
             ) : null}
           </div>
-          {theme.show_listing_add ? (
+          {listingAdd ? (
             <div className="mt-auto pt-3">
               {outOfStock ? (
                 <span className="g-line flex h-10 w-full items-center justify-center rounded-xl border text-[12px] font-semibold" style={{ opacity: 0.5 }}>
@@ -522,7 +602,7 @@ function ProductCard({
           }}
         />
       </button>
-      {theme.show_listing_add ? (
+      {listingAdd ? (
         <ChowkAddControl
           accent={accent}
           ink={ink}

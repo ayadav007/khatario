@@ -174,11 +174,6 @@ async function withBaileysPacing<T>(businessId: string, fn: () => Promise<T>): P
 export async function processPaymentReminderJob(data: PaymentReminderQueueJob) {
   const run = () => deliverPaymentReminder(data);
   const result = data.transport === 'baileys' ? await withBaileysPacing(data.businessId, run) : await run();
-  if (result.outcome !== 'sent') {
-    console.log(
-      `[Payment Reminder Queue] ${data.kind} reminder for invoice ${data.invoiceId} ${result.outcome}: ${result.reason}`,
-    );
-  }
   return result;
 }
 
@@ -209,6 +204,5 @@ export function ensurePaymentReminderWorker(): boolean {
   state.worker.on('error', (err) => {
     console.error('[Payment Reminder Queue] Worker error:', err?.message);
   });
-  console.log(`[Payment Reminder Queue] Worker started in server process (concurrency=${concurrency})`);
   return true;
 }

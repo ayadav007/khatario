@@ -4,7 +4,7 @@ import { OpeningBalanceTransaction } from '@/types/journal-entries';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/opening-balances
@@ -98,7 +98,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userId = request.headers.get('x-user-id') || null;
+    // created_by is the session user; `x-user-id` is client-supplied and never trusted.
+    const userId = getAuthenticatedUserId(request);
 
     await client.query('BEGIN');
 

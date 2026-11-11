@@ -1,17 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
 import { ArrowRight, BadgeCheck, MapPin, Shield } from 'lucide-react';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
 import { useLandingProduct } from '@/components/marketing/landing/LandingProductContext';
 import { LANDING_HERO_COPY, type ProductLine } from '@/lib/product-lines';
 import { LandingHeroMockup } from '@/components/marketing/landing/LandingHeroMockup';
 import { LandingReveal } from '@/components/marketing/landing/LandingReveal';
-import {
-  DEFAULT_TRUST_ITEMS,
-  LandingTrustBar,
-  type TrustBarItem,
-} from '@/components/marketing/landing/LandingTrustBar';
+import { LandingTrustBar, type TrustBarItem } from '@/components/marketing/landing/LandingTrustBar';
 import { LandingCrossfade } from '@/components/marketing/landing/LandingCrossfade';
 import {
   DEFAULT_BILLING_HEADLINE,
@@ -20,6 +18,7 @@ import {
 import { LandingProductToggle } from '@/components/marketing/landing/LandingProductToggle';
 import { MarketingImg } from '@/components/marketing/builder/MarketingImg';
 import { withDefaults } from '@/lib/marketing-builder/merge';
+import { SIGNUP_PHONE_STORAGE_KEY } from '@/lib/signup-prefill';
 
 /** Editable copy for the Billing product. HR and Connect keep their built-in copy. */
 export type LandingHeroContent = {
@@ -32,6 +31,8 @@ export type LandingHeroContent = {
   subhead: string;
   footnote: string;
   trustItems: TrustBarItem[];
+  /** Big proof numbers under the sign-up box. Only true, checkable claims. */
+  proof: { value: string; label: string }[];
   primaryCta: string;
   secondaryLabel: string;
   secondaryHref: string;
@@ -45,7 +46,8 @@ export type LandingHeroContent = {
 const billingCopy = LANDING_HERO_COPY.billing;
 
 export const LANDING_HERO_DEFAULTS: LandingHeroContent = {
-  showProductToggle: true,
+  // Billing / HR / Connect now live in the site header's menu.
+  showProductToggle: false,
   badges: billingCopy.badges.map((text) => ({ text })),
   headlineLead: DEFAULT_BILLING_HEADLINE.lead,
   headlineAccent: DEFAULT_BILLING_HEADLINE.accent,
@@ -53,16 +55,23 @@ export const LANDING_HERO_DEFAULTS: LandingHeroContent = {
   headlineTail: DEFAULT_BILLING_HEADLINE.tail,
   subhead: billingCopy.subhead,
   footnote: billingCopy.footnote,
-  trustItems: DEFAULT_TRUST_ITEMS,
+  // The proof row below the sign-up box replaces the small highlights row by default.
+  trustItems: [],
+  proof: [
+    { value: '₹0', label: 'to start, no card' },
+    { value: 'Unlimited', label: 'GST bills on Free' },
+    { value: '13', label: 'languages on your bill' },
+    { value: '4-in-1', label: 'billing, store, WhatsApp, staff' },
+  ],
   primaryCta: billingCopy.cta,
   secondaryLabel: 'Book a demo',
   secondaryHref: '/book-demo',
   tertiaryLabel: 'See pricing',
   tertiaryHref: '#pricing',
   visual: 'image',
-  image: '/marketing/khatario-small-business-hero.jpg',
+  image: '/marketing/khatario-hero-shopkeeper.webp',
   imageAlt:
-    'A shop owner with a laptop showing Khatario, surrounded by invoices, inventory, GST billing, and reports',
+    'A smiling shop owner behind a laptop showing Khatario, surrounded by Invoices, GST Ready, Inventory and Reports',
 };
 
 type HeroText = { badges: string[]; subhead: string; footnote: string; cta: string };
@@ -148,6 +157,66 @@ function HeroLink({ href, className, children }: { href: string; className: stri
   );
 }
 
+/** Mobile number + main button. The number is optional: an empty box still opens sign-up. */
+function HeroSignupForm({ signupHref, children }: { signupHref: string; children: React.ReactNode }) {
+  const router = useRouter();
+  const [phone, setPhone] = useState('');
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const digits = phone.replace(/\D/g, '').slice(-10);
+    try {
+      if (digits.length === 10) sessionStorage.setItem(SIGNUP_PHONE_STORAGE_KEY, digits);
+    } catch {
+      // Storage blocked: sign-up simply starts with an empty number.
+    }
+    router.push(signupHref);
+  };
+
+  return (
+    <form onSubmit={onSubmit} className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
+      <label htmlFor="landing-hero-phone" className="sr-only">
+        Mobile number
+      </label>
+      <div className="flex min-h-[3.5rem] flex-1 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 shadow-sm focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-600/20">
+        <span className="font-semibold text-slate-500">+91</span>
+        <input
+          id="landing-hero-phone"
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          maxLength={14}
+          placeholder="Your mobile number"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          className="min-w-0 flex-1 border-0 bg-transparent text-lg text-slate-900 outline-none placeholder:text-slate-400"
+        />
+      </div>
+      <button
+        type="submit"
+        className="group inline-flex min-h-[3.5rem] items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-accent-500 px-7 text-lg font-semibold text-slate-950 shadow-md transition hover:bg-accent-400 hover:shadow-lg"
+      >
+        {children}
+      </button>
+    </form>
+  );
+}
+
+function HeroProofRow({ items }: { items: LandingHeroContent['proof'] }) {
+  const shown = items.filter((p) => p.value.trim());
+  if (shown.length === 0) return null;
+  return (
+    <dl className="mt-7 grid max-w-2xl grid-cols-2 gap-x-6 gap-y-4 border-t border-slate-200 pt-6 sm:grid-cols-4">
+      {shown.map((p) => (
+        <div key={p.value + p.label} className="flex flex-col-reverse">
+          <dt className="text-sm leading-snug text-slate-600">{p.label}</dt>
+          <dd className="text-2xl font-extrabold tracking-tight text-primary-600 xl:text-3xl">{p.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function LandingHero(props: Partial<LandingHeroContent> = {}) {
   const content = withDefaults(LANDING_HERO_DEFAULTS, props);
   const { productLine, signupHref } = useLandingProduct();
@@ -171,11 +240,8 @@ export function LandingHero(props: Partial<LandingHeroContent> = {}) {
           </LandingReveal>
 
           <LandingReveal delay={240}>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <Link
-                href={signupHref}
-                className="group inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-7 py-3.5 text-lg font-semibold text-white shadow-md transition hover:bg-primary-700 hover:shadow-lg"
-              >
+            <div className="mt-6">
+              <HeroSignupForm signupHref={signupHref}>
                 <LandingCrossfade contentKey={productLine} className="inline-flex items-center gap-2">
                   {(line) => (
                     <>
@@ -187,38 +253,50 @@ export function LandingHero(props: Partial<LandingHeroContent> = {}) {
                     </>
                   )}
                 </LandingCrossfade>
-              </Link>
-              {content.secondaryLabel && (
-                <HeroLink
-                  href={content.secondaryHref || '/book-demo'}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-primary-600 bg-white px-7 py-3.5 text-lg font-semibold text-primary-600 transition hover:bg-slate-50"
-                >
-                  {content.secondaryLabel}
-                </HeroLink>
-              )}
-              {content.tertiaryLabel && (
-                <HeroLink
-                  href={content.tertiaryHref || '#pricing'}
-                  className="inline-flex items-center justify-center rounded-xl px-2 py-3 text-lg font-medium text-slate-600 underline-offset-4 hover:text-primary-600 hover:underline"
-                >
-                  {content.tertiaryLabel}
-                </HeroLink>
-              )}
+              </HeroSignupForm>
+              <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+                {content.secondaryLabel && (
+                  <HeroLink
+                    href={content.secondaryHref || '/book-demo'}
+                    className="font-semibold text-primary-600 underline-offset-4 hover:underline"
+                  >
+                    {content.secondaryLabel}
+                  </HeroLink>
+                )}
+                {content.secondaryLabel && content.tertiaryLabel && <span aria-hidden>·</span>}
+                {content.tertiaryLabel && (
+                  <HeroLink
+                    href={content.tertiaryHref || '#pricing'}
+                    className="font-semibold text-primary-600 underline-offset-4 hover:underline"
+                  >
+                    {content.tertiaryLabel}
+                  </HeroLink>
+                )}
+              </p>
             </div>
+            {/* The proof numbers are Billing facts; HR and Connect keep their own copy. */}
+            {productLine === 'billing' && <HeroProofRow items={content.proof} />}
           </LandingReveal>
         </div>
 
         <LandingReveal delay={180}>
-          {content.visual === 'image' && content.image ? (
-            <MarketingImg
-              src={content.image}
-              alt={content.imageAlt}
-              priority
-              width={1024}
-              height={861}
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              className="rounded-2xl shadow-2xl shadow-slate-900/10"
-            />
+          {/* The photo is a Billing picture; HR and Connect keep their own live mockup. */}
+          {content.visual === 'image' && content.image && productLine === 'billing' ? (
+            <div className="relative mx-auto max-w-2xl">
+              <div
+                className="pointer-events-none absolute inset-[12%] rounded-full bg-accent-200/60 blur-3xl"
+                aria-hidden
+              />
+              <MarketingImg
+                src={content.image}
+                alt={content.imageAlt}
+                priority
+                width={943}
+                height={757}
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="relative drop-shadow-[0_24px_40px_rgba(15,23,42,0.12)]"
+              />
+            </div>
           ) : (
             <LandingHeroMockup productLine={productLine} />
           )}

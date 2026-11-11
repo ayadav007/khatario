@@ -10,7 +10,7 @@ url: /#faq
 
 ## Are the bills GST compliant? Can I file GSTR-1 from Khatario?
 
-Yes. Every bill carries HSN/SAC codes and works out CGST, SGST or IGST from the place of supply. Khatario prepares GSTR-1 and GSTR-3B views that you can export as Excel or JSON for the GST portal, or send to your CA. GST reports are on the Business and Enterprise plans and in the free trial.
+Yes. Every bill carries HSN/SAC codes and works out CGST, SGST or IGST from the place of supply. Khatario prepares GSTR-1 and GSTR-3B views that you can export as Excel or JSON for the GST portal, or send to your CA. GST reports are on every plan, including Free.
 
 ## What happens if the internet goes down at the counter?
 
@@ -18,7 +18,7 @@ Saving a bill needs an internet connection. Reconnect, then save the bill. Khata
 
 ## Does it work on my phone?
 
-Yes. Khatario runs in the browser on your computer, tablet or phone, and you can add it to your home screen like an app. There is also an Android app. Your data is the same on every device.
+Yes. The Khatario phone app for Android is on the Play Store, and on paid plans Khatario also runs in the browser on your computer, tablet or phone (add it to your home screen like an app). The Free plan works only in the Android app. Your data is the same on every device.
 
 ## Which printers does it support?
 
@@ -30,11 +30,11 @@ Everything travels over encrypted HTTPS, and role-based access means staff only 
 
 ## Is there really a free plan?
 
-Yes. The Free plan is free forever with monthly limits on invoices, customers and items (see the plans document for the numbers), enough to try Khatario properly. New accounts also start with a 30-day trial of the full product, and no card is needed.
+Yes. The Free plan is free forever in the Khatario Android app for one user, with monthly limits on invoices, customers and items (see the plans document for the numbers). Using Khatario on a computer needs Starter or above. New accounts also start with a 30-day trial of the full product, and no card is needed.
 
 ## Can my staff and other branches use it too?
 
-Yes. Paid plans include multiple team users, each with their own login and permissions, and the Business and Enterprise plans support multiple branches. User and branch limits per plan are in the plans document.
+Yes. Paid plans include multiple team users, each with their own login and permissions, and the Business plan supports multiple branches. User and branch limits per plan are in the plans document.
 
 ## Do I need a CA or accountant to use Khatario?
 

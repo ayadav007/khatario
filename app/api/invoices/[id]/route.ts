@@ -6,6 +6,7 @@ import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-ut
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { loadInvoiceSettlements } from '@/lib/invoices/invoice-settlements';
+import { isInvoiceInFiledGstr1 } from '@/lib/invoices/gstr1-filed';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
@@ -257,7 +258,10 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({ 
+    // The editor locks amendments on this, not on is_editable (false on every final invoice).
+    invoice.gstr1_filed = invoice.status === 'final' ? await isInvoiceInFiledGstr1(pool, invoice.id) : false;
+
+    return NextResponse.json({
       invoice,
       credit_metrics: creditMetrics,
       credit_warning: creditWarning,

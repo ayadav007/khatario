@@ -212,6 +212,14 @@ export async function getAllTaxProvisions(
 /**
  * Record tax payment
  */
+/** Thrown when the provision does not exist inside the given business. */
+export class TaxProvisionNotFoundError extends Error {
+  constructor(provisionId: string) {
+    super(`Tax provision ${provisionId} not found`);
+    this.name = 'TaxProvisionNotFoundError';
+  }
+}
+
 export async function recordTaxPayment(
   businessId: string,
   taxProvisionId: string,
@@ -229,6 +237,18 @@ export async function recordTaxPayment(
 
   try {
     await client.query('BEGIN');
+
+    // Lock the provision inside this business first; a row of another business is never touched.
+    const provision = await client.query(
+      `SELECT provision_amount, paid_amount
+         FROM tax_provisions
+        WHERE id = $1 AND business_id = $2
+        FOR UPDATE`,
+      [taxProvisionId, businessId]
+    );
+    if (provision.rows.length === 0) {
+      throw new TaxProvisionNotFoundError(taxProvisionId);
+    }
 
     // Insert payment record
     const paymentResult = await client.query(
@@ -259,34 +279,27 @@ export async function recordTaxPayment(
       ]
     );
 
-    // Update tax provision
-    const provision = await client.query(
-      `SELECT provision_amount, paid_amount FROM tax_provisions WHERE id = $1`,
-      [taxProvisionId]
+    // Update the locked provision
+    const newPaidAmount =
+      parseFloat(provision.rows[0].paid_amount || 0) + paymentAmount;
+    const provisionAmount = parseFloat(provision.rows[0].provision_amount || 0);
+    const balanceAmount = provisionAmount - newPaidAmount;
+    const paymentStatus =
+      balanceAmount <= 0
+        ? 'paid'
+        : newPaidAmount > 0
+        ? 'partially_paid'
+        : 'unpaid';
+
+    await client.query(
+      `UPDATE tax_provisions
+       SET paid_amount = $1,
+           balance_amount = $2,
+           payment_status = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4 AND business_id = $5`,
+      [newPaidAmount, balanceAmount, paymentStatus, taxProvisionId, businessId]
     );
-
-    if (provision.rows.length > 0) {
-      const newPaidAmount =
-        parseFloat(provision.rows[0].paid_amount || 0) + paymentAmount;
-      const provisionAmount = parseFloat(provision.rows[0].provision_amount || 0);
-      const balanceAmount = provisionAmount - newPaidAmount;
-      const paymentStatus =
-        balanceAmount <= 0
-          ? 'paid'
-          : newPaidAmount > 0
-          ? 'partially_paid'
-          : 'unpaid';
-
-      await client.query(
-        `UPDATE tax_provisions
-         SET paid_amount = $1,
-             balance_amount = $2,
-             payment_status = $3,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4`,
-        [newPaidAmount, balanceAmount, paymentStatus, taxProvisionId]
-      );
-    }
 
     await client.query('COMMIT');
     return paymentResult.rows[0].id;
@@ -338,7 +351,8 @@ export async function calculateDeferredTax(
  * Get tax payments for a provision
  */
 export async function getTaxPayments(
-  taxProvisionId: string
+  taxProvisionId: string,
+  businessId: string
 ): Promise<Array<{
   id: string;
   payment_date: string;
@@ -360,9 +374,9 @@ export async function getTaxPayments(
       payment_mode,
       challan_number
     FROM tax_payments
-    WHERE tax_provision_id = $1
+    WHERE tax_provision_id = $1 AND business_id = $2
     ORDER BY payment_date DESC`,
-    [taxProvisionId]
+    [taxProvisionId, businessId]
   );
 
   return payments.map((p) => ({

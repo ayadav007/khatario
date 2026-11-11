@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { User, Business } from '@/types/database';
@@ -151,7 +149,6 @@ function parsePlatformSession(raw: unknown): BusinessPlatformContext | null {
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('AuthProvider');
   const { networkReady } = useNetworkStatusContext();
   const [user, setUser] = useState<User | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);

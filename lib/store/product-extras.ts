@@ -9,6 +9,7 @@ export type ProductExtrasValue = {
   size_chart?: SizeChart | null;
   store_badge?: string | null;
   store_tagline?: string | null;
+  store_fit_note?: string | null;
   store_swatches?: StoreSwatch[];
   store_returnable?: boolean;
 };
@@ -17,6 +18,7 @@ export type ProductExtrasResult = { ok: true; value: ProductExtrasValue } | { ok
 
 const MAX_BADGE = 24;
 const MAX_TAGLINE = 60;
+const MAX_FIT_NOTE = 80;
 const MAX_SWATCHES = 6;
 const MAX_SWATCH_NAME = 30;
 const SWATCH_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -185,6 +187,12 @@ export function validateProductExtras(body: unknown): ProductExtrasResult {
     const r = cleanShortText(src.store_tagline, MAX_TAGLINE, 'The tagline');
     if ('error' in r) return { ok: false, error: r.error };
     value.store_tagline = r.value;
+  }
+
+  if ('store_fit_note' in src) {
+    const r = cleanShortText(src.store_fit_note, MAX_FIT_NOTE, 'The fit note');
+    if ('error' in r) return { ok: false, error: r.error };
+    value.store_fit_note = r.value;
   }
 
   if ('store_swatches' in src) {

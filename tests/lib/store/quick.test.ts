@@ -1,4 +1,4 @@
-import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress } from '@/lib/store/quick';
+import { cartSavings, couponLabel, couponOutlook, DEMO_FREE_DELIVERY_ABOVE, demoFreeAbove, freeDeliveryProgress, freeShipText } from '@/lib/store/quick';
 import { applyStorePreset, sanitizeStoreTheme, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
 import { resolveStudioSections, toQuickLayout, type StudioContext } from '@/lib/store/studio-layout';
 import { sanitizeStudioSections } from '@/lib/store/studio-sections';
@@ -86,6 +86,35 @@ describe('freeDeliveryProgress', () => {
   it('promises nothing without a single threshold', () => {
     expect(freeDeliveryProgress(300, null)).toBeNull();
     expect(freeDeliveryProgress(300, 0)).toBeNull();
+  });
+});
+
+describe('demoFreeAbove', () => {
+  it('gives a demo store without a branch amount the 299 its Bazaar announcement promises', () => {
+    expect(DEMO_FREE_DELIVERY_ABOVE).toBe(299);
+    expect(demoFreeAbove(true, null)).toBe(299);
+    expect(demoFreeAbove(true, undefined)).toBe(299);
+  });
+  it('keeps a branch amount when there is one, and leaves real stores alone', () => {
+    expect(demoFreeAbove(true, 499)).toBe(499);
+    expect(demoFreeAbove(false, null)).toBeNull();
+    expect(demoFreeAbove(false, undefined)).toBeNull();
+    expect(demoFreeAbove(false, 499)).toBe(499);
+  });
+});
+
+describe('freeShipText', () => {
+  it('asks for the rest under the limit', () => {
+    expect(freeShipText(freeDeliveryProgress(300, 499)!)).toBe('Add ₹199 more for free delivery');
+    expect(freeShipText(freeDeliveryProgress(0, 1500)!)).toBe('Add ₹1,500 more for free delivery');
+  });
+  it('says delivery is free at and over the limit', () => {
+    expect(freeShipText(freeDeliveryProgress(499, 499)!)).toBe('You have free delivery');
+    expect(freeShipText(freeDeliveryProgress(820, 499)!)).toBe('You have free delivery');
+  });
+  it('has nothing to say without a limit, so no bar is drawn', () => {
+    expect(freeDeliveryProgress(300, null)).toBeNull();
+    expect(freeDeliveryProgress(300, undefined)).toBeNull();
   });
 });
 

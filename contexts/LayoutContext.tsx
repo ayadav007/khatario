@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
@@ -42,7 +40,6 @@ function writeStoredCollapsed(collapsed: boolean) {
 export const useLayout = () => useContext(LayoutContext);
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('LayoutProvider');
   const [sidebarCollapsed, setSidebarCollapsedState] = useState(false);
   const pathname = usePathname();
   const preferredCollapsedRef = useRef(false);

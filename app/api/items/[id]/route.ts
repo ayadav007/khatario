@@ -53,7 +53,6 @@ export async function GET(
            ORDER BY variant_name`,
           [itemId]
         );
-        console.log(`[Items API] Found ${variantRows.length} variants for item ${itemId}`);
         variants = variantRows.map((v: any) => ({
           id: v.id,
           name: v.variant_name,
@@ -70,8 +69,6 @@ export async function GET(
         // If variants table doesn't exist, just return empty array
         variants = [];
       }
-    } else {
-      console.log(`[Items API] Item ${itemId} does not have variants (has_variants = ${item.has_variants})`);
     }
 
     const reservedRow = await queryOne<{ reserved_qty: string }>(
@@ -369,7 +366,7 @@ export async function PATCH(
       const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
       galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
     }
-    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
+    const patchExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_fit_note', 'store_swatches', 'store_returnable'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extrasPatched: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -453,6 +450,11 @@ export async function PATCH(
         if (v.store_tagline !== undefined) {
           parts.push(`, store_tagline = $${idx}`);
           extra.push(v.store_tagline);
+          idx += 1;
+        }
+        if (v.store_fit_note !== undefined) {
+          parts.push(`, store_fit_note = $${idx}`);
+          extra.push(v.store_fit_note);
           idx += 1;
         }
         if (v.store_swatches !== undefined) {

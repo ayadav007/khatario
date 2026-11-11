@@ -12,6 +12,12 @@ export function cleanPincode(value: string): string {
   return value.replace(/\D/g, '').slice(0, 6);
 }
 
+/** The pincode worth remembering for the whole store: a full 6-digit one, else null (a half-typed pin is not saved). */
+export function pincodeToSave(value: string): string | null {
+  const pin = cleanPincode(value);
+  return pin.length === 6 ? pin : null;
+}
+
 /**
  * Whether the branch can take orders for this pincode. True while nothing is entered, when the branch lists no
  * pincodes, or when it delivers all over India.
@@ -27,6 +33,26 @@ export function pincodeServiceable(
     branch?.delivery_mode === 'all_india' ||
     pins.map((p) => p.replace(/\D/g, '')).includes(pincode)
   );
+}
+
+/**
+ * Whether the product page can offer a "Check delivery" box: only a branch with its own pincode list that does not
+ * deliver all over India has anything to answer (elsewhere `pincodeServiceable` is always true).
+ */
+export function deliveryCheckShown(
+  branch: Pick<StoreBranch, 'serviceable_pincodes' | 'delivery_mode'> | undefined,
+): boolean {
+  return (branch?.serviceable_pincodes ?? []).length > 0 && branch?.delivery_mode !== 'all_india';
+}
+
+/** The delivery check's answer for the typed pincode; null until a full 6-digit pincode is entered. */
+export function deliveryCheckAnswer(
+  branch: Pick<StoreBranch, 'serviceable_pincodes' | 'delivery_mode'> | undefined,
+  pincode: string,
+): string | null {
+  const pin = cleanPincode(pincode);
+  if (pin.length < 6) return null;
+  return pincodeServiceable(branch, pin) ? `Delivers to ${pin}` : `We don't deliver to ${pin} yet`;
 }
 
 /** Second line of the Quick location button. */

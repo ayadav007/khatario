@@ -12,6 +12,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { LabelPreview } from '@/components/labels/LabelPreview';
 import { Button } from '@/components/ui/Button';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 interface LabelTemplate {
   id: string;
@@ -142,16 +143,13 @@ export default function LabelTemplatesPage() {
 
   if (!hasAccess) {
     return (
-      <div className="max-w-2xl mx-auto py-12 text-center">
-        <FileText className="w-12 h-12 mx-auto text-text-secondary mb-4" />
-        <h2 className="text-xl font-semibold text-text-primary">
-          Label Template Designer not available
-        </h2>
-        <p className="text-text-secondary mt-2">
-          Your current plan does not include the Label Template Designer.
-          Upgrade to customise barcode labels.
-        </p>
-      </div>
+      <SettingsPageShell title="Label templates" description="Design barcode and price labels for your items." icon={FileText}>
+        <PlanFeatureDeniedCallout
+          featureKey="barcode_label_templates"
+          title="Label designer isn't in your plan"
+          description="Upgrade to design your own barcode and price labels."
+        />
+      </SettingsPageShell>
     );
   }
 
@@ -276,7 +274,7 @@ function TemplateCard({
   );
 
   return (
-    <div className="border rounded-lg p-4 bg-surface dark:bg-slate-900/70 hover:shadow-sm transition-shadow">
+    <div className="border rounded-lg p-4 bg-surface hover:shadow-sm transition-shadow">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="font-semibold text-text-primary truncate">
@@ -342,8 +340,9 @@ function TemplateCard({
           <button
             onClick={() => onDelete(template)}
             disabled={busy}
-            className="p-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-950/30 md:h-9 md:w-9"
             title="Delete"
+            aria-label={`Delete ${template.name}`}
           >
             <Trash2 className="w-4 h-4" />
           </button>

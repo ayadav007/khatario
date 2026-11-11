@@ -1,10 +1,13 @@
 ﻿'use client';
 
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
+import { cartLineAddsGst, cartLineTotal } from '@/lib/store/pricing';
 import { useStore } from '@/lib/store/store-context';
 import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas, storePackClass, usesStudioSections } from '@/lib/store/store-theme';
+import { ClosedNotice } from './engine/OpenStatusBadge';
 import { QuickCartSheet } from './quick-theme/QuickSheets';
 import { usePhoneSheets } from '@/lib/store/phone-kit';
+import { CartSuggestionsRow, FreeShipBar, WhatsappOrderButton, useCartSuggestions, type EngineCart } from './CartExtras';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -12,6 +15,8 @@ interface StoreCartDrawerProps {
   open: boolean;
   onClose: () => void;
   onCheckout?: () => void;
+  /** Theme (engine) stores only: the cart settings from the theme. The old storefront passes none. */
+  engineCart?: EngineCart;
 }
 
 export function StoreCartDrawer(props: StoreCartDrawerProps) {
@@ -22,7 +27,7 @@ export function StoreCartDrawer(props: StoreCartDrawerProps) {
   return <CartDrawer {...props} />;
 }
 
-function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
+function CartDrawer({ open, onClose, onCheckout, engineCart }: StoreCartDrawerProps) {
   const { cart, updateCartQuantity, cartTotal, store, cartCount } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
@@ -31,6 +36,7 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;
+  const suggestions = useCartSuggestions(open, !!engineCart?.suggestions);
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +98,10 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
           </button>
         </div>
 
+        {engineCart?.freeShipBar && cart.length > 0 ? (
+          <FreeShipBar subtotal={cartTotal} freeAbove={engineCart.freeAbove} accent={accent} className="px-4 py-3" />
+        ) : null}
+
         {cart.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center px-4">
             <p className="text-2xl font-semibold">{soft ? 'Your cart is empty' : 'Nothing in the bag'}</p>
@@ -101,6 +111,7 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 py-2">
+            <ClosedNotice hours={store?.store_hours} className="mb-2" />
             {cart.map((item) => {
               const key = item.variantId ? `${item.itemId}::${item.variantId}` : item.itemId;
               return (
@@ -119,7 +130,8 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
                       {item.variantName || item.unit}
                     </p>
                     <p className="mt-1 text-[14px] font-medium tabular-nums">
-                      ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                      ₹{cartLineTotal(item).toLocaleString('en-IN')}
+                      {cartLineAddsGst(item) ? <span className="ml-1 text-[10px] font-normal" style={{ opacity: 0.55 }}>incl. {item.taxRate}% GST</span> : null}
                     </p>
                   </div>
                   <div className={clsx('flex items-center', soft && 'rounded-xl')} style={{ border: hair }}>
@@ -147,6 +159,16 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
                 </div>
               );
             })}
+            {engineCart?.suggestions ? (
+              <CartSuggestionsRow
+                heading={engineCart.suggestionsHeading}
+                items={suggestions}
+                accent={accent}
+                onAccent={chowkOnAccent(accent)}
+                onNavigate={onClose}
+                className="py-4"
+              />
+            ) : null}
           </div>
         )}
 
@@ -183,6 +205,7 @@ function CartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
             >
               {soft ? `Proceed to Checkout · ₹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
             </button>
+            <WhatsappOrderButton engineCart={engineCart} className="mt-2" />
           </div>
         ) : null}
       </aside>

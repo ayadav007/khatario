@@ -28,7 +28,6 @@ export async function notifyAdminsOfNewBooking(booking: {
     `);
 
     if (admins.length === 0) {
-      console.log('[Demo Booking] No admins with phone numbers found for WhatsApp notification');
       return;
     }
 
@@ -71,12 +70,6 @@ export async function notifyAdminsOfNewBooking(booking: {
     //   }
     // }
 
-    // For now, log the notification (can be enhanced with email fallback or actual WhatsApp setup)
-    console.log('[Demo Booking Notification]', {
-      booking_number: booking.booking_number,
-      admins_notified: admins.length,
-      message_preview: message.substring(0, 100)
-    });
 
     // Store notification in a log table or send email as fallback
     // This can be enhanced later when platform WhatsApp is configured

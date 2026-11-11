@@ -36,6 +36,20 @@ describe('validateProductExtras card fields', () => {
     expect(ok).toEqual({ ok: true, value: { store_badge: 'x'.repeat(24), store_tagline: null } });
   });
 
+  it('cleans the fit note', () => {
+    expect(validateProductExtras({ store_fit_note: '  Oversized fit  ' })).toEqual({
+      ok: true,
+      value: { store_fit_note: 'Oversized fit' },
+    });
+    expect(validateProductExtras({ store_fit_note: '   ' })).toEqual({ ok: true, value: { store_fit_note: null } });
+    expect(validateProductExtras({ store_fit_note: 'x'.repeat(90) })).toEqual({
+      ok: true,
+      value: { store_fit_note: 'x'.repeat(80) },
+    });
+    expect(validateProductExtras({ store_fit_note: 5 })).toEqual({ ok: false, error: 'The fit note must be text.' });
+    expect(validateProductExtras({ store_tagline: 5 })).toEqual({ ok: false, error: 'The tagline must be text.' });
+  });
+
   it('leaves absent keys out', () => {
     expect(validateProductExtras({ video_url: null })).toEqual({ ok: true, value: { video_url: null } });
   });

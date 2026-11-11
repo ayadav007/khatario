@@ -54,11 +54,11 @@ const CLAUSE_FIELDS = [
 
 const TEMPLATE_ACCENT: Record<string, string> = {
 
-  standard: 'border-gray-300 bg-gray-50',
+  standard: 'border-border bg-gray-50 dark:bg-slate-800/50',
 
   formal: 'border-gray-800 bg-gray-100',
 
-  minimal: 'border-slate-300 bg-slate-50',
+  minimal: 'border-border bg-slate-50 dark:bg-slate-800/50',
 
   startup: 'border-sky-400 bg-sky-50',
 
@@ -304,7 +304,7 @@ export default function OfferLetterSettingsPage() {
 
                     {active && (
 
-                      <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold uppercase text-green-800">
+                      <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-[10px] font-bold uppercase text-green-800 dark:text-green-300">
 
                         <Check className="h-3 w-3" /> Active
 
@@ -318,7 +318,7 @@ export default function OfferLetterSettingsPage() {
 
                         'mb-3 h-16 rounded-lg border',
 
-                        TEMPLATE_ACCENT[t.id] ?? 'border-border bg-gray-50',
+                        TEMPLATE_ACCENT[t.id] ?? 'border-border bg-gray-50 dark:bg-slate-800/50',
 
                       )}
 
@@ -336,7 +336,7 @@ export default function OfferLetterSettingsPage() {
 
                           key={f}
 
-                          className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-text-muted"
+                          className="rounded bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-text-muted"
 
                         >
 
@@ -382,15 +382,15 @@ export default function OfferLetterSettingsPage() {
 
 
 
-          <div className="flex min-h-[calc(100vh-14rem)] flex-col gap-4 lg:flex-row">
+          <div className="flex min-h-[calc(100vh-14rem)] flex-col gap-4 2xl:flex-row">
 
-            <Card className="w-full shrink-0 space-y-4 p-5 lg:max-w-md xl:max-w-lg">
+            <Card className="w-full shrink-0 space-y-4 p-5 2xl:max-w-md">
 
-              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              <div className="rounded-lg border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-900 dark:text-blue-300">
 
                 <p className="font-medium">Per-business customization</p>
 
-                <p className="mt-1 text-blue-800">
+                <p className="mt-1 text-blue-800 dark:text-blue-300">
 
                   Layout + clause text are saved for your business. Salary and candidate details are
 
@@ -474,7 +474,7 @@ export default function OfferLetterSettingsPage() {
 
                   <textarea
 
-                    className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm"
+                    className="input mt-1 w-full"
 
                     rows={3}
 
@@ -506,7 +506,7 @@ export default function OfferLetterSettingsPage() {
 
 
 
-            <div className="min-h-[480px] flex-1 rounded-xl border border-border bg-gray-100 p-4 lg:min-h-0">
+            <div className="min-h-[480px] min-w-0 flex-1 rounded-xl border border-border bg-gray-100 p-4 dark:bg-slate-900 2xl:min-h-0">
 
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 
@@ -562,7 +562,7 @@ export default function OfferLetterSettingsPage() {
 
               {!autoRefresh && (
 
-                <p className="mb-2 flex items-center gap-1 text-xs text-amber-700">
+                <p className="mb-2 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
 
                   <Eye className="h-3 w-3" /> Click refresh to see edits
 
@@ -570,7 +570,7 @@ export default function OfferLetterSettingsPage() {
 
               )}
 
-              <div className="overflow-hidden rounded-lg border border-border bg-slate-100 p-3 shadow-md">
+              <div className="overflow-hidden rounded-lg border border-border bg-slate-100 dark:bg-slate-800 p-3 shadow-md">
 
                 <ScaledA4Preview
 

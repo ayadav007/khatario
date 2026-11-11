@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
         // Skip processing if subscription is inactive or expired
         const subscription = await getBusinessSubscription(entry.business_id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-          console.log(`Skipping reversing entry ${entry.id}: business ${entry.business_id} subscription inactive or expired`);
           continue;
         }
 
@@ -56,7 +55,6 @@ export async function POST(request: NextRequest) {
           today.setHours(0, 0, 0, 0);
           
           if (endDate < today) {
-            console.log(`Skipping reversing entry ${entry.id}: business ${entry.business_id} subscription expired on ${subscription.end_date}`);
             continue;
           }
         }
@@ -64,7 +62,6 @@ export async function POST(request: NextRequest) {
         // Check if business has access to recurring invoices feature (required for reversing entries)
         const hasRecurringAccess = await hasFeature(entry.business_id, 'recurring_invoices');
         if (!hasRecurringAccess) {
-          console.log(`Skipping reversing entry ${entry.id}: business ${entry.business_id} does not have recurring_invoices feature`);
           continue;
         }
 

@@ -297,3 +297,93 @@
 - q: stock kaise add kare
   audience: tenant_user
   route: guides
+- q: How do I connect with my distributor on Khatario?
+  audience: tenant_user
+  expect: [how-to/supplier-hub.md]
+- q: supplier ka bill apne aap purchase mein kaise aaye
+  audience: tenant_user
+  expect: [how-to/supplier-hub.md]
+- q: How do I receive a bill from a connected supplier with damaged items?
+  audience: tenant_user
+  expect: [how-to/supplier-hub.md]
+- q: How do I make a list of items running low and send orders to suppliers?
+  audience: tenant_user
+  expect: [how-to/supplier-hub.md]
+- q: Can my supplier send me the bill directly in Khatario?
+  expect: [prospect/modules/purchases-suppliers.md]
+- q: How do I add items by scanning barcodes?
+  audience: tenant_user
+  expect: [how-to/items-advanced.md]
+- q: How do I sell in boxes as well as pieces?
+  audience: tenant_user
+  expect: [how-to/items-advanced.md]
+- q: bori se packet kaise banaye
+  audience: tenant_user
+  expect: [how-to/items-advanced.md]
+- q: How do I merge two items that are the same?
+  audience: tenant_user
+  expect: [how-to/items-advanced.md]
+- q: How do I do a physical stock count of my godown?
+  audience: tenant_user
+  expect: [how-to/items-advanced.md]
+- q: How do I give a wholesale rate to some customers?
+  audience: tenant_user
+  expect: [how-to/party-pricing.md]
+- q: customer ke hisaab se alag rate kaise lagaye
+  audience: tenant_user
+  expect: [how-to/party-pricing.md]
+- q: How do I set up buy 10 get 1 free?
+  audience: tenant_user
+  expect: [how-to/party-pricing.md]
+- q: Can I give different prices to different customers?
+  expect: [prospect/modules/billing-invoicing.md]
+- q: How do I correct a final invoice?
+  audience: tenant_user
+  expect: [how-to/invoices.md]
+- q: How do I give a year-end discount to a customer after billing?
+  audience: tenant_user
+  expect: [how-to/invoices.md]
+- q: bill hindi mein kaise print kare
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: Is there a distributor invoice template with MRP and margin?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: Can I have a branch in another state?
+  audience: tenant_user
+  expect: [how-to/multi-gstin.md]
+- q: How do I file GSTR-1 for two GSTINs?
+  audience: tenant_user
+  expect: [how-to/multi-gstin.md]
+- q: How do I upload GSTR-2B Excel?
+  audience: tenant_user
+  expect: [how-to/gst-reports.md]
+- q: How do I record a credit note received from a supplier?
+  audience: tenant_user
+  expect: [how-to/gst-reports.md]
+- q: Where is the bank stock statement for my cash credit limit?
+  audience: tenant_user
+  expect: [how-to/stock-audit-reports.md]
+- q: How do I record manufacturing with a bill of materials?
+  audience: tenant_user
+  expect: [how-to/stock-audit-reports.md]
+- q: Where do I see new WhatsApp enquiries as leads?
+  audience: tenant_user
+  expect: [how-to/connect-leads.md]
+- q: How do I connect IndiaMART leads?
+  audience: tenant_user
+  expect: [how-to/connect-leads.md]
+- q: follow up reminder kaise lagaye lead par
+  audience: tenant_user
+  expect: [how-to/connect-leads.md]
+- q: Does Khatario have a CRM pipeline for WhatsApp leads?
+  expect: [prospect/modules/whatsapp-crm.md]
+- q: How can a regular customer order from my store and pay monthly?
+  audience: tenant_user
+  expect: [how-to/store-khata.md]
+- q: store se udhaar par order kaise de
+  audience: tenant_user
+  expect: [how-to/store-khata.md]
+- q: How do I record an expense with several items on one bill?
+  audience: tenant_user
+  expect: [how-to/purchases.md]

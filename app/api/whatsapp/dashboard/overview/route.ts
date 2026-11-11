@@ -75,13 +75,6 @@ export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ b
         (SELECT total FROM debug_events) as total_events
     `, [businessId]);
 
-    console.log('[Dashboard] Bot vs Human metrics:', {
-      bot_handled: botVsHuman?.bot_handled || 0,
-      human_handled: botVsHuman?.human_handled || 0,
-      handoff_count: botVsHuman?.handoff_count || 0,
-      total_bot_message_events: botVsHuman?.total_events || 0,
-      businessId: businessId.substring(0, 8) + '...',
-    });
 
     return NextResponse.json({
       status: statusOverview || {

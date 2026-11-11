@@ -246,14 +246,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
     // Get active socket
     const session = await getWhatsAppSocket(businessId);
     
-    // DEBUG: Log session state
-    console.log('[Live Messages] Session check:', {
-      jid,
-      hasSession: !!session,
-      status: session?.status,
-      hasSocket: !!session?.socket,
-      socketValid: session?.socket ? !session.socket.ws?.isClosed : false
-    });
     
     if (!session || session.status !== 'connected' || !session.socket) {
       return NextResponse.json(
@@ -272,15 +264,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
     const sock = session.socket;
     
     // Access messages from store with detailed diagnostics
-    console.log('[Live Messages] Checking store availability:', {
-      jid,
-      businessId,
-      hasSocket: !!sock,
-      hasStore: !!sock.store,
-      hasMessagesStore: !!sock.store?.messages,
-      storeType: typeof sock.store,
-      messagesStoreType: typeof sock.store?.messages
-    });
     
     if (!sock.store) {
       console.error('[Live Messages] ❌ Store not available:', {
@@ -314,15 +297,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
         { status: 503 }
       );
     }
-    
-    // Store exists - log what we have
-    const messageStoreKeys = Object.keys(sock.store.messages || {});
-    console.log('[Live Messages] ✅ Store available:', {
-      jid,
-      totalJidsInStore: messageStoreKeys.length,
-      hasThisJid: jid in (sock.store.messages || {}),
-      sampleJids: messageStoreKeys.slice(0, 5)
-    });
 
     // Default: WhatsApp/Baileys store is the source of truth for the thread (like WhatsApp Web).
     // Set WHATSAPP_LIVE_MESSAGES_DB_FALLBACK=true to restore the old DB-first / DB-merge behavior.
@@ -330,21 +304,12 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
       process.env.WHATSAPP_LIVE_MESSAGES_DB_FALLBACK === 'true' ||
       process.env.WHATSAPP_LIVE_MESSAGES_DB_FALLBACK === '1';
 
-    // Get messages for this JID with detailed logging
+    // Get messages for this JID
     let messages: proto.IWebMessageInfo[] = [];
     try {
       let resolvedStoreJid = findMatchingStoreJid(sock.store.messages, jid) ?? jid;
       let jidMessages = sock.store.messages[resolvedStoreJid];
       
-      console.log('[Live Messages] Accessing messages for JID:', {
-        jid,
-        resolvedStoreJid: resolvedStoreJid !== jid ? resolvedStoreJid : undefined,
-        hasJidMessages: !!jidMessages,
-        jidMessagesType: typeof jidMessages,
-        isArray: Array.isArray(jidMessages),
-        storeMessageKeys: Object.keys(sock.store.messages).slice(0, 10), // First 10 JIDs for debugging
-        totalJidsInStore: Object.keys(sock.store.messages).length
-      });
       
       let storeHasMessages = jidMessages && (
         (Array.isArray(jidMessages) && jidMessages.length > 0) ||
@@ -354,8 +319,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
       if (!useDbFallback && offset === 0 && !storeHasMessages) {
         try {
           const { bootstrapChatHistoryFromWhatsApp } = await import('@/lib/whatsapp');
-          const boot = await bootstrapChatHistoryFromWhatsApp(businessId, jid);
-          console.log('[Live Messages] 🔄 bootstrapChatHistoryFromWhatsApp:', boot);
+          await bootstrapChatHistoryFromWhatsApp(businessId, jid);
           resolvedStoreJid = findMatchingStoreJid(sock.store.messages, jid) ?? jid;
           jidMessages = sock.store.messages[resolvedStoreJid];
           storeHasMessages = jidMessages && (
@@ -372,12 +336,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
       const shouldUseDatabase = useDbFallback && (offset === 0 || !storeHasMessages);
       
       if (shouldUseDatabase) {
-        console.log('[Live Messages] 📚 Using database for message history', {
-          reason: offset === 0 ? 'initial_load' : 'store_empty_or_incomplete',
-          jid,
-          offset,
-          storeHasMessages
-        });
         
         try {
           const { getPool } = await import('@/lib/db');
@@ -499,25 +457,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
             hasMore = msgQuery.rows.length === limit && (offset + msgQuery.rows.length) < totalCount;
           }
           
-          console.log('[Live Messages] ✅ Fetched from database:', {
-            jid,
-            conversationDbId: conversation.id,
-            conversationJid: conversation.conversation_id,
-            messageCount: msgQuery.rows.length,
-            totalCount,
-            limit,
-            offset,
-            hasMore,
-            isInitialLoad: offset === 0,
-            directions: msgQuery.rows.map((r: any) => r.direction),
-            incomingCount: msgQuery.rows.filter((r: any) => r.direction === 'incoming').length,
-            outgoingCount: msgQuery.rows.filter((r: any) => r.direction === 'outgoing').length,
-            sampleMessages: msgQuery.rows.slice(0, 3).map((r: any) => ({
-              direction: r.direction,
-              text: r.message_text?.substring(0, 30),
-              created_at: r.created_at
-            }))
-          });
           
           // Transform to frontend format
           const dbMessages = msgQuery.rows.map((row: any) => ({
@@ -580,11 +519,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
                         new Date(b.created_at as string).getTime()
                     );
                     const windowed = merged.length > limit ? merged.slice(merged.length - limit) : merged;
-                    console.log('[Live Messages] Merged store tail into DB (by id, not by max created_at):', {
-                      dbBatch: toReturn.length,
-                      added: fromStore.length,
-                      windowed: windowed.length
-                    });
                     return NextResponse.json({
                       messages: windowed,
                       total: totalCount,
@@ -613,11 +547,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
           if (offset === 0 && !storeHasMessages) {
             return NextResponse.json({ messages: [], total: totalCount, has_more: false });
           }
-          console.log('[Live Messages] 📭 No rows in DB for this chat; using Baileys store for initial load', {
-            jid,
-            totalCount,
-            resolvedStoreJid: resolvedStoreJid !== jid ? resolvedStoreJid : undefined
-          });
           }
         } catch (dbError) {
           console.error('[Live Messages] ❌ Database fallback failed:', dbError);
@@ -642,12 +571,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
       }
       messages.sort((a, b) => getProtoTimestampSec(a) - getProtoTimestampSec(b));
       
-      console.log('[Live Messages] Retrieved messages:', {
-        jid,
-        messageCount: messages.length,
-        firstMessageTimestamp: messages[0]?.messageTimestamp,
-        lastMessageTimestamp: messages[messages.length - 1]?.messageTimestamp
-      });
     } catch (error: any) {
       console.error('[Live Messages] Error accessing messages:', {
         error: error.message,
@@ -667,12 +590,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
     const neededMessages = offset + limit;
     
     if (offset > 0 && totalMessages < neededMessages) {
-      console.log('[Live Messages] 🔄 Store has insufficient history. Will try WhatsApp fetch, then database fallback:', {
-        totalInStore: totalMessages,
-        neededTotal: neededMessages,
-        offset,
-        limit
-      });
       
       // Try fetching from WhatsApp first (only if we have at least 1 message as reference)
       if (totalMessages > 0) {
@@ -681,11 +598,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
           const fetchResult = await fetchOlderMessagesFromWhatsApp(businessId, jid, 50);
           
           if (fetchResult.success && fetchResult.messages && fetchResult.messages.length > totalMessages) {
-            console.log('[Live Messages] ✅ Successfully fetched older messages from WhatsApp');
             messages = fetchResult.messages;
-            console.log('[Live Messages] 📊 Updated message count:', messages.length);
-          } else {
-            console.log('[Live Messages] ⚠️ WhatsApp fetch did not return more messages, falling back to database');
           }
         } catch (fetchError) {
           console.error('[Live Messages] ❌ Error fetching from WhatsApp, falling back to database:', fetchError);
@@ -693,7 +606,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
       }
       
       if (useDbFallback && messages.length < neededMessages) {
-        console.log('[Live Messages] 📦 Falling back to database for history');
         try {
           const { getPool } = await import('@/lib/db');
           const pool = getPool();
@@ -752,12 +664,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
               [convQuery.rows[0].id, businessId, limit, offset]
             );
             
-            console.log(`[Live Messages] ✅ Fetched ${dbMessages.rows.length} messages from database (offset: ${offset})`, {
-              totalCount,
-              fetchedCount: dbMessages.rows.length,
-              hasMore: (offset + dbMessages.rows.length) < totalCount,
-              directions: dbMessages.rows.map((r: any) => r.direction)
-            });
             
             // Transform database messages (already in ASC order - oldest first)
             const dbMsgs = dbMessages.rows.map((row: any) => ({
@@ -801,14 +707,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
     const startIndex = Math.max(0, finalTotalMessages - offset - limit);
     const endIndex = finalTotalMessages - offset;
     
-    console.log('[Live Messages] Pagination:', {
-      totalMessages: finalTotalMessages,
-      offset,
-      limit,
-      startIndex,
-      endIndex,
-      willFetch: endIndex - startIndex
-    });
     
     // Transform messages to match your frontend format (keep proto row aligned for timestamp fill)
     const protoSlice = messages.slice(startIndex, endIndex);
@@ -833,14 +731,6 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: tr
     // More older messages exist in the in-memory array iff the slice did not start at 0
     const hasMore = startIndex > 0;
     
-    console.log('[Live Messages] Response:', {
-      returnedCount: transformedMessages.length,
-      totalMessages: finalTotalMessages,
-      hasMore,
-      offset,
-      limit,
-      logic: hasMore ? 'older-available-in-store' : 'no-older-in-store'
-    });
     
     return NextResponse.json({ 
       messages: transformedMessages, // Already in correct order (oldest→newest)
@@ -899,14 +789,6 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
     }
 
     // Send message via WhatsApp
-    console.log('[Live Messages] 📤 Attempting to send message:', {
-      jid,
-      businessId,
-      messageText: message_text,
-      messageType: msgType,
-      hasMedia: !!media,
-      hasButtons: !!buttons
-    });
 
     let messageId: string | undefined;
     try {
@@ -921,11 +803,6 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
       );
       messageId = typeof result === 'string' ? result : undefined;
       
-      console.log('[Live Messages] ✅ Message sent successfully:', {
-        jid,
-        messageId,
-        messageText: message_text
-      });
     } catch (sendError: any) {
       console.error('[Live Messages] ❌ Error sending WhatsApp message:', {
         jid,
@@ -982,7 +859,6 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
             { sentBy: 'staff', sentByUserId: userId ?? null }
           );
           if (!jid.endsWith('@g.us')) await onStaffReply(businessId, conversationDbId).catch(() => undefined);
-          console.log('[Live Messages] ✅ Outgoing message persisted + SSE emit (CRM path)');
         }
       } catch (dbError) {
         console.error('[Live Messages] ⚠️ storeOutgoingMessage failed (non-critical):', dbError);

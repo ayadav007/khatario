@@ -65,9 +65,9 @@ async function json(res) {
   return body;
 }
 
-/** Fills the new-invoice form like a cashier would; nothing is saved. */
+/** Fills the new-invoice composer like a cashier would (customer, then items with quantities in the picker); nothing is saved. */
 async function fillNewInvoice(page) {
-  await page.getByPlaceholder('Search Customer...').fill('Sharma');
+  await page.getByPlaceholder('Search customer by name or phone').fill('Sharma');
   await page.getByText('Sharma & Sons').first().click({ timeout: 30_000 });
   await page.waitForTimeout(1000);
 
@@ -77,31 +77,50 @@ async function fillNewInvoice(page) {
     ['Sunflower', 'Sunflower Oil 1L', 6],
     ['Detergent', 'Detergent Powder 1kg', 5],
   ];
-  const rows = page.locator('tr').filter({ has: page.locator('input[placeholder="%"]') });
-  for (const [i, [query, name, qty]] of lines.entries()) {
-    if ((await rows.count()) <= i) await page.getByText('Add Line').first().click();
-    const row = rows.nth(i);
-    const search = row.locator('input').first();
-    await search.click();
+  await page.getByRole('button', { name: /Add items/ }).first().click();
+  const search = page.getByPlaceholder('Search by item name, code or barcode');
+  for (const [query, name, qty] of lines) {
     await search.fill(query);
-    await page.getByText(name).last().click({ timeout: 30_000 });
-    await page.waitForTimeout(800);
-    await row.locator('input').nth(2).fill(String(qty));
+    await page.getByText(name, { exact: true }).last().click({ timeout: 30_000 });
+    const qtyInput = page.locator('input[data-qty-input="true"]:visible').first();
+    await qtyInput.fill(String(qty));
+    await page.waitForTimeout(400);
   }
-  await page.getByText('Enable Round Off').click().catch(() => {});
-  await page.getByText('Additional Information').first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
-  await page.mouse.wheel(0, -120);
-  await page.waitForTimeout(1000);
+  await search.press('Control+Enter');
+  // Let the "Added 4 products" toast go before the shot.
+  await page.getByText(/Added \d+ products/).first().waitFor({ state: 'hidden', timeout: 15_000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  await page.mouse.move(1439, 899);
+}
+
+/** GSTR-1 for last month, which has the demo shop's B2B bills (the current month may have none yet). */
+async function pickLastGstMonth(page) {
+  const lastMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+  const monthName = lastMonth.toLocaleString('en-IN', { month: 'long' });
+  const selects = page.locator('select:visible');
+  await selects.first().selectOption({ label: monthName });
+  await selects.nth(1).selectOption({ label: String(lastMonth.getFullYear()) }).catch(() => {});
+  await page.getByRole('button', { name: 'Refresh' }).click().catch(() => {});
+  await page.getByText('No B2B invoices found').first().waitFor({ state: 'hidden', timeout: 120_000 }).catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 }
 
 async function pickMonthRange(page) {
   const select = page.locator('select:visible').filter({ has: page.locator('option', { hasText: 'Today' }) }).first();
-  const label = await select.evaluate((el) =>
-    [...el.options].map((o) => o.textContent.trim()).find((t) => /this month/i.test(t)) ??
-    [...el.options].map((o) => o.textContent.trim()).find((t) => /month|30/i.test(t)),
-  );
+  // Early in a month "This Month" is only a day or two of sales, so prefer a full past period.
+  const label = await select.evaluate((el) => {
+    const options = [...el.options].map((o) => o.textContent.trim());
+    return (
+      options.find((t) => /last month/i.test(t)) ??
+      options.find((t) => /last 30|30 days/i.test(t)) ??
+      options.find((t) => /this month/i.test(t))
+    );
+  });
   if (!label) return;
   await select.selectOption({ label });
+  // The cards drop their "Today's …" labels once the new range has loaded.
+  await page.getByText(/today's sales/i).first().waitFor({ state: 'hidden', timeout: 180_000 }).catch(() => {});
   await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
   await page.waitForTimeout(3000);
 }
@@ -147,7 +166,7 @@ async function main() {
 
   const shots = [
     { name: 'dashboard', url: '/dashboard', ready: 'Sales insights', act: pickMonthRange },
-    { name: 'invoice-new', url: '/invoices/new', ready: 'Add Line', act: fillNewInvoice },
+    { name: 'invoice-new', url: '/invoices/new', ready: 'Add items', act: fillNewInvoice },
     {
       name: 'invoice-share',
       url: `/invoices/${partialId}/view`,
@@ -158,7 +177,7 @@ async function main() {
       },
     },
     { name: 'invoices-list', url: '/invoices', ready: 'Partially' },
-    { name: 'gstr1', url: '/reports/gst/gstr1', ready: 'B2B Invoices' },
+    { name: 'gstr1', url: '/reports/gst/gstr1', ready: 'B2B Invoices', act: pickLastGstMonth },
   ];
 
   const page = await context.newPage();

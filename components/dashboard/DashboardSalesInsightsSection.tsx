@@ -21,7 +21,7 @@ export function DashboardSalesInsightsSection({
   }
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="h-full">
       {mounted ? (
         <SalesInsightsCard businessId={businessId} dateRange={dateRange} />
       ) : (

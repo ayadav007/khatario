@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { Suspense, useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, MapPin, Menu as MenuIcon, Search, ShoppingCart, User } from 'lucide-react';
@@ -258,6 +258,7 @@ function CategoryChips({ chips }: { chips: Chip[] }) {
 export function EngineHeader({
   s,
   logoUrl,
+  hideName,
   menu,
   layoutClass,
   logoStyle,
@@ -265,9 +266,12 @@ export function EngineHeader({
   searchPlaceholder,
   chips,
   quick,
+  statusBadge,
 }: {
   s: StudioSettings;
   logoUrl: string | null;
+  /** The logo alone, without the store name beside it (the Header's "Show store name" off, with a logo). */
+  hideName?: boolean;
   /** The header's resolved menu, its layout and whether top items are in capitals. */
   menu: { items: ResolvedItem[]; layout: 'below' | 'inline'; caps: boolean };
   /** Logo position and separator classes (`headerLayoutClasses`); empty for today's layout. */
@@ -280,6 +284,8 @@ export function EngineHeader({
   chips?: Chip[];
   /** Quick preset only: the old Quick header (delivery line, pincode, cycling hint, pill row). */
   quick?: QuickHeaderProps;
+  /** Open or closed pill beside the store name (the Header's "Show open or closed"). */
+  statusBadge?: ReactNode;
 }) {
   const { cartCount } = useStore();
   const { openCart } = useEngineCart();
@@ -296,6 +302,7 @@ export function EngineHeader({
         logoStyle={sizedLogo}
         subdomain={subdomain}
         placeholder={searchPlaceholder}
+        statusBadge={statusBadge}
       />
     );
   }
@@ -330,11 +337,13 @@ export function EngineHeader({
     <StudioHeader
       s={s}
       logoUrl={logoUrl}
+      hideName={hideName}
       layoutClass={layoutClass}
       logoStyle={sizedLogo as CSSProperties | undefined}
       menuSlot={menu.layout === 'below' ? bar : null}
       inlineSlot={menu.layout === 'inline' ? bar : undefined}
       menuButton={menuButton}
+      nameBadge={statusBadge}
       search={
         <Suspense fallback={fallback}>
           <HeaderSearchBox subdomain={subdomain} placeholder={searchPlaceholder} />
@@ -603,6 +612,7 @@ function EngineQuickHeader({
   logoStyle,
   subdomain,
   placeholder,
+  statusBadge,
 }: QuickHeaderProps & {
   menuItems: ResolvedItem[];
   logoUrl: string | null;
@@ -610,6 +620,7 @@ function EngineQuickHeader({
   logoStyle?: Record<string, string>;
   subdomain: string;
   placeholder: string;
+  statusBadge?: ReactNode;
 }) {
   const { cartCount, branches, selectedBranchId, selectBranch, store } = useStore();
   const { openCart } = useEngineCart();
@@ -652,7 +663,10 @@ function EngineQuickHeader({
             />
           ) : null}
           <button type="button" className="qk-loc" onClick={() => setSheetOpen(true)} aria-label="Change delivery location">
-            <b>{quickDeliveryLine(eta, name)}</b>
+            <b>
+              {quickDeliveryLine(eta, name)}
+              {statusBadge}
+            </b>
             <span>
               <MapPin aria-hidden="true" />
               {pincodeLine(pincode, branch?.name, store?.name ?? name)}

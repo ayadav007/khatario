@@ -14,7 +14,7 @@ Khatario shows who owes you money before you open the register: customer balance
 
 ## Can customers pay online?
 
-Yes. You can connect your own payment gateway account (Razorpay, Cashfree, PayU, PhonePe Business or Instamojo) and add a payment link to invoices and reminders so customers can pay by UPI, card or net banking. Payments made through the link are recorded against the invoice. Your gateway keys are stored encrypted. Payment gateway integration is included in the Enterprise plan and during the free trial.
+Yes. You can connect your own payment gateway account (Razorpay, Cashfree, PayU, PhonePe Business, Instamojo or Easebuzz) and add a payment link to invoices and reminders so customers can pay by UPI, card or net banking. Payments made through the link are recorded against the invoice. Your gateway keys are stored encrypted. Payment gateway integration is included from the Starter plan upwards and during the free trial.
 
 ## Can I record cash, UPI and bank payments?
 
@@ -27,3 +27,7 @@ Yes. Credit-limit alerts warn you when a customer's balance goes above the limit
 ## Does Khatario do bank reconciliation?
 
 Yes. Import your bank statement (CSV or PDF) and match it with the payments recorded in Khatario.
+
+## Can regular customers order from my online store on khata?
+
+Yes. With store khata, customers you trust order from your online store on credit and pay on their monthly settlement day. You set a credit limit and rules (block, allow and tell you, or ask you to approve), statements and reminders go on WhatsApp, and customers see their balance and pay in My khata in the store.

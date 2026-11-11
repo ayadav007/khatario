@@ -4,7 +4,8 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useLayoutData, useShellLayoutSettings } from '@/contexts/LayoutDataContext';
+import { isSettingsLinkLocked } from '@/lib/settings-link-lock';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import {
   buildSettingsHubSections,
@@ -65,17 +66,13 @@ const COLUMN_ICON_WRAP =
   'bg-slate-100 text-text-secondary dark:bg-slate-800 dark:text-slate-300';
 const COLUMN_HEADER = 'border-b border-border bg-surface px-4 pb-3 pt-4';
 
-function linkVisible(
-  item: SettingsHubLink,
-  hasCapability: (resource: string, action?: string) => boolean,
-  warehousesEnabled: boolean,
-): boolean {
+type CapabilityCheck = (resource: string, action?: string) => { allowed: boolean; denialReason?: string };
+
+/** Same role rule as the desktop sidebar: the role must allow view; a plan-only denial still shows the link. */
+function linkVisible(item: SettingsHubLink, checkCapability: CapabilityCheck): boolean {
   if (!item.module) return true;
-  if (item.module === 'warehouses' && warehousesEnabled) return true;
-  if (item.isLocked || (item.featureKey && !hasCapability(item.featureKey, 'view'))) {
-    return true;
-  }
-  return hasCapability(item.module, 'view');
+  const result = checkCapability(item.module, 'view');
+  return result.allowed || result.denialReason === 'FEATURE_NOT_IN_PLAN';
 }
 
 function linkMatches(l: SettingsHubLink, col: SettingsHubColumn, ql: string): boolean {
@@ -84,21 +81,22 @@ function linkMatches(l: SettingsHubLink, col: SettingsHubColumn, ql: string): bo
   const href = l.href.toLowerCase();
   const colTitle = col.title.toLowerCase();
   if (label.includes(ql) || href.includes(ql) || colTitle.includes(ql)) return true;
+  // A keyword may sit inside a longer query, but only as a whole word ("ess" must not match "address").
+  const words = ql.split(/[^a-z0-9]+/).filter(Boolean);
   for (const kw of l.searchKeywords ?? []) {
     const k = kw.toLowerCase();
-    if (k.includes(ql) || ql.includes(k)) return true;
+    if (k.includes(ql) || words.includes(k)) return true;
   }
   return false;
 }
 
 function filterColumn(
   col: SettingsHubColumn,
-  hasCapability: (r: string, a?: string) => boolean,
-  warehousesEnabled: boolean,
+  checkCapability: CapabilityCheck,
   q: string,
   sectionBroadMatch: boolean
 ): SettingsHubColumn | null {
-  const links = col.links.filter((l) => linkVisible(l, hasCapability, warehousesEnabled));
+  const links = col.links.filter((l) => linkVisible(l, checkCapability));
   const ql = q.trim().toLowerCase();
   const filtered =
     ql === ''
@@ -112,8 +110,7 @@ function filterColumn(
 
 function filterSection(
   section: SettingsHubSection,
-  hasCapability: (r: string, a?: string) => boolean,
-  warehousesEnabled: boolean,
+  checkCapability: CapabilityCheck,
   q: string
 ): SettingsHubSection | null {
   const ql = q.trim().toLowerCase();
@@ -122,7 +119,7 @@ function filterSection(
     (section.title.toLowerCase().includes(ql) ||
       section.description.toLowerCase().includes(ql));
   const cols = section.columns
-    .map((c) => filterColumn(c, hasCapability, warehousesEnabled, q, sectionBroadMatch))
+    .map((c) => filterColumn(c, checkCapability, q, sectionBroadMatch))
     .filter((c): c is SettingsHubColumn => c !== null);
   if (cols.length === 0) return null;
   return { ...section, columns: cols };
@@ -131,10 +128,15 @@ function filterSection(
 export function SettingsHub() {
   const router = useRouter();
   const { business, platformSession } = useAuth();
-  const { warehousesEnabled, supplierHubVisible } = useLayoutData();
-  const { hasCapability } = useCapabilityCheck();
+  const { supplierHubVisible } = useLayoutData();
+  const { snapshotLoaded } = useShellLayoutSettings();
+  const { hasCapability, checkCapability } = useCapabilityCheck();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
+  // Never show a lock while the plan snapshot is still loading.
+  const isLocked = (link: SettingsHubLink) => snapshotLoaded && isSettingsLinkLocked(link, hasCapability);
 
   const enabledModules = platformSession?.enabledModules ?? (['billing'] as PlatformModule[]);
 
@@ -150,9 +152,9 @@ export function SettingsHub() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return hubSections
-      .map((s) => filterSection(s, hasCapability, warehousesEnabled, q))
+      .map((s) => filterSection(s, checkCapability, q))
       .filter((s): s is SettingsHubSection => s !== null);
-  }, [search, hasCapability, warehousesEnabled, hubSections]);
+  }, [search, checkCapability, hubSections]);
 
   const onSearchKey = useCallback((e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
@@ -176,9 +178,43 @@ export function SettingsHub() {
     };
   }, []);
 
+  // Desktop: start in the search box. Phones skip this so the keyboard does not cover the list.
+  useEffect(() => {
+    if (window.matchMedia('(min-width: 1024px)').matches) searchRef.current?.focus();
+  }, []);
+
+  // Keep Tab inside the hub while it covers the page.
+  useEffect(() => {
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !rootRef.current) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]:not(#settings-hub)')) return;
+      const focusable = Array.from(
+        rootRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+      ).filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (!rootRef.current.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onTab);
+    return () => document.removeEventListener('keydown', onTab);
+  }, []);
+
   useEffect(() => {
     const onEscape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Another dialog (command palette, upgrade modal) is open on top: let it close first.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]:not(#settings-hub)')) return;
       const t = e.target as HTMLElement;
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') {
         const input = t as HTMLInputElement;
@@ -189,16 +225,18 @@ export function SettingsHub() {
           return;
         }
       }
-      router.push('/dashboard');
+      router.push(homeHref);
     };
     window.addEventListener('keydown', onEscape);
     return () => window.removeEventListener('keydown', onEscape);
-  }, [router]);
+  }, [router, homeHref]);
 
   const businessName = business?.name?.trim() || 'Your business';
 
   return (
     <div
+      id="settings-hub"
+      ref={rootRef}
       className="fixed inset-0 z-[100] flex flex-col bg-slate-100/95 text-text-primary backdrop-blur-[2px] dark:bg-slate-950/95"
       role="dialog"
       aria-modal="true"
@@ -206,7 +244,7 @@ export function SettingsHub() {
     >
       {/* Sticky header — search + close */}
       <header className="z-10 flex-shrink-0 border-b border-border/80 bg-surface/95 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-surface/85">
-        <div className={`mx-auto flex ${WIDE_PAGE_CONTENT_CLASS} flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6`}>
+        <div className={`mx-auto flex ${WIDE_PAGE_CONTENT_CLASS} max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6`}>
           <div className="flex min-w-0 items-start gap-3">
             <div
               className={clsx(
@@ -218,10 +256,9 @@ export function SettingsHub() {
               <SlidersHorizontal className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 id="settings-hub-title" className="settings-page-title hidden md:block">
+              <h1 id="settings-hub-title" className="settings-page-title sr-only md:not-sr-only">
                 All settings
               </h1>
-              <h1 className="sr-only md:hidden">All settings</h1>
               <p className="type-body-secondary truncate">{businessName}</p>
             </div>
           </div>
@@ -235,14 +272,14 @@ export function SettingsHub() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search settings (press /)"
-                className="w-full rounded-xl border border-border bg-surface py-2.5 pl-10 pr-4 text-sm text-text-primary shadow-sm placeholder:text-text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                className="min-h-11 w-full rounded-xl border border-border bg-surface py-2.5 pl-10 pr-4 text-base text-text-primary sm:text-sm shadow-sm placeholder:text-text-muted focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                 aria-label="Search settings"
               />
             </div>
             <Link
-              href="/dashboard"
+              href={homeHref}
               className={clsx(
-                'inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium shadow-sm',
+                'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium shadow-sm',
                 'whitespace-nowrap transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/80'
               )}
             >
@@ -255,7 +292,7 @@ export function SettingsHub() {
 
       {/* Scrollable hub */}
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <div className={`mx-auto ${WIDE_PAGE_CONTENT_CLASS} space-y-10 px-4 py-8 sm:px-6`}>
+        <div className={`mx-auto ${WIDE_PAGE_CONTENT_CLASS} max-w-7xl space-y-10 px-4 py-8 sm:px-6`}>
           {filtered.length === 0 && (
             <div className="rounded-2xl border border-border bg-surface p-10 text-center shadow-sm">
               <Search className="mx-auto mb-3 h-10 w-10 text-text-muted" />
@@ -263,7 +300,7 @@ export function SettingsHub() {
                 No settings match &ldquo;{search}&rdquo;. Try another word or{' '}
                 <button
                   type="button"
-                  className="font-medium text-primary-600 hover:underline"
+                  className="font-medium text-primary-600 hover:underline dark:text-primary-200"
                   onClick={() => setSearch('')}
                 >
                   clear search
@@ -288,7 +325,7 @@ export function SettingsHub() {
                   return (
                     <MobileListSection key={col.id} title={col.title}>
                       {col.links.map((link) => {
-                        const locked = link.featureKey != null && !hasCapability(link.featureKey, 'view');
+                        const locked = isLocked(link);
                         return (
                           <MobileListRow
                             key={`${link.href}-${link.label}`}
@@ -304,7 +341,7 @@ export function SettingsHub() {
                 })}
               </div>
 
-              <div className="hidden grid-cols-1 gap-5 sm:grid-cols-2 lg:grid lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              <div className="hidden gap-5 lg:grid lg:grid-cols-3">
                 {section.columns.map((col) => {
                   const Icon = COLUMN_ICONS[col.id] ?? SlidersHorizontal;
                   return (
@@ -331,8 +368,7 @@ export function SettingsHub() {
 
                       <ul className="space-y-0.5 px-2 pb-3 pt-1">
                         {col.links.map((link) => {
-                          const locked =
-                            link.featureKey != null && !hasCapability(link.featureKey, 'view');
+                          const locked = isLocked(link);
                           return (
                             <li key={`${link.href}-${link.label}`}>
                               <Link
@@ -346,8 +382,8 @@ export function SettingsHub() {
                               >
                                 <span className="font-medium text-text-primary">{link.label}</span>
                                 {locked && (
-                                  <span className="ml-1 text-2xs uppercase text-text-muted">
-                                    Plan
+                                  <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-semibold uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                    Upgrade
                                   </span>
                                 )}
                               </Link>

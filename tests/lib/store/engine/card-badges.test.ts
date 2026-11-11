@@ -40,4 +40,19 @@ describe('tileBadges', () => {
   it('with no discount there is no % OFF badge and nothing struck', () => {
     expect(tileBadges(0, hot)).toEqual({ badges: hot, struck: false });
   });
+
+  it('shows rupees off when asked', () => {
+    const r = tileBadges(14, [], false, { rupeesOff: 91, format: 'rupees' });
+    expect(r.badges[0]).toEqual({ label: '₹91 OFF', tone: 'sale' });
+    expect(r.struck).toBe(true);
+    expect(tileBadges(14, [])).toEqual({ badges: [{ label: '14% OFF', tone: 'sale' }], struck: true });
+    expect(tileBadges(14, [], false, { format: 'percent', rupeesOff: 91 }).badges[0].label).toBe('14% OFF');
+  });
+
+  it('falls back to the percent when there are no rupees to show, and rupees never show without a badge', () => {
+    expect(tileBadges(14, [], false, { format: 'rupees' }).badges[0].label).toBe('14% OFF');
+    expect(tileBadges(14, [], false, { format: 'rupees', rupeesOff: 0 }).badges[0].label).toBe('14% OFF');
+    expect(tileBadges(14, hot, true, { format: 'rupees', rupeesOff: 91 }).badges).toEqual(hot);
+    expect(tileBadges(0, [], false, { format: 'rupees', rupeesOff: 91 })).toEqual({ badges: [], struck: false });
+  });
 });

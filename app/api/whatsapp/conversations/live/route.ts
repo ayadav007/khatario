@@ -113,13 +113,6 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ re
     // Get active socket
     const session = await getWhatsAppSocket(businessId);
     
-    // DEBUG: Log session state
-    console.log('[Live Conversations] Session check:', {
-      hasSession: !!session,
-      status: session?.status,
-      hasSocket: !!session?.socket,
-      socketValid: session?.socket ? !session.socket.ws?.isClosed : false
-    });
     
     if (!session || session.status !== 'connected' || !session.socket) {
       return NextResponse.json(
@@ -196,19 +189,9 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ re
         await new Promise((r) => setTimeout(r, 350));
         chats = collectChatsArrayFromStore(sock.store);
         if (chats.length > 0) {
-          console.log('[Live Conversations] Chats populated after wait', { attempt: attempt + 1, count: chats.length });
           break;
         }
       }
-    }
-    if (chats.length === 0) {
-      console.log('[Live Conversations] No chats in store after wait (new link or sync pending)', {
-        storeChatsType: typeof sock.store.chats,
-        keys:
-          sock.store.chats && typeof sock.store.chats === 'object' && !(sock.store.chats instanceof Map)
-            ? Object.keys(sock.store.chats as object).length
-            : 0
-      });
     }
 
     // FIX (R1+R3+R4 — confirmed by debug session 29d717 logs):

@@ -24,6 +24,8 @@ export function isPublicMarketingSurface(
   if (p === '/themes' || p.startsWith('/themes/')) return true;
   if (p === '/blog' || p.startsWith('/blog/')) return true;
   if (p.startsWith('/solution/')) return true;
+  /** Design-only previews under app/preview (noindex). */
+  if (p.startsWith('/preview/')) return true;
   if (p.startsWith('/login')) return true;
   // Entire platform-admin tree: business AuthContext must not 401 → /login.
   if (p.startsWith('/admin')) return true;

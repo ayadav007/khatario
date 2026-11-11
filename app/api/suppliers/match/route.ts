@@ -126,8 +126,8 @@ export async function POST(request: NextRequest) {
             }))
           });
         }
-      } catch (fuzzyError) {
-        console.log('Fuzzy matching not available (pg_trgm extension might not be installed)');
+      } catch {
+        /* fuzzy matching is best effort: fall through to no match */
       }
     }
 

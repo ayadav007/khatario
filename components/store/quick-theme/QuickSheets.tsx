@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Tag, Trash2 } from 'lucide-react';
 import { useStore, withStoreDraft } from '@/lib/store/store-context';
+import { cartLineAddsGst, cartLineTotal } from '@/lib/store/pricing';
 import { cartSavings, couponLabel, couponOutlook, freeDeliveryProgress, type StoreOfferCoupon } from '@/lib/store/quick';
 import type { StoreProduct } from '../StoreProductCard';
 import { rupees } from '../studio-theme/StudioSections';
 import { QuickSheet } from './QuickChrome';
+import { ClosedNotice } from '../engine/OpenStatusBadge';
 import { VariantPicker } from '../features/product/VariantPicker';
 import { findVariant, toVariantInputs } from '../features/product/product-view';
 import { ReviewSummaryCompact } from '../features/reviews/ReviewSummary';
+import { CartSuggestionsRow, WhatsappOrderButton, useCartSuggestions, type EngineCart } from '../CartExtras';
 
 /** Same key checkout reads, so a coupon picked in the cart is already applied there. */
 function couponKey(subdomain: string) {
@@ -42,11 +45,26 @@ function Stepper({
   );
 }
 
-/** Cart as a bottom sheet: lines, savings, listed coupons, bill and a sticky checkout button. */
-export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; onClose: () => void; onCheckout?: () => void }) {
+/**
+ * Cart as a bottom sheet: lines, savings, listed coupons, bill and a sticky checkout button. Its free-delivery card
+ * already shows whenever the branch has a free-delivery amount, so the theme's `cart_free_ship_bar` adds no second bar
+ * here; `engineCart.suggestions` adds the suggestions row under the lines.
+ */
+export function QuickCartSheet({
+  open,
+  onClose,
+  onCheckout,
+  engineCart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCheckout?: () => void;
+  engineCart?: EngineCart;
+}) {
   const { cart, cartTotal, cartCount, updateCartQuantity, store, branches, selectedBranchId } = useStore();
   const [coupons, setCoupons] = useState<StoreOfferCoupon[]>([]);
   const [applied, setApplied] = useState('');
+  const suggestions = useCartSuggestions(open, !!engineCart?.suggestions);
 
   useEffect(() => {
     if (!open || !store) return;
@@ -104,13 +122,16 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
       }
       footer={
         cart.length ? (
-          <button type="button" className="qk-cta" onClick={onCheckout} disabled={belowMin}>
-            <span>
-              <b>{rupees(Math.max(0, cartTotal - couponSaving))}</b>
-              <small>{couponSaving ? 'after coupon' : 'total'}</small>
-            </span>
-            <span>{belowMin ? `Add ${rupees(minOrder - cartTotal)} more` : 'Proceed to checkout →'}</span>
-          </button>
+          <>
+            <button type="button" className="qk-cta" onClick={onCheckout} disabled={belowMin}>
+              <span>
+                <b>{rupees(Math.max(0, cartTotal - couponSaving))}</b>
+                <small>{couponSaving ? 'after coupon' : 'total'}</small>
+              </span>
+              <span>{belowMin ? `Add ${rupees(minOrder - cartTotal)} more` : 'Proceed to checkout →'}</span>
+            </button>
+            <WhatsappOrderButton engineCart={engineCart} className="mt-2" />
+          </>
         ) : null
       }
     >
@@ -121,6 +142,7 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
         </div>
       ) : (
         <>
+          <ClosedNotice hours={store.store_hours} className="mb-2" />
           {saved + couponSaving > 0 ? (
             <div className="qk-saved">
               <Tag /> You save {rupees(saved + couponSaving)} on this order
@@ -145,10 +167,13 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
                 )}
                 <div>
                   <p>{item.name}</p>
-                  <small>{item.variantName || item.unit}</small>
+                  <small>
+                    {item.variantName || item.unit}
+                    {cartLineAddsGst(item) ? ` · incl. ${item.taxRate}% GST` : ''}
+                  </small>
                   <b>
-                    {rupees(item.price * item.quantity)}
-                    {item.mrp && item.mrp > item.price ? <del>{rupees(item.mrp * item.quantity)}</del> : null}
+                    {rupees(cartLineTotal(item))}
+                    {item.mrp && item.mrp * item.quantity > cartLineTotal(item) ? <del>{rupees(item.mrp * item.quantity)}</del> : null}
                   </b>
                 </div>
                 <Stepper
@@ -161,6 +186,16 @@ export function QuickCartSheet({ open, onClose, onCheckout }: { open: boolean; o
               </li>
             ))}
           </ul>
+          {engineCart?.suggestions ? (
+            <CartSuggestionsRow
+              heading={engineCart.suggestionsHeading}
+              items={suggestions}
+              accent="var(--primary)"
+              onAccent="var(--on-primary)"
+              onNavigate={onClose}
+              className="my-3"
+            />
+          ) : null}
           {outlook.length ? (
             <section className="qk-offers">
               <h3>Offers for you</h3>
@@ -281,6 +316,7 @@ export function QuickVariantSheet({ product, open, onClose }: { product: StorePr
                     unit: product.unit,
                     maxStock: v.current_stock,
                     taxRate: product.tax_rate,
+                    gstIncluded: !!product.gst_included,
                   })
                 }
               >

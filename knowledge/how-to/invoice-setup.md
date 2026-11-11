@@ -2,7 +2,7 @@
 title: How to set up your invoice (number, logo, bank details, terms, printing)
 audience: [tenant_user]
 locale: en
-tags: [invoice setup, invoice number, prefix, number series, logo, signature, bank details, upi, qr code, terms and conditions, template, thermal, print, how to]
+tags: [invoice setup, invoice number, prefix, number series, logo, signature, bank details, upi, qr code, terms and conditions, template, designer, customise, distributor template, print language, hindi, thermal, print, how to]
 url: /settings/templates
 ---
 
@@ -52,7 +52,17 @@ Not yet. A payable UPI QR code on printed invoices is not available today. What 
 
 Go to Settings > Sales & billing > Templates & printing. Choose the document type on the left (Tax Invoice, Bill of Supply, and so on), preview a template and tap Activate (on mobile: Use this template). The active template is marked ACTIVE and is used for all new prints.
 
-Use Customize to change colours, show or hide fields (logo, HSN, bank details, signature), and set paper size (A4, A5, Letter or Legal) and orientation in the Layout tab.
+Tap **Customise** on a template to open the designer. It shows a live preview (sample data, or your latest saved document of that type), and you can click a part of the preview to edit it. Change the colour palette or your brand colour, the font size and spacing, margins, paper size and portrait or landscape, upload a logo, and show or hide parts such as HSN, bank details and signature. Tap **Save and use** when done. On GST documents (tax invoice, bill of supply, credit and debit notes) the details GST law requires, such as GSTINs, HSN, place of supply, tax rates and reverse charge, always print and can't be switched off. Each copy is labelled Original for Recipient, Duplicate for Transporter or Triplicate for Supplier.
+
+## Is there a template for distributors (FMCG or pharma)?
+
+Yes. The **Distributor (FMCG / Pharma)** template prints a GST slab summary with the retailer's margin from MRP, and an item table whose columns you choose and order in the designer (Choose and order columns): cases and pieces, product code, MRP, cess and your item custom fields. Columns a tax invoice must show are always kept.
+
+## Can I print invoices in Hindi or another language?
+
+Yes. Go to Settings > Business profile and choose the **Print language**: English, Hindi, Hinglish, Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Odia or Urdu. Invoice headings and labels print in that language. If your plan doesn't include it, documents print in English.
+
+Bill Hindi mein kaise print kare? Settings > Business profile mein Print language Hindi chuno aur save karo.
 
 ## How do I print small bills on a thermal printer?
 

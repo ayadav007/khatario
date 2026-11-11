@@ -1178,17 +1178,6 @@ export function normalizeIndianGstInvoiceExtract(
     }
   }
 
-  if (e.grand_total && e.subtotal) {
-    const taxSum = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
-    const computed = e.subtotal + taxSum + (e.round_off ?? 0);
-    const tolerance = Math.max(2, e.grand_total * 0.02);
-    if (Math.abs(computed - e.grand_total) > tolerance) {
-      console.log(
-        `[IndianGstExtract] Header reconciliation: subtotal(${e.subtotal}) + tax(${taxSum}) + ro = ${computed} vs grand ${e.grand_total}`
-      );
-    }
-  }
-
   // A missing payable stays missing. Do not invent grand_total from subtotal + tax;
   // that fabricated total would look like evidence that the item column matches.
 

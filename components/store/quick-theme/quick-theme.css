@@ -275,3 +275,17 @@
 @media (max-width:639px){
 .qk-kitRoom{padding-bottom:calc(9rem + env(safe-area-inset-bottom))!important}
 }
+
+/* ---------- Product page "Add to bag" bar (phones; StickyBuyBar) ---------- */
+/* Sits above the bottom navigation: StoreMobileNav (below 640px) and Quick's tabs (below 768px) are about 64px tall. */
+.eng-buybar{position:fixed;left:0;right:0;z-index:30;bottom:env(safe-area-inset-bottom);display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid;box-shadow:0 -6px 20px -16px rgba(15,23,42,.5)}
+@media (max-width:639px){
+.eng-buybar{bottom:calc(64px + env(safe-area-inset-bottom))}
+}
+@media (max-width:767px){
+.st-root.store-quick .eng-buybar{bottom:calc(64px + env(safe-area-inset-bottom))}
+/* Room for the bar under the footer (the footer wrapper only: the sticky header is also an .st-cq and must not change size). */
+body[data-eng-buy-bar="on"] .st-root.eng-root .eng-footer-wrap{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+}
+/* One bar at the bottom: while the Add to bag bar shows, the phone kit's cart bar (and Quick's) steps aside. */
+body[data-eng-buy-bar="on"] .qk-kit,body[data-eng-buy-bar="on"] .qk-cartBar{display:none}

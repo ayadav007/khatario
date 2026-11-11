@@ -23,10 +23,10 @@ export const LANDING_HERO_COPY: Record<
   { badges: string[]; headline: string; subhead: string; cta: string; footnote: string }
 > = {
   billing: {
-    badges: ['GST-ready invoicing', 'WhatsApp bills'],
-    headline: 'Still billing by hand at closing time? There is a simpler way.',
+    badges: ['Free plan: unlimited GST bills', 'Made in India'],
+    headline: 'GST billing software for small shops. Close the day the calmer way.',
     subhead:
-      'Turn every sale into a GST bill, WhatsApp share, payment update, and accurate stock movement.',
+      'Make a GST bill in seconds, send it on WhatsApp and collect by UPI. Then run your online store, WhatsApp offers and staff attendance from the same app.',
     cta: 'Start Billing trial',
     footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
   },
@@ -44,7 +44,7 @@ export const LANDING_HERO_COPY: Record<
     subhead:
       'Run conversations, bot rules, AI replies, templates and campaigns from one shared inbox on the official WhatsApp Business API.',
     cta: 'Create Connect account',
-    footnote: 'Connect plan from ₹1,199/month billed yearly · Meta conversation charges at cost',
+    footnote: 'Connect plan from ₹1,199/month billed yearly · Your own Meta account: you pay Meta directly, no markup from us',
   },
 };
 

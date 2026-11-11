@@ -83,6 +83,28 @@ export const CONTENT_BLOCKS: BlockSchema[] = [
   },
 ];
 
+/** A live countdown line for the hero. Hero banner only (not in CONTENT_BLOCKS); one per section. */
+export const COUNTDOWN_BLOCK: BlockSchema = {
+  type: 'countdown',
+  name: 'Countdown',
+  limit: 1,
+  settings: [
+    { id: 'label', type: 'text', label: 'Label', default: 'Ends in', max_length: 40 },
+    { id: 'ends_at', type: 'text', label: 'Ends at', info: 'Date and time, like 2026-12-31T23:59', default: '', max_length: 40 },
+    {
+      id: 'style',
+      type: 'select',
+      label: 'Style',
+      default: 'boxes',
+      options: [
+        { value: 'boxes', label: 'Boxes' },
+        { value: 'inline', label: 'One line' },
+      ],
+    },
+    { id: 'hide_when_over', type: 'checkbox', label: 'Hide when over', default: true },
+  ],
+};
+
 /** A small card that overlaps the image's corner. Image with text only; one per section. */
 export const HIGHLIGHT_CARD_BLOCK: BlockSchema = {
   type: 'highlight_card',

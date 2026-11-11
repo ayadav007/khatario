@@ -150,14 +150,6 @@ export async function findPaymentTransactionForWebhook(args: {
       [businessId, provider, pid]
     );
     if (byPid) {
-      console.log(
-        '[payment-webhook] transaction_match',
-        JSON.stringify({
-          ...baseLog,
-          match_path: 'provider_payment_id',
-          transaction_id: byPid.id,
-        })
-      );
       return byPid;
     }
   }
@@ -179,14 +171,6 @@ export async function findPaymentTransactionForWebhook(args: {
       [businessId, provider, providerOrderId]
     );
     if (byProviderOrderId) {
-      console.log(
-        '[payment-webhook] transaction_match',
-        JSON.stringify({
-          ...baseLog,
-          match_path: 'provider_order_id',
-          transaction_id: byProviderOrderId.id,
-        })
-      );
       return byProviderOrderId;
     }
   }
@@ -212,15 +196,6 @@ export async function findPaymentTransactionForWebhook(args: {
         [businessId, provider, orderRef]
       );
       if (byOrderRefUuid) {
-        console.log(
-          '[payment-webhook] transaction_match',
-          JSON.stringify({
-            ...baseLog,
-            match_path: 'order_reference',
-            match_detail: 'order_id_or_khatario_payload',
-            transaction_id: byOrderRefUuid.id,
-          })
-        );
         return byOrderRefUuid;
       }
     } else {
@@ -240,15 +215,6 @@ export async function findPaymentTransactionForWebhook(args: {
         [businessId, provider, orderRef]
       );
       if (byKhatarioPayload) {
-        console.log(
-          '[payment-webhook] transaction_match',
-          JSON.stringify({
-            ...baseLog,
-            match_path: 'order_reference',
-            match_detail: 'khatario_order_id_payload_only',
-            transaction_id: byKhatarioPayload.id,
-          })
-        );
         return byKhatarioPayload;
       }
     }
@@ -320,19 +286,6 @@ export async function applyVerifiedPaymentWebhook(args: {
     };
   }
 
-  console.log('[payment-webhook] event', {
-    provider,
-    business_id: businessId,
-    transaction_id: tx.id,
-    order_id: tx.order_id,
-    mapped_status: mapped,
-    provider_payment_id: verified.providerPaymentId,
-    provider_order_id: verified.providerOrderId,
-    order_reference: verified.orderReference,
-    amount: verified.amount,
-    currency: verified.currency,
-    webhook_status: verified.status,
-  });
 
   const pidCheck = verified.providerPaymentId?.trim();
   if (mapped === 'success' && pidCheck) {

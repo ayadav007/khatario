@@ -9,7 +9,9 @@ import {
 } from '@/lib/store/engine/sanitize';
 import { SECTION_SCHEMAS } from '@/lib/store/engine/registry';
 import { DEFAULT_COLOR_SCHEMES } from '@/lib/store/engine/color-schemes';
-import type { TemplateKind } from '@/lib/store/engine/types';
+import { defaultSettings } from '@/lib/store/engine/shared';
+import type { TemplateKind, ThemePreset } from '@/lib/store/engine/types';
+import { presetTheme } from '@/lib/store/engine/presets';
 
 const sec = (type: string, extra: Record<string, unknown> = {}) => ({ type, settings: {}, blocks: {}, block_order: [], ...extra });
 
@@ -330,4 +332,61 @@ it('keeps valid style settings and defaults the rest', () => {
   expect(t.settings).toMatchObject({ label_style: 'caps', frame_style: 'accent', texture: 'linen' });
   const d = sanitizeThemeData({ settings: { label_style: 'CAPS', texture: 'stripes' } });
   expect(d.settings).toMatchObject({ label_style: 'normal', frame_style: 'none', texture: 'none' });
+});
+
+describe('main-product thumbs', () => {
+  const mainProduct = (thumbs: unknown) => {
+    const section = sanitizeSection(sec('main-product', { settings: { thumbs } }), 'product');
+    const schema = SECTION_SCHEMAS['main-product'];
+    return { ...defaultSettings(schema.settings), ...section?.settings }.thumbs;
+  };
+
+  it('keeps thumbs grid and falls back to side for unknown values', () => {
+    expect(mainProduct('grid')).toBe('grid');
+    expect(mainProduct('mosaic')).toBe('side');
+  });
+});
+
+describe('cart theme settings', () => {
+  const CART_KEYS = ['cart_free_ship_bar', 'cart_suggestions', 'cart_suggestions_heading', 'cart_whatsapp_order'];
+  const PRESETS: ThemePreset[] = ['studio', 'blank', 'quick', 'grocery', 'khatario', 'heritage', 'drop'];
+
+  it('default to off, off, "Pair it with", off', () => {
+    const s = sanitizeThemeData({}).settings;
+    expect(s.cart_free_ship_bar).toBe(false);
+    expect(s.cart_suggestions).toBe(false);
+    expect(s.cart_suggestions_heading).toBe('Pair it with');
+    expect(s.cart_whatsapp_order).toBe(false);
+  });
+
+  it('keep true booleans and drop anything else', () => {
+    const s = sanitizeThemeData({
+      settings: { cart_free_ship_bar: true, cart_suggestions: true, cart_whatsapp_order: 'yes' },
+    }).settings;
+    expect(s.cart_free_ship_bar).toBe(true);
+    expect(s.cart_suggestions).toBe(true);
+    expect(s.cart_whatsapp_order).toBe(false);
+  });
+
+  it('trim the heading and clip it to 40, falling back when empty', () => {
+    const long = `  ${'x'.repeat(50)}  `;
+    expect(sanitizeThemeData({ settings: { cart_suggestions_heading: '  You may also need  ' } }).settings.cart_suggestions_heading).toBe(
+      'You may also need',
+    );
+    expect(sanitizeThemeData({ settings: { cart_suggestions_heading: long } }).settings.cart_suggestions_heading).toBe('x'.repeat(40));
+    expect(sanitizeThemeData({ settings: { cart_suggestions_heading: '   ' } }).settings.cart_suggestions_heading).toBe('Pair it with');
+    expect(sanitizeThemeData({ settings: { cart_suggestions_heading: 7 } }).settings.cart_suggestions_heading).toBe('Pair it with');
+  });
+
+  it.each(PRESETS)('a saved %s theme gains only these four keys, at their defaults', (preset) => {
+    const full = presetTheme(preset, { businessName: 'Shop', tagline: '' });
+    const old = { ...(full.settings as unknown as Record<string, unknown>) };
+    for (const k of CART_KEYS) delete old[k];
+    const before = sanitizeThemeData({ ...full, settings: old }).settings as unknown as Record<string, unknown>;
+    const added = Object.keys(before).filter((k) => !(k in old));
+    expect(added.sort()).toEqual([...CART_KEYS].sort());
+    expect(CART_KEYS.map((k) => before[k])).toEqual([false, false, 'Pair it with', false]);
+    // The preset's own theme carries the same defaults, so nothing else moves.
+    expect(sanitizeThemeData(full).settings).toEqual(before);
+  });
 });

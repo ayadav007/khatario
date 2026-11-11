@@ -31,6 +31,15 @@ export const KHATARIO_BLOCKS = [
   'WhoItsFor',
   'ConnectedSupply',
   'TrustStrip',
+  'Suite',
+  'Industries',
+  'ProductTour',
+  'AiTools',
+  'OnlineStore',
+  'WhatsAppMarketing',
+  'StaffManagement',
+  'SwitchHelp',
+  'Everywhere',
 ] as const;
 
 export const BLOCK_TYPES = [...LAYOUT_BLOCKS, ...CONTENT_BLOCKS, ...KHATARIO_BLOCKS] as const;

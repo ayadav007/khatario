@@ -123,6 +123,25 @@ function brandHexToCssVars(
   return out;
 }
 
+const ON_DARK_TEXT = '#ffffff';
+const ON_LIGHT_TEXT = '#0f172a';
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const lin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Text colour to put on a brand fill: white when it reaches 4.5:1, else near-black. */
+export function readableTextOn(hex: string): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return ON_DARK_TEXT;
+  const whiteContrast = 1.05 / (relativeLuminance(rgb) + 0.05);
+  return whiteContrast >= 4.5 ? ON_DARK_TEXT : ON_LIGHT_TEXT;
+}
+
 export function primaryHexToCssVars(hex: string): Record<string, string> {
   return brandHexToCssVars('primary', hex, DEFAULT_PRIMARY_VARS);
 }
@@ -143,6 +162,8 @@ export function portalThemeToCssVars(theme: PortalTheme): Record<string, string>
   return {
     ...primaryHexToCssVars(theme.primary_hex),
     ...accentHexToCssVars(theme.accent_hex),
+    '--color-on-primary': readableTextOn(theme.primary_hex),
+    '--color-on-accent': readableTextOn(theme.accent_hex),
     '--portal-font-sans': FONT_STACKS[theme.font_preset] ?? FONT_STACKS.inter,
   };
 }
@@ -200,5 +221,7 @@ export function clearPortalThemeFromElement(el: HTMLElement): void {
   for (const key of Object.keys(DEFAULT_ACCENT_VARS)) {
     el.style.removeProperty(key);
   }
+  el.style.removeProperty('--color-on-primary');
+  el.style.removeProperty('--color-on-accent');
   el.style.removeProperty('--portal-font-sans');
 }

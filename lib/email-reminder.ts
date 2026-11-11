@@ -120,7 +120,6 @@ export async function sendEmailReminder(params: {
       return { success: false, error: result.error || 'send_email_failed' };
     }
 
-    console.log(`[Email Reminder] Sent ${kind} for invoice ${invoiceNo} (${invoiceId})`);
     return { success: true };
   } catch (error: unknown) {
     console.error('[Email Reminder] Unexpected error:', error);

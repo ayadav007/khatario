@@ -33,6 +33,8 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
       ['rating', 'Rating'],
       ['tagline', 'Tagline'],
       ['price', 'Price'],
+      ['packs', 'Pack sizes to pick'],
+      ['sizes', 'Sizes'],
       ['swatches', 'Colour swatches'],
       ['buttons', 'Buttons'],
     ),
@@ -66,6 +68,13 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
     label: 'Discount',
     default: CARD.discount_style,
     options: opts(['none', 'Don’t show'], ['text', '20% off'], ['pill', '20% off in a pill'], ['save', 'Save ₹20']),
+  },
+  {
+    id: 'product_card.unit_price',
+    type: 'checkbox',
+    label: 'Show price per kg or litre',
+    default: CARD.unit_price,
+    info: 'Only when the pack is a plain weight or volume, such as 500 g or 1 L',
   },
   { id: 'product_card_photo_header', type: 'header', label: 'Photo' },
   {
@@ -111,6 +120,13 @@ export const PRODUCT_CARD_SETTINGS: SettingSchema[] = [
     options: opts(['none', 'None'], ['crown', 'Crown'], ['star', 'Star'], ['flame', 'Flame'], ['sparkle', 'Sparkle']),
   },
   { id: 'product_card.badge_colors', type: 'select', label: 'Badge colours', default: CARD.badge_colors, options: opts(['accent', 'Accent colour'], ['button', 'Button colours']) },
+  {
+    id: 'product_card.discount_badge',
+    type: 'select',
+    label: 'Savings badge',
+    default: CARD.discount_badge,
+    options: opts(['percent', '14% OFF'], ['rupees', '₹91 OFF']),
+  },
   { id: 'product_card_buttons_header', type: 'header', label: 'Buttons' },
   {
     id: 'product_card.button_style',
@@ -252,6 +268,17 @@ export const THEME_SETTINGS_SCHEMA: SettingSchema[] = [
   { id: 'social.facebook', type: 'text', label: 'Facebook', default: '', info: 'Full link, e.g. https://facebook.com/yourstore' },
   { id: 'social.youtube', type: 'text', label: 'YouTube', default: '', info: 'Full link, e.g. https://youtube.com/@yourstore' },
   ...PRODUCT_CARD_SETTINGS,
+  { id: 'cart_header', type: 'header', label: 'Cart' },
+  {
+    id: 'cart_free_ship_bar',
+    type: 'checkbox',
+    label: 'Show progress to free delivery',
+    default: false,
+    info: 'Only when the branch has one free-delivery amount',
+  },
+  { id: 'cart_suggestions', type: 'checkbox', label: 'Suggest products in the cart', default: false, info: 'In-stock products from the same categories' },
+  { id: 'cart_suggestions_heading', type: 'text', label: 'Suggestions heading', default: 'Pair it with', max_length: 40 },
+  { id: 'cart_whatsapp_order', type: 'checkbox', label: 'Order on WhatsApp button', default: false, info: 'Uses the WhatsApp link above' },
 ];
 
 // Settings the editor hides because the renderer does not use them yet (M2 D13). Empty since M3 wired

@@ -1,6 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import React, {
   createContext,
   useContext,
@@ -46,7 +45,6 @@ const BadgeContext = createContext<BadgeContextType>({
 });
 
 export function BadgeProvider({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('BadgeProvider');
   const { business, loading: authLoading } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);

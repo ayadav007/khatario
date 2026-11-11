@@ -13,11 +13,9 @@ let isRunning = false;
  */
 export function startCampaignWorker() {
   if (isRunning) {
-    console.log('[Campaign Worker] Already running');
     return;
   }
 
-  console.log('[Campaign Worker] Starting campaign worker...');
   isRunning = true;
 
   // Process campaigns immediately on start
@@ -31,7 +29,6 @@ export function startCampaignWorker() {
       const result = await processAllCampaigns();
       // If no campaigns to process, stop the worker
       if (result.campaignsProcessed === 0) {
-        console.log('[Campaign Worker] No running campaigns, stopping worker');
         stopCampaignWorker();
       }
     } catch (error) {
@@ -39,7 +36,6 @@ export function startCampaignWorker() {
     }
   }, 30000); // 30 seconds (increased from 10s)
 
-  console.log('[Campaign Worker] Started - processing campaigns every 30 seconds');
 }
 
 /**
@@ -50,7 +46,6 @@ export function stopCampaignWorker() {
     clearInterval(workerInterval);
     workerInterval = null;
     isRunning = false;
-    console.log('[Campaign Worker] Stopped');
   }
 }
 
@@ -68,10 +63,8 @@ if (typeof window === 'undefined') {
       `);
       const count = result.rows[0]?.count || 0;
       if (count > 0) {
-        console.log(`[Campaign Worker] Found ${count} running campaign(s), starting worker...`);
         startCampaignWorker();
       } else {
-        console.log('[Campaign Worker] No running campaigns found, worker will not start automatically');
         // Check periodically (every 5 minutes) if campaigns start
         setInterval(async () => {
           try {
@@ -82,7 +75,6 @@ if (typeof window === 'undefined') {
             `);
             const runningCount = checkResult.rows[0]?.count || 0;
             if (runningCount > 0 && !isRunning) {
-              console.log(`[Campaign Worker] Detected ${runningCount} running campaign(s), starting worker...`);
               startCampaignWorker();
             }
           } catch (err) {

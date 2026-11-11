@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+#root{position:absolute;inset:0;background:#F7F4EE;overflow:hidden;font-family:Inter,sans-serif;color:#063F35}
+.k-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(6,63,53,.10) 2px,transparent 2.5px);background-size:36px 36px}
+.k-stage{position:absolute;inset:0}
+.k-text{position:absolute;left:80px;top:240px;width:920px;text-align:center}
+.k-head{font:900 104px/1.06 Montserrat,sans-serif;letter-spacing:-.02em;color:#063F35}
+.k-hot{color:#B4470E}
+.k-logo{position:absolute;left:150px;top:690px;width:780px;height:254px}
+.k-logo img{display:block;width:100%;height:100%;object-fit:contain}
+.k-cta{position:absolute;left:0;top:1040px;width:1080px;display:flex;justify-content:center}
+.k-cta div{padding:24px 46px;border-radius:999px;background:#F58220;color:#063F35;font:900 46px/1.1 Inter,sans-serif}
+.k-url{position:absolute;left:0;top:1190px;width:1080px;text-align:center;font:700 40px/1.2 Inter,sans-serif;color:#3D5C56}
+.k-diyas{position:absolute;left:0;top:1440px;width:1080px;height:220px}
+.k-diyas svg{display:block;width:100%;height:100%}
+</style>
+      <div data-hf-id="hf-bro7" id="root" data-composition-id="s5-end" data-width="1080" data-height="1920">
+        <div data-hf-id="hf-5n5k" class="k-dots"></div>
+        <div data-hf-id="hf-n1wx" class="k-stage" id="s5-stage">
+          <div data-hf-id="hf-sowp" class="k-text" id="s5-text">
+            <div data-hf-id="hf-5usi" class="k-head"><div data-hf-id="hf-q5e2">Is Diwali, line</div><div data-hf-id="hf-9bv3"><span data-hf-id="hf-wo27" class="k-hot">chhoti</span> rakhiye.</div></div>
+          </div>
+          <div data-hf-id="hf-jluh" class="k-logo" id="s5-logo"><img data-hf-id="hf-eenr" src="assets/brand/khatario-wordmark.png" alt="Khatario" /></div>
+          <div data-hf-id="hf-622l" class="k-cta" id="s5-cta"><div data-hf-id="hf-3ug7">Free trial. Card nahi chahiye.</div></div>
+          <div data-hf-id="hf-pg4b" class="k-url" id="s5-url">khatario.com</div>
+          <div data-hf-id="hf-wkou" class="k-diyas">
+            <svg data-hf-id="hf-402g" viewBox="0 0 1080 220" xmlns="http://www.w3.org/2000/svg">
+              <g data-hf-id="hf-vera"><path data-hf-id="hf-jekq" d="M150 150 q60 50 120 0 z" fill="#C99A5B"/><ellipse data-hf-id="hf-s4yy" id="s5-f0" cx="210" cy="118" rx="16" ry="32" fill="#F58220"/></g>
+              <g data-hf-id="hf-pwpm"><path data-hf-id="hf-7kto" d="M480 150 q60 50 120 0 z" fill="#C99A5B"/><ellipse data-hf-id="hf-4pcn" id="s5-f1" cx="540" cy="118" rx="16" ry="32" fill="#F58220"/></g>
+              <g data-hf-id="hf-qb0n"><path data-hf-id="hf-kwgv" d="M810 150 q60 50 120 0 z" fill="#C99A5B"/><ellipse data-hf-id="hf-f8wk" id="s5-f2" cx="870" cy="118" rx="16" ry="32" fill="#F58220"/></g>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s5-text", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 0);
+        tl.fromTo("#s5-logo", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, transformOrigin: "50% 50%", duration: 0.55, ease: "power3.out" }, 0.5);
+        tl.fromTo("#s5-cta", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 1.1);
+        tl.fromTo("#s5-url", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, 1.5);
+        ["#s5-f0", "#s5-f1", "#s5-f2"].forEach((id, i) => {
+          tl.fromTo(id, { scaleY: 1 }, { scaleY: 1.22, transformOrigin: "50% 100%", duration: 0.3 + i * 0.05, ease: "sine.inOut", yoyo: true, repeat: 11 }, i * 0.1);
+        });
+        window.__timelines["s5-end"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

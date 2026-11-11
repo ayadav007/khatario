@@ -8,7 +8,7 @@ import { queryOne, query } from '@/lib/db';
 import { EmployeeExpense } from '@/types/database';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { canActOnExpense, isEmployeePortalSession } from '@/lib/hr/manager-scope';
+import { canActOnExpense, getEmployeeIdForUser, isEmployeePortalSession } from '@/lib/hr/manager-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +36,7 @@ export async function PATCH(
       );
     }
 
-    const { action, approved_by, rejection_reason, reimbursement_reference } = body;
+    const { action, rejection_reason, reimbursement_reference } = body;
     const updated_by_user_id = actingUserId(request, body.updated_by_user_id);
 
     if (!action || !['approve', 'reject', 'reimburse', 'cancel', 'update'].includes(action)) {
@@ -180,6 +180,8 @@ export async function PATCH(
         );
       }
     } else if (action === 'approve') {
+      // The approver is the acting user's employee record; a body approved_by is never used.
+      const approved_by = await getEmployeeIdForUser(updated_by_user_id, businessId);
       if (expense.status !== 'pending') {
         return NextResponse.json(
           { error: 'Only pending expenses can be approved' },
@@ -195,6 +197,7 @@ export async function PATCH(
         [approved_by || null, expenseId, businessId]
       );
     } else if (action === 'reject') {
+      const approved_by = await getEmployeeIdForUser(updated_by_user_id, businessId);
       if (expense.status !== 'pending') {
         return NextResponse.json(
           { error: 'Only pending expenses can be rejected' },

@@ -174,7 +174,7 @@ export default function OnboardingTemplatesPage() {
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="border-b border-border bg-gray-50 text-left text-text-secondary">
+                <thead className="border-b border-border bg-gray-50 dark:bg-slate-800/50 text-left text-text-secondary">
                   <tr>
                     <th className="px-4 py-3 font-medium">Task</th>
                     <th className="px-4 py-3 font-medium">Type</th>
@@ -233,7 +233,7 @@ export default function OnboardingTemplatesPage() {
               <div>
                 <label className="text-sm text-text-secondary">Instructions shown to candidate</label>
                 <textarea
-                  className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
+                  className="input mt-1 w-full"
                   rows={3}
                   value={editing.instruction_text}
                   onChange={(e) => setEditing({ ...editing, instruction_text: e.target.value })}

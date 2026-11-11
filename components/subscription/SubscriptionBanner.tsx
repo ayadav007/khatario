@@ -5,6 +5,7 @@ import { AlertTriangle, Clock, X, ArrowRight, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOptionalFeatureUpgradeModal } from '@/contexts/FeatureUpgradeModalContext';
 import { getSubscriptionBannerPlacement } from '@/lib/mobile-navigation';
 import { clsx } from 'clsx';
 import {
@@ -28,6 +29,7 @@ export function SubscriptionBanner() {
   const { business, user } = useAuth();
   const pathname = usePathname();
   const placement = getSubscriptionBannerPlacement(pathname);
+  const upgradeModal = useOptionalFeatureUpgradeModal();
   const [dismissed, setDismissed] = useState(false);
   const [bannerType, setBannerType] = useState<BannerType>(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
@@ -127,7 +129,7 @@ export function SubscriptionBanner() {
         daysRemaining === 0
           ? 'Today is the last day of your trial. Upgrade to keep full access.'
           : `Your trial ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Upgrade to keep full access.`,
-      cta: 'Upgrade Now',
+      cta: 'Choose a plan',
     },
     trial_expired: {
       bg: 'bg-orange-50',
@@ -136,7 +138,7 @@ export function SubscriptionBanner() {
       icon: <AlertTriangle className="w-4 h-4" />,
       message:
         'Your trial has expired. You are on the Free plan — upgrade anytime to restore full access.',
-      cta: 'Upgrade Now',
+      cta: 'Choose a plan',
     },
     grace_expiring: {
       bg: 'bg-orange-50',
@@ -144,7 +146,7 @@ export function SubscriptionBanner() {
       text: 'text-orange-900',
       icon: <AlertTriangle className="w-4 h-4" />,
       message: `Grace period: ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining. After this, your account will be restricted to the free plan.`,
-      cta: 'Upgrade Now',
+      cta: 'Upgrade now',
     },
     grace_expired: {
       bg: 'bg-red-50',
@@ -192,17 +194,37 @@ export function SubscriptionBanner() {
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href="/settings/subscription"
-            className={clsx(
-              config.text,
-              'font-semibold hover:underline flex items-center gap-0.5 whitespace-nowrap',
-              isCompact ? 'text-xs' : 'text-sm'
-            )}
-          >
-            {config.cta}
-            {!isCompact && <ArrowRight className="w-3.5 h-3.5" />}
-          </Link>
+          {upgradeModal && (bannerType === 'trial_ending' || bannerType === 'trial_expired') ? (
+            <button
+              type="button"
+              onClick={() =>
+                upgradeModal.openUpgrade({
+                  variant: 'trial',
+                  trialDaysLeft: bannerType === 'trial_expired' ? -1 : daysRemaining,
+                })
+              }
+              className={clsx(
+                config.text,
+                'font-semibold hover:underline flex items-center gap-0.5 whitespace-nowrap',
+                isCompact ? 'text-xs' : 'text-sm'
+              )}
+            >
+              {config.cta}
+              {!isCompact && <ArrowRight className="w-3.5 h-3.5" />}
+            </button>
+          ) : (
+            <Link
+              href="/settings/subscription"
+              className={clsx(
+                config.text,
+                'font-semibold hover:underline flex items-center gap-0.5 whitespace-nowrap',
+                isCompact ? 'text-xs' : 'text-sm'
+              )}
+            >
+              {config.cta}
+              {!isCompact && <ArrowRight className="w-3.5 h-3.5" />}
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setDismissed(true)}

@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { foreignBranchIds } from '@/lib/warehouse-ownership';
 import { checkWarehousePlace, flagWarehousePlaces } from '@/lib/gst/registration';
 
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
           bw.is_primary,
           bw.branch_id as linked_branch_id
         FROM warehouses w
-        LEFT JOIN branches b ON w.branch_id = b.id
+        LEFT JOIN branches b ON w.branch_id = b.id AND b.business_id = w.business_id
         INNER JOIN branch_warehouses bw ON bw.warehouse_id = w.id AND bw.branch_id = $2
         WHERE w.business_id = $1
         ORDER BY bw.is_primary DESC NULLS LAST, w.name ASC
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
           b.name as branch_name,
           b.branch_code
         FROM warehouses w
-        LEFT JOIN branches b ON w.branch_id = b.id
+        LEFT JOIN branches b ON w.branch_id = b.id AND b.business_id = w.business_id
         WHERE w.business_id = $1
         ORDER BY w.name ASC
       `;
@@ -137,6 +138,14 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    // A branch from the body must be this business's own; authorize() skips this for owners.
+    if (branch_id) {
+      const foreign = await foreignBranchIds([branch_id], business_id);
+      if (foreign.length > 0) {
+        return NextResponse.json({ error: 'Branch does not belong to this business' }, { status: 400 });
+      }
     }
 
     // AUTHORIZATION: Check create permission (PBAC will check branch access, business ownership)
@@ -205,11 +214,15 @@ export async function POST(request: NextRequest) {
 
     // If branch_id provided, create mapping
     if (branch_id) {
+      // The join re-asserts that branch and warehouse share this business.
       await db.query(`
         INSERT INTO branch_warehouses (branch_id, warehouse_id, is_primary)
-        VALUES ($1, $2, true)
+        SELECT b.id, w.id, true
+        FROM branches b
+        JOIN warehouses w ON w.business_id = b.business_id
+        WHERE b.id = $1 AND w.id = $2 AND b.business_id = $3
         ON CONFLICT (branch_id, warehouse_id) DO NOTHING
-      `, [branch_id, warehouse.id]);
+      `, [branch_id, warehouse.id, business_id]);
     }
 
     return NextResponse.json({ warehouse }, { status: 201 });

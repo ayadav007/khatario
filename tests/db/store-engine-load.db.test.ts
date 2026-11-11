@@ -14,10 +14,10 @@ jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 jest.mock('@/lib/subscription/feature-access', () => ({ hasFeatureAccess: jest.fn(async () => true) }));
 
 import { getPool, closePool } from '@/lib/db';
-import { createTheme, getLiveTheme } from '@/lib/store/engine/themes-repo';
+import { createTheme, getLiveTheme, switchStoreToEngine } from '@/lib/store/engine/themes-repo';
 import { signThemePreview, signVersionPreview, PREVIEW_TTL } from '@/lib/store/engine/preview-token';
 import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
-import { loadEngineTheme } from '@/lib/store/engine/load-theme';
+import { loadEngineTheme, UNSTORED_ENGINE_THEME_ID } from '@/lib/store/engine/load-theme';
 import { loadEnginePage } from '@/lib/store/engine/page-loader';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { resolveOfflineStoreForPreview } from '@/lib/store/preview-store';
@@ -92,9 +92,31 @@ d('Storefront theme loading (real DB)', () => {
     expect(out?.theme.id).toBe(live.id);
   });
 
-  it('returns null when the flag is on but there is no live theme', async () => {
+  it('shows the converted design, unstored, when the flag is on but there is no live theme (M6)', async () => {
     await setFlag(EMPTY, true);
-    expect(await loadEngineTheme(storeOf(EMPTY), {})).toBeNull();
+    const out = await loadEngineTheme(storeOf(EMPTY), {});
+    expect(out?.preview).toBe(false);
+    expect(out?.theme.id).toBe(UNSTORED_ENGINE_THEME_ID);
+    expect(out?.theme.data.templates.home).toBeDefined();
+    const stored = await pool.query(`SELECT 1 FROM store_themes WHERE business_id = $1`, [EMPTY]);
+    expect(stored.rows).toHaveLength(0);
+  });
+
+  it('switchStoreToEngine stores the converted design as live and turns the flag on, once (M6)', async () => {
+    await setFlag(EMPTY, false);
+    const first = ok(await switchStoreToEngine(EMPTY, USER));
+    expect(first.role).toBe('live');
+    const flag = await pool.query(`SELECT store_engine FROM business_settings WHERE business_id = $1`, [EMPTY]);
+    expect(flag.rows[0].store_engine).toBe(true);
+    const again = ok(await switchStoreToEngine(EMPTY, USER));
+    expect(again.id).toBe(first.id);
+    const out = await loadEngineTheme(storeOf(EMPTY), {});
+    expect(out?.theme.id).toBe(first.id);
+  });
+
+  it('switchStoreToEngine refuses a business with no store settings row', async () => {
+    const r = await switchStoreToEngine(randomUUID(), USER);
+    expect(r).toEqual({ ok: false, code: 'no_store_design' });
   });
 
   it('returns null for demo stores before touching the database', async () => {

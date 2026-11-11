@@ -149,8 +149,8 @@ export default function FinancialYearsSettingsPage() {
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Year label</label>
                 <Input
+                  label="Year label"
                   value={form.year_code}
                   onChange={(e) => setForm((f) => ({ ...f, year_code: e.target.value }))}
                   placeholder="e.g. 2026-2027"
@@ -162,8 +162,8 @@ export default function FinancialYearsSettingsPage() {
               </div>
               <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1">Start date</label>
                   <Input
+                    label="Start date"
                     type="date"
                     value={form.start_date}
                     onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
@@ -171,8 +171,8 @@ export default function FinancialYearsSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1">End date</label>
                   <Input
+                    label="End date"
                     type="date"
                     value={form.end_date}
                     onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
@@ -181,8 +181,8 @@ export default function FinancialYearsSettingsPage() {
                 </div>
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-text-primary mb-1">Notes (optional)</label>
                 <Input
+                  label="Notes (optional)"
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                   placeholder="Optional note for your team"

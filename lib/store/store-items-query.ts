@@ -135,7 +135,7 @@ export function storeItemSelectSql(parts: {
         i.tax_rate::text,
         COALESCE(i.gst_included, false) AS gst_included,
         i.created_at,
-        i.store_badge, i.store_tagline,
+        i.store_badge, i.store_tagline, i.store_fit_note,
         COALESCE(i.store_returnable, true) AS store_returnable, COALESCE(i.store_swatches, '[]'::jsonb) AS store_swatches,
         ${parts.soldSelect} AS sold_count,
         COALESCE((

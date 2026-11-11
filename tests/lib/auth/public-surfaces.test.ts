@@ -41,4 +41,9 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/themesx', 'khatario.com')).toBe(false);
     expect(isPublicMarketingSurface('/settings/online-store/themes', 'khatario.com')).toBe(false);
   });
+
+  it('treats design preview routes as public', () => {
+    expect(isPublicMarketingSurface('/preview/maglo-marketing', 'localhost:3000')).toBe(true);
+    expect(isPublicMarketingSurface('/preview', 'khatario.com')).toBe(false);
+  });
 });

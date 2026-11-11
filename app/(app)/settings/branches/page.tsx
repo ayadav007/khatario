@@ -10,7 +10,10 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
-import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
+import { Button } from '@/components/ui/Button';
+import { InfoCallout } from '@/components/ui/InfoCallout';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 interface Branch {
   id: string;
@@ -141,23 +144,13 @@ export default function BranchesPage() {
   if (!hasAccess) {
     return (
       
-        <div className={`${WIDE_PAGE_CONTENT_CLASS} py-8 flex justify-center`}>
-          <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
-            <Building2 className="w-16 h-16 text-text-muted mx-auto mb-4" />
-            <h2 className="settings-section-title mb-2">
-              Multi-Branch Feature is Locked
-            </h2>
-            <p className="text-text-secondary mb-6">
-              Upgrade to Enterprise plan to unlock multi-branch support, branch-wise accounting, and consolidated reporting.
-            </p>
-            <button
-              onClick={() => router.push('/settings/subscription')}
-              className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium"
-            >
-              Upgrade to Enterprise
-            </button>
-          </div>
-        </div>
+        <SettingsPageShell title="Branches" description="Manage branch offices and accounting units" icon={Building2}>
+          <PlanFeatureDeniedCallout
+            featureKey="multi_branch"
+            title="Branches need a higher plan"
+            description="Upgrade to unlock multi-branch support, branch-wise accounting and consolidated reporting."
+          />
+        </SettingsPageShell>
       
     );
   }
@@ -168,72 +161,57 @@ export default function BranchesPage() {
         description="Manage branch offices and accounting units"
         icon={Building2}
         actions={
-          <button
-            onClick={() => router.push('/settings/branches/new')}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add Branch</span>
-          </button>
+          <Button onClick={() => router.push('/settings/branches/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add branch
+          </Button>
         }
       >
 
         {/* Info Banner */}
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <Building2 className="w-5 h-5 text-primary-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-primary-900">About Branches</p>
-              <p className="text-sm text-primary-700 mt-1">
-                Branches are accounting and compliance units. Each branch can have its own GSTIN, invoice numbering, and financial statements. 
-                Warehouses are physical storage locations that can be linked to branches.
-              </p>
-            </div>
-          </div>
-        </div>
+        <InfoCallout tone="neutral" icon={Building2} title="About branches">
+          Branches are accounting and compliance units. Each branch can have its own GSTIN, invoice numbering, and financial statements.
+          Warehouses are physical storage locations that can be linked to branches.
+        </InfoCallout>
 
         {/* Branches Grid */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {branches.length === 0 ? (
-            <div className="col-span-full p-12 text-center bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border">
-              <Building2 className="w-12 h-12 text-text-muted mx-auto mb-4" />
-              <p className="text-text-secondary mb-2">No branches found</p>
-              <p className="text-sm text-text-muted mb-4">Create your first branch to get started</p>
-              <button
-                onClick={() => router.push('/settings/branches/new')}
-                className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-              >
-                Add Your First Branch
-              </button>
-            </div>
+            <EmptyState
+              className="card col-span-full"
+              icon={Building2}
+              title="No branches yet"
+              description="Create your first branch to get started."
+              action={<Button onClick={() => router.push('/settings/branches/new')}>Add your first branch</Button>}
+            />
           ) : (
             branches.map((branch) => (
               <div
                 key={branch.id}
-                className="bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-6 hover:shadow-md transition"
+                className="card min-w-0 p-4 transition hover:shadow-md md:p-5"
               >
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-slate-100 p-2 rounded-lg">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
                       <Building2 className="w-5 h-5 text-primary-600" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-text-primary">{branch.name}</h3>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-text-primary" title={branch.name}>{branch.name}</h3>
                       {branch.branch_code && (
                         <p className="text-xs text-text-muted">{branch.branch_code}</p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                     {branch.is_primary && (
-                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                         <CheckCircle className="w-3 h-3" />
                         <span>Primary</span>
                       </div>
                     )}
                     {!branch.is_active && (
-                      <div className="flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded-full text-xs font-medium">
                         <XCircle className="w-3 h-3" />
                         <span>Inactive</span>
                       </div>
@@ -242,7 +220,7 @@ export default function BranchesPage() {
                 </div>
 
 {branch.gst_place_issue && (
-                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-2 text-xs text-red-800 dark:text-red-300">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>{branch.gst_place_issue}</span>
                   </div>
@@ -280,8 +258,8 @@ export default function BranchesPage() {
                     )}
                     {branch.email && (
                       <div className="flex items-center space-x-2 text-sm text-text-secondary">
-                        <Mail className="w-4 h-4" />
-                        <span>{branch.email}</span>
+                        <Mail className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 break-all">{branch.email}</span>
                       </div>
                     )}
                   </div>
@@ -298,35 +276,35 @@ export default function BranchesPage() {
                 )}
 
                 {/* Actions */}
-                <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
-                  <div className="flex items-center space-x-2">
-                    <button
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => router.push(`/settings/branches/${branch.id}/edit`)}
-                      className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center space-x-1"
                     >
-                      <Edit className="w-4 h-4" />
-                      <span>Edit</span>
-                    </button>
-                    <button
-                      onClick={() => handleToggleActive(branch.id, branch.is_active)}
-                      className="text-sm text-text-secondary hover:text-text-secondary"
-                    >
+                      <Edit className="mr-1.5 h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleToggleActive(branch.id, branch.is_active)}>
                       {branch.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
+                    </Button>
                   </div>
                   {!branch.is_primary && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleDelete(branch.id)}
                       disabled={deleting === branch.id}
-                      className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 flex items-center space-x-1"
+                      className="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                     >
                       {deleting === branch.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                       ) : (
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="mr-1.5 h-4 w-4" />
                       )}
-                      <span>Delete</span>
-                    </button>
+                      Delete
+                    </Button>
                   )}
                 </div>
               </div>

@@ -12,8 +12,8 @@ function allSettingLists(): Array<{ where: string; settings: SettingSchema[] }> 
 }
 
 describe('section registry', () => {
-  it('registers 32 section types keyed by their own type', () => {
-    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(32);
+  it('registers 34 section types keyed by their own type', () => {
+    expect(Object.keys(SECTION_SCHEMAS)).toHaveLength(34);
     for (const [key, schema] of Object.entries(SECTION_SCHEMAS)) expect(schema.type).toBe(key);
   });
 
@@ -65,5 +65,42 @@ describe('section registry', () => {
       products: { source: 'price_max', priceMax: 500, limit: 4 },
     });
     expect(getSectionSchema('category-grid')!.data!({})).toEqual({ categories: true });
+  });
+});
+
+describe('store-info section', () => {
+  it('is registered for the home and page templates in the Info category', () => {
+    const s = getSectionSchema('store-info')!;
+    expect(s.category).toBe('Info');
+    expect(s.templates).toEqual(['home', 'page']);
+    expect(s.settings.slice(0, 4).map((x) => [x.id, x.type, x.default])).toEqual([
+      ['heading', 'text', ''],
+      ['show_hours', 'checkbox', true],
+      ['show_address', 'checkbox', true],
+      ['show_buttons', 'checkbox', true],
+    ]);
+    expect(s.data!({})).toEqual({ storeAddress: true });
+    expect(s.data!({ show_address: false })).toEqual({});
+    expect(sectionsForTemplate('home').map((x) => x.type)).toContain('store-info');
+    expect(sectionsForTemplate('page').map((x) => x.type)).toContain('store-info');
+  });
+});
+
+describe('buy-again section', () => {
+  it('is registered for the home and catalog templates in the Products category', () => {
+    const s = getSectionSchema('buy-again')!;
+    expect(s.category).toBe('Products');
+    expect(s.templates).toEqual(['home', 'catalog']);
+    expect(s.settings.slice(0, 3).map((x) => [x.id, x.type, x.default])).toEqual([
+      ['heading', 'text', 'Buy again'],
+      ['max_items', 'range', 8],
+      ['style', 'select', 'rail'],
+    ]);
+    const maxItems = s.settings.find((x) => x.id === 'max_items')!;
+    expect([maxItems.min, maxItems.max]).toEqual([4, 12]);
+    expect(s.settings.find((x) => x.id === 'style')!.options!.map((o) => o.value)).toEqual(['rail', 'grid']);
+    expect(sectionsForTemplate('home').map((x) => x.type)).toContain('buy-again');
+    expect(sectionsForTemplate('catalog').map((x) => x.type)).toContain('buy-again');
+    expect(sectionsForTemplate('product').map((x) => x.type)).not.toContain('buy-again');
   });
 });

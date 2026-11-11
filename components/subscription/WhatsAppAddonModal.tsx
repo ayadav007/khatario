@@ -13,7 +13,7 @@ export function WhatsAppAddonModal({ onClose, onPurchaseSuccess }: WhatsAppAddon
   return (
     <UpgradeModal
       limitType="feature"
-      featureName="Khatario Connect"
+      featureName="WhatsApp inbox"
       moduleKey="connect"
       initialPlanId="connect"
       onClose={onClose}

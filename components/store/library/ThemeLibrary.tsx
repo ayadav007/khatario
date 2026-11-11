@@ -37,6 +37,7 @@ import {
   publishTheme,
   resetWorkingDraft,
 } from './api';
+import { themeStorePaths } from '@/lib/store/engine/theme-store';
 import { ThemeRowCard, type RowKind } from './ThemeRowCard';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RenameDialog } from './RenameDialog';
@@ -282,7 +283,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
     <div className="flex items-center gap-2">
       <Link
         href="/settings/online-store"
-        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
         Online store
@@ -294,13 +295,13 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
             onClick={() => void copyCurrentDesign()}
             disabled={busy !== null || !canAddTheme(count)}
             title={canAddTheme(count) ? MIGRATED_CHOICE.description : LIMIT_NOTICE}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium md:min-h-9 md:text-xs text-text-secondary hover:bg-gray-50 dark:hover:bg-slate-800/60 disabled:opacity-60"
           >
             <Copy className="h-3.5 w-3.5" aria-hidden />
             Copy current store design
           </button>
           <Link
-            href="/themes"
+            href={themeStorePaths(true).store}
             className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
           >
             <Store className="h-3.5 w-3.5" aria-hidden />
@@ -319,12 +320,12 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       actions={headerActions}
     >
       {!storeEngine ? (
-        <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div role="note" className="rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
           {ENGINE_OFF_NOTICE}
         </div>
       ) : null}
       {!canEdit ? (
-        <div role="note" className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <div role="note" className="rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 px-4 py-3 text-sm text-text-secondary">
           {NO_EDIT_NOTICE}
         </div>
       ) : null}
@@ -332,18 +333,18 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
       {loadError && !rows ? (
         <Card>
           <p className="text-sm text-red-600">{loadError}</p>
-          <button type="button" onClick={() => void load()} className="mt-3 text-sm text-gray-700 underline">
+          <button type="button" onClick={() => void load()} className="mt-3 text-sm text-text-secondary underline">
             Try again
           </button>
         </Card>
       ) : !rows ? (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
         </div>
       ) : (
         <>
           <section aria-labelledby="theme-library-live" className="space-y-2">
-            <h2 id="theme-library-live" className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <h2 id="theme-library-live" className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
               Live theme
             </h2>
             <Card>
@@ -351,7 +352,7 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
                 renderRow(split.live, 'live')
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-text-secondary">
                     Your store doesn&apos;t use a theme yet. Customise sets one up from your current store design.
                   </p>
                   {canEdit ? (
@@ -365,22 +366,22 @@ export function ThemeLibrary({ businessId, canEdit, storeEngine }: ThemeLibraryP
                         {busy?.id === 'live' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
                         Customise
                       </button>
-                      <span className="text-xs text-gray-500 lg:hidden">{NARROW_EDITOR_NOTICE}</span>
+                      <span className="text-xs text-text-secondary lg:hidden">{NARROW_EDITOR_NOTICE}</span>
                     </>
                   ) : null}
                 </div>
               )}
-              {split.working ? <div className="mt-4 border-t border-gray-100 pt-4">{renderRow(split.working, 'working')}</div> : null}
+              {split.working ? <div className="mt-4 border-t border-border pt-4">{renderRow(split.working, 'working')}</div> : null}
             </Card>
           </section>
 
           <section aria-labelledby="theme-library-drafts" className="space-y-2">
-            <h2 id="theme-library-drafts" className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <h2 id="theme-library-drafts" className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
               Drafts
             </h2>
             {split.drafts.length === 0 ? (
               <Card>
-                <p className="text-sm text-gray-500">No drafts yet. Add a theme to try a new look without changing your store.</p>
+                <p className="text-sm text-text-secondary">No drafts yet. Add a theme to try a new look without changing your store.</p>
               </Card>
             ) : (
               <ul className="space-y-3">

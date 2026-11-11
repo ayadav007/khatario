@@ -184,6 +184,7 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
     store_tagline: 'Khatario theme preview',
     store_hero_image_url: null,
     store_min_order_amount: 0,
+    store_hours: null,
     portal_theme: null,
     store_theme: theme,
     store_about_md: 'Preview catalog. Your real products appear after you apply this theme.',

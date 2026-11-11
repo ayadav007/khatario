@@ -5,7 +5,7 @@
  */
 
 import nodemailer from 'nodemailer';
-import { sendBusinessEmail } from '@/lib/business-email';
+import { sendBusinessEmail, type BusinessEmailSendResult } from '@/lib/business-email';
 
 interface EmailConfig {
   provider: 'smtp' | 'sendgrid' | 'ses';
@@ -119,7 +119,7 @@ export async function sendInvoiceEmail(
   pdfBuffer: Buffer,
   businessName: string,
   onlineViewUrl?: string | null
-): Promise<boolean> {
+): Promise<BusinessEmailSendResult> {
   const subject = `Invoice ${invoiceNumber} from ${businessName}`;
 
   const viewBlock = onlineViewUrl
@@ -193,7 +193,7 @@ This is an automated email from Khatario billing system.
       },
     ],
   });
-  return result.success;
+  return result;
 }
 
 /**

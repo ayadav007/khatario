@@ -34,8 +34,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Extract relevant information from API response
-    console.log('Using API:', apiSource);
-    console.log('GST Data:', JSON.stringify(gstData, null, 2));
     
     // Parse address if available
     let address = '';
@@ -88,7 +86,6 @@ export async function GET(request: NextRequest) {
       api_source: apiSource
     };
 
-    console.log('Final Result:', JSON.stringify(result, null, 2));
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('GSTIN Lookup Error:', error);

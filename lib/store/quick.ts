@@ -1,5 +1,5 @@
 /** Pure helpers for the Quick theme's cart bar and cart sheet. */
-import { applyCouponDiscount } from './pricing';
+import { applyCouponDiscount, cartLineTotal } from './pricing';
 
 export interface FreeDeliveryProgress {
   /** Rupees still to add; 0 once delivery is free. */
@@ -15,10 +15,28 @@ export function freeDeliveryProgress(subtotal: number, freeAbove: number | null 
   return { remaining, ratio: Math.min(1, Math.max(0, subtotal / freeAbove)) };
 }
 
+/** The free-delivery amount a demo store promises (its Bazaar Bright announcement says "above ₹299"). */
+export const DEMO_FREE_DELIVERY_ABOVE = 299;
+
+/** A demo store has no branches, so it borrows the demo amount; a branch amount wins, and real stores are untouched. */
+export function demoFreeAbove(isDemo: boolean, branchAmount: number | null | undefined): number | null {
+  if (branchAmount != null) return branchAmount;
+  return isDemo ? DEMO_FREE_DELIVERY_ABOVE : null;
+}
+
+/** The cart drawer's free-delivery line (theme setting `cart_free_ship_bar`). */
+export function freeShipText(progress: FreeDeliveryProgress): string {
+  return progress.remaining > 0
+    ? `Add ₹${progress.remaining.toLocaleString('en-IN')} more for free delivery`
+    : 'You have free delivery';
+}
+
 /** What the shopper saves against MRP across the cart. Lines without an MRP add nothing. */
-export function cartSavings(lines: Array<{ price: number; mrp?: number | null; quantity: number }>): number {
+export function cartSavings(
+  lines: Array<{ price: number; mrp?: number | null; quantity: number; taxRate?: number; gstIncluded?: boolean }>,
+): number {
   return Math.round(
-    lines.reduce((sum, l) => (l.mrp != null && l.mrp > l.price ? sum + (l.mrp - l.price) * l.quantity : sum), 0),
+    lines.reduce((sum, l) => (l.mrp != null ? sum + Math.max(0, l.mrp * l.quantity - cartLineTotal(l)) : sum), 0),
   );
 }
 

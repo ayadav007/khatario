@@ -4,7 +4,7 @@ import { storeFontStack, type StoreFontFamily } from '@/lib/store/store-theme';
 import { schemeCssVars, studioSchemeVars } from './color-schemes';
 import type { ThemePreset, ThemeSettings } from './types';
 
-const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage'];
+const PRESETS: readonly ThemePreset[] = ['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop', 'bazaar'];
 
 // Each non-default style setting is one root class; the rules live in components/store/engine/style-rules.ts.
 const STYLE_CLASSES: { [K in 'label_style' | 'frame_style' | 'texture']: Readonly<Record<string, string>> } = {
@@ -30,7 +30,7 @@ export function isDarkHex(hex: string): boolean {
  * `st-root store-studio st-cq eng-root eng-preset-<preset>`, plus `store-quick` on Quick (quick-theme.css
  * restyles the Studio markup under it), `is-dark` when scheme 1's background is dark, `phone-kit` and
  * `eng-editor`, and one class per non-default style setting (`eng-labels-caps`, `eng-frame-accent`,
- * `eng-texture-<texture>`; unknown values add nothing). The phone kit is always on in the Quick preset.
+ * `eng-texture-<texture>`; unknown values add nothing), and `eng-heading-anton` when the heading font is Anton. The phone kit is always on in the Quick preset.
  */
 export function engineRootClass(input: {
   preset: ThemePreset;
@@ -38,6 +38,8 @@ export function engineRootClass(input: {
   editor: boolean;
   schemeBackground: string | undefined;
   style: Pick<ThemeSettings, 'label_style' | 'frame_style' | 'texture'>;
+  /** The theme's heading font id; `anton` (one weight only) adds `eng-heading-anton`, which stops browser-made bold. */
+  headingFont?: string;
 }): { className: string; kit: boolean; quick: boolean } {
   const preset: ThemePreset = PRESETS.includes(input.preset) ? input.preset : 'studio';
   const quick = preset === 'quick';
@@ -47,6 +49,7 @@ export function engineRootClass(input: {
   if (input.schemeBackground && isDarkHex(input.schemeBackground)) list.push('is-dark');
   if (kit) list.push('phone-kit');
   if (input.editor) list.push('eng-editor');
+  if (input.headingFont === 'anton') list.push('eng-heading-anton');
   for (const key of Object.keys(STYLE_CLASSES) as (keyof typeof STYLE_CLASSES)[]) {
     const cls = Object.prototype.hasOwnProperty.call(STYLE_CLASSES[key], input.style?.[key]) ? STYLE_CLASSES[key][input.style[key]] : undefined;
     if (cls) list.push(cls);

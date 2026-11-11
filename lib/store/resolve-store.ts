@@ -6,6 +6,7 @@ import {
   type StorePromoSheetConfig,
 } from '@/lib/store/promo-sheet';
 import { sanitizeStoreTheme, type StoreTheme } from '@/lib/store/store-theme';
+import { sanitizeStoreHours, type StoreHours } from '@/lib/store/store-hours';
 import { getPreferredConfiguredProvider } from '@/lib/payments/business-provider-config';
 import { getBusinessUpiVpa } from '@/lib/payments/upi-pay-link';
 import type { ThemePreset } from '@/lib/store/engine/types';
@@ -23,6 +24,8 @@ export interface StoreBusinessContext {
   store_tagline: string | null;
   store_hero_image_url: string | null;
   store_min_order_amount: number;
+  /** Opening hours, India time (lib/store/store-hours.ts); null = not set. */
+  store_hours: StoreHours | null;
   portal_theme: Record<string, unknown> | null;
   store_theme: StoreTheme | null;
   store_about_md: string | null;
@@ -109,6 +112,7 @@ export async function resolveStoreBySubdomain(
     store_tagline: string | null;
     store_hero_image_url: string | null;
     store_min_order_amount: string | null;
+    store_hours: unknown;
     portal_theme: unknown;
     store_theme: unknown;
     store_about_md: string | null;
@@ -124,6 +128,7 @@ export async function resolveStoreBySubdomain(
        b.id AS business_id, b.name, b.logo_url, b.phone, b.email,
        bs.store_subdomain, bs.store_tagline, bs.store_hero_image_url,
        bs.store_min_order_amount::text,
+       bs.store_hours,
        bs.portal_theme,
        bs.store_theme,
        bs.store_about_md,
@@ -161,6 +166,7 @@ export async function resolveStoreBySubdomain(
     store_tagline: row.store_tagline,
     store_hero_image_url: row.store_hero_image_url,
     store_min_order_amount: parseFloat(row.store_min_order_amount ?? '0') || 0,
+    store_hours: sanitizeStoreHours(row.store_hours),
     portal_theme: (row.portal_theme as Record<string, unknown>) ?? null,
     store_theme: sanitizeStoreTheme(row.store_theme),
     store_about_md: row.store_about_md,

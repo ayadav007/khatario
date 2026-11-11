@@ -113,14 +113,12 @@ async function sendCreditAlert(
     // PHASE 5.5: Feature gating
     const hasFeatureAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_CREDIT_ALERTS);
     if (!hasFeatureAccess) {
-      console.log(`[Credit Alerts] WhatsApp credit alerts disabled for business ${businessId}`);
       return; // Skip silently if feature not enabled
     }
 
     // Get recipients
     const recipients = await getCreditAlertRecipients(businessId);
     if (recipients.length === 0) {
-      console.log(`[Credit Alerts] No recipients found for business ${businessId}`);
       return;
     }
 

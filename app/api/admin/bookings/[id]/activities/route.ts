@@ -65,12 +65,6 @@ export async function POST(
         //   throw new Error('Platform WhatsApp not configured');
         // }
 
-        // For now, log the WhatsApp attempt
-        console.log('[Booking Activity] WhatsApp message would be sent:', {
-          bookingId,
-          phone: targetPhone,
-          message: whatsapp_message.substring(0, 50)
-        });
         
         activityMetadata = {
           ...activityMetadata,

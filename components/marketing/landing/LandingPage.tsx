@@ -13,12 +13,15 @@ import { LandingHero } from '@/components/marketing/landing/LandingHero';
 import { LandingFaq } from '@/components/marketing/landing/LandingFaq';
 import { LandingTemplateGallery } from '@/components/marketing/landing/LandingTemplateGallery';
 import { LandingPricing } from '@/components/marketing/landing/LandingPricing';
-import { LandingSocialProof } from '@/components/marketing/landing/LandingSocialProof';
-import { LandingWalkthrough } from '@/components/marketing/landing/LandingWalkthrough';
-import { LandingFeatureBento } from '@/components/marketing/landing/LandingFeatureBento';
-import { LandingWhatsAppBand } from '@/components/marketing/landing/LandingWhatsAppBand';
-import { LandingPrintLanguages } from '@/components/marketing/landing/LandingPrintLanguages';
-import { LandingStaffApp } from '@/components/marketing/landing/LandingStaffApp';
+import { LandingSuite } from '@/components/marketing/landing/LandingSuite';
+import { LandingIndustries } from '@/components/marketing/landing/LandingIndustries';
+import { LandingProductTour } from '@/components/marketing/landing/LandingProductTour';
+import { LandingAiTools } from '@/components/marketing/landing/LandingAiTools';
+import { LandingOnlineStore } from '@/components/marketing/landing/LandingOnlineStore';
+import { LandingWhatsAppMarketing } from '@/components/marketing/landing/LandingWhatsAppMarketing';
+import { LandingStaffManagement } from '@/components/marketing/landing/LandingStaffManagement';
+import { LandingSwitchHelp } from '@/components/marketing/landing/LandingSwitchHelp';
+import { LandingEverywhere } from '@/components/marketing/landing/LandingEverywhere';
 import { LandingTestimonials } from '@/components/marketing/landing/LandingTestimonials';
 import { LandingScrollTrialModal } from '@/components/marketing/landing/LandingScrollTrialModal';
 import { LandingScrollProgress } from '@/components/marketing/landing/LandingScrollProgress';
@@ -31,6 +34,7 @@ import {
 import { MarketingPageRenderer } from '@/components/marketing/builder/MarketingPageRenderer';
 import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import type { MarketingDocument } from '@/lib/marketing-builder/sanitize';
+import { announcementFromRootProps, type SiteAnnouncement } from '@/lib/marketing-builder/announcement';
 import type { PricingCatalog } from '@/lib/subscription/pricing-catalog';
 
 /** The coded home page; also the fallback whenever nothing has been published from the Site Builder. */
@@ -38,14 +42,17 @@ export function LandingDefaultSections() {
   return (
     <>
       <LandingHero />
-      <LandingSocialProof />
-      <LandingWalkthrough />
-      <LandingFeatureBento />
-      <LandingWhatsAppBand />
+      <LandingSuite />
+      <LandingIndustries />
+      <LandingProductTour />
+      <LandingAiTools />
       <LandingTemplateGallery />
-      <LandingPrintLanguages />
-      <LandingStaffApp />
+      <LandingOnlineStore />
+      <LandingWhatsAppMarketing />
+      <LandingStaffManagement />
+      <LandingSwitchHelp />
       <LandingTestimonials />
+      <LandingEverywhere />
       <LandingPricing />
       <LandingFaq />
       <LandingFinalCta />
@@ -57,10 +64,12 @@ function LandingShell({
   children,
   previewBanner,
   pricingCatalog,
+  announcement,
 }: {
   children: ReactNode;
   previewBanner?: boolean;
   pricingCatalog?: PricingCatalog | null;
+  announcement?: SiteAnnouncement;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -92,7 +101,7 @@ function LandingShell({
             </div>
           )}
           <LandingScrollProgress />
-          <MarketingSiteHeader />
+          <MarketingSiteHeader announcement={announcement} />
           {children}
           <LandingFooter />
           <LandingScrollTrialModal />
@@ -122,7 +131,11 @@ export function LandingPage({
         </div>
       }
     >
-      <LandingShell previewBanner={preview} pricingCatalog={pricingCatalog}>
+      <LandingShell
+        previewBanner={preview}
+        pricingCatalog={pricingCatalog}
+        announcement={announcementFromRootProps(document?.root?.props)}
+      >
         {document ? <MarketingPageRenderer data={document} /> : <LandingDefaultSections />}
       </LandingShell>
     </Suspense>

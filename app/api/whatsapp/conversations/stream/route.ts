@@ -58,9 +58,6 @@ export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ re
       const send = (event: any) => {
         try {
           const eventData = JSON.stringify(event);
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[SSE] 📤 ${event.type}`, event.message?.id || event.conversationId || '');
-          }
           safeEnqueue(encoder.encode(`event: ${event.type}\ndata: ${eventData}\n\n`));
         } catch (error) {
           console.error('[SSE] Error encoding event data:', error);

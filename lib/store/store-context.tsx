@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
+import { cartLineTotal, roundMoney } from './pricing';
 import { sanitizeStoreTheme } from './store-theme';
 import {
   CART_SYNC_DEBOUNCE_MS,
@@ -25,6 +26,8 @@ export interface StoreCartItem {
   unit: string;
   maxStock: number;
   taxRate?: number;
+  /** False when GST is added on top of `price` at checkout. */
+  gstIncluded?: boolean;
   /** List price, when above `price`; only used to show savings. */
   mrp?: number;
 }
@@ -431,7 +434,7 @@ export function StoreProvider({
     [customer, subdomain],
   );
 
-  const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+  const cartTotal = roundMoney(cart.reduce((sum, c) => sum + cartLineTotal(c), 0));
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
   const accent = sanitizeStoreTheme(store?.store_theme).accent;
 

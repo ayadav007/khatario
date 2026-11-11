@@ -47,18 +47,8 @@ export async function GET(request: NextRequest) {
     const parsedLimit = parseInt(limitRaw || '50', 10);
     const searchLimit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 150) : 50;
 
-    console.log('[ItemSearchAPI] Search called:', {
-      query,
-      businessId,
-      warehouseId,
-      branchId,
-      browse,
-      queryLength: query?.length,
-      searchLimit,
-    });
 
     if (!businessId) {
-      console.log('[ItemSearchAPI] Missing businessId');
       return NextResponse.json({ items: [] });
     }
 
@@ -137,7 +127,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (!query) {
-      console.log('[ItemSearchAPI] Missing query');
       return NextResponse.json({ items: [] });
     }
 
@@ -157,7 +146,6 @@ export async function GET(request: NextRequest) {
 
     // Normalize barcode for search (remove spaces, etc.) to match how barcodes are stored
     const normalizedQuery = normalizeBarcode(query);
-    console.log('[ItemSearchAPI] Normalized query:', { original: query, normalized: normalizedQuery });
 
     // Search by name, code, or barcode
     // Handle NULL is_active values (items created before is_active column existed)
@@ -327,7 +315,6 @@ export async function GET(request: NextRequest) {
     } catch (error: any) {
       // If item_variants table doesn't exist, use simpler query without variants
       if (error.code === '42P01' && error.message?.includes('item_variants')) {
-        console.log('item_variants table not found, using simplified query');
         // Try query without has_variants column (it might not exist)
         // Fallback to using items.current_stock (global stock) instead of warehouse-specific
         try {
@@ -370,7 +357,6 @@ export async function GET(request: NextRequest) {
         } catch (err2: any) {
           // If has_variants column also doesn't exist, use even simpler query
           if (err2.code === '42703' && err2.message?.includes('has_variants')) {
-            console.log('has_variants column not found, using basic query');
             items = await queryRows<any>(
               `SELECT 
                 i.id, 
@@ -418,60 +404,6 @@ export async function GET(request: NextRequest) {
 
     items = labelBundleNames(items);
 
-    console.log('[ItemSearchAPI] Search results:', items.length, 'items found');
-    
-    // Debug: Log first item structure if found
-    if (items.length > 0) {
-      console.log('[ItemSearchAPI] First item structure:', JSON.stringify(items[0], null, 2));
-      console.log('[ItemSearchAPI] First item name:', items[0].name);
-      console.log('[ItemSearchAPI] First item barcode:', items[0].barcode);
-      console.log('[ItemSearchAPI] First item selling_price:', items[0].selling_price);
-      console.log('[ItemSearchAPI] First item tax_rate:', items[0].tax_rate);
-    } else {
-      // Log when no items found - check if barcode exists in DB
-      console.log('[ItemSearchAPI] No items found. Checking if barcode exists in database...');
-      try {
-        // Check with normalized barcode (exact match)
-        const normalizedCheck = await queryRows<any>(
-          `SELECT id, name, barcode, code FROM items 
-           WHERE business_id = $1 AND deleted_at IS NULL AND barcode = $2 
-           LIMIT 1`,
-          [businessId, normalizedQuery]
-        );
-        console.log('[ItemSearchAPI] Exact normalized barcode match:', normalizedCheck.length > 0 ? 'FOUND' : 'NOT FOUND', normalizedCheck);
-        
-        // Also check with original query (in case barcode wasn't normalized in DB)
-        const originalCheck = await queryRows<any>(
-          `SELECT id, name, barcode, code FROM items 
-           WHERE business_id = $1 AND deleted_at IS NULL AND barcode = $2 
-           LIMIT 1`,
-          [businessId, query]
-        );
-        console.log('[ItemSearchAPI] Exact original barcode match:', originalCheck.length > 0 ? 'FOUND' : 'NOT FOUND', originalCheck);
-        
-        // Check with ILIKE pattern
-        const patternCheck = await queryRows<any>(
-          `SELECT id, name, barcode, code FROM items 
-           WHERE business_id = $1 AND deleted_at IS NULL AND barcode ILIKE $2 
-           LIMIT 5`,
-          [businessId, `%${query}%`]
-        );
-        console.log('[ItemSearchAPI] Pattern match check (ILIKE):', patternCheck.length, 'items found', patternCheck);
-        
-        // List all items with barcodes for this business (for debugging)
-        const allBarcodes = await queryRows<any>(
-          `SELECT id, name, barcode, code FROM items 
-           WHERE business_id = $1 AND deleted_at IS NULL AND barcode IS NOT NULL AND barcode != ''
-           ORDER BY name ASC
-           LIMIT 10`,
-          [businessId]
-        );
-        console.log('[ItemSearchAPI] All items with barcodes in this business:', allBarcodes.length, allBarcodes.map(i => ({ name: i.name, barcode: i.barcode, code: i.code })));
-      } catch (err) {
-        console.error('[ItemSearchAPI] Error checking barcode:', err);
-      }
-    }
-    
     if (barcodeAllowed && Array.isArray(items) && items.length > 0) {
       const boxes = await queryRows<{ item_id: string; unit: string; factor_to_base: number; selling_price: number | null }>(
         `SELECT item_id, unit, factor_to_base::float AS factor_to_base, selling_price::float AS selling_price

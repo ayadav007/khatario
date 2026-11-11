@@ -6,6 +6,7 @@ import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
 import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { reservedStoreUrlChange } from '@/lib/store/resolve-store';
+import { sanitizeStoreHours } from '@/lib/store/store-hours';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
@@ -16,6 +17,7 @@ const SETTINGS_COLS = `
            store_subdomain, store_enabled,
            store_tagline, store_hero_image_url,
            store_min_order_amount::text,
+           store_hours,
            COALESCE(store_allow_cod, true) AS store_allow_cod,
            store_return_window_days,
            COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
@@ -89,12 +91,28 @@ export async function GET(request: NextRequest) {
       console.warn('online-store categories query failed:', catErr);
     }
 
+    let storeProductCount: number | null = null;
+    try {
+      const countRow = await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n
+         FROM items i
+         WHERE i.business_id = $1 AND i.show_in_store = true
+           AND (i.is_active IS NULL OR i.is_active = true)
+           AND i.deleted_at IS NULL`,
+        [businessId],
+      );
+      storeProductCount = Number(countRow?.n ?? 0);
+    } catch (countErr) {
+      console.warn('online-store product count query failed:', countErr);
+    }
+
     return NextResponse.json({
       store_subdomain: row?.store_subdomain ?? null,
       store_enabled: row?.store_enabled ?? false,
       store_tagline: row?.store_tagline ?? null,
       store_hero_image_url: (row as { store_hero_image_url?: string | null })?.store_hero_image_url ?? null,
       store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
+      store_hours: sanitizeStoreHours((row as { store_hours?: unknown })?.store_hours),
       store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
       store_return_window_days: (row as { store_return_window_days?: number | null })?.store_return_window_days ?? 7,
       store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
@@ -117,6 +135,7 @@ export async function GET(request: NextRequest) {
       store_engine: (row as { store_engine?: boolean })?.store_engine === true,
       logo_url: logoRow?.logo_url ?? null,
       categories,
+      store_product_count: storeProductCount,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load store settings';
@@ -140,7 +159,7 @@ export async function PATCH(request: NextRequest) {
     store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
     store_promo_sheet, store_shiprocket_webhook_token, store_return_window_days,
-    store_cart_reminder_enabled, store_cart_reminder_hours,
+    store_cart_reminder_enabled, store_cart_reminder_hours, store_hours,
   } = body;
 
   if (
@@ -222,6 +241,13 @@ export async function PATCH(request: NextRequest) {
     idx++;
     sets.push(`store_min_order_amount = $${idx}`);
     params.push(parseFloat(store_min_order_amount) || 0);
+  }
+  if (store_hours !== undefined) {
+    // Bad days become closed; nothing valid (or null) clears the hours to SQL NULL.
+    const hours = sanitizeStoreHours(store_hours);
+    idx++;
+    sets.push(`store_hours = $${idx}::jsonb`);
+    params.push(hours ? JSON.stringify(hours) : null);
   }
   if (store_allow_cod !== undefined) {
     idx++;

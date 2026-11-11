@@ -271,7 +271,7 @@ export default function ShiftsPage() {
                 </thead>
                 <tbody>
                   {shifts.map((shift) => (
-                    <tr key={shift.id} className="border-b border-border hover:bg-gray-50 dark:bg-slate-800/40 dark:hover:bg-slate-800/70">
+                    <tr key={shift.id} className="border-b border-border hover:bg-gray-50 dark:hover:bg-slate-800/70">
                       <td className="py-4 px-4">
                         <div className="font-medium">{shift.shift_name}</div>
                         {!shift.is_active && (
@@ -289,10 +289,10 @@ export default function ShiftsPage() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(shift)}>
+                          <Button size="sm" variant="ghost" aria-label="Edit" onClick={() => handleEdit(shift)}>
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(shift.id)}>
+                          <Button size="sm" variant="ghost" aria-label="Delete" onClick={() => handleDelete(shift.id)}>
                             <Trash2 className="w-4 h-4 text-red-600" />
                           </Button>
                         </div>

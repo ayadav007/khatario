@@ -1,7 +1,7 @@
 import type { ProductCardSettings } from './product-card';
 
 export type TemplateKind = 'home' | 'product' | 'catalog' | 'page' | 'header' | 'footer';
-export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage';
+export type ThemePreset = 'studio' | 'quick' | 'grocery' | 'khatario' | 'blank' | 'heritage' | 'drop' | 'bazaar';
 export type ThemeRole = 'live' | 'draft';
 
 export interface Block {
@@ -90,6 +90,14 @@ export interface ThemeSettings {
   social: { instagram: string; whatsapp: string; facebook: string; youtube: string };
   menus: Menu[];
   product_card: ProductCardSettings;
+  /** Cart drawer: the free-delivery line and bar (only when the branch has one free-delivery threshold). */
+  cart_free_ship_bar: boolean;
+  /** Cart drawer: up to 4 in-stock products from the cart's categories, under the items. */
+  cart_suggestions: boolean;
+  /** Heading over those suggestions (max 40). */
+  cart_suggestions_heading: string;
+  /** Cart drawer: an "Order on WhatsApp instead" button (Task 10). */
+  cart_whatsapp_order: boolean;
 }
 
 export interface ThemeData {

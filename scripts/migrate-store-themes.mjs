@@ -2,7 +2,7 @@
 //
 // Store theme engine M4 (D33/D34): gives each chosen store its first live engine theme, migrated from
 // business_settings.store_theme. Stores that already have a live theme are skipped, so a second run changes nothing.
-// It never writes business_settings (store_engine stays as it is) or store_theme.
+// It never writes store_theme. Without --switch-on it leaves business_settings.store_engine as it is.
 //
 // Options:
 //   --all                      every business with a store subdomain
@@ -11,6 +11,8 @@
 //   --allow-database <name>    run on a database other than kh_phase2_test (the exact name)
 //   --report <path>            JSON report path (default tmp-qa/engine-migration/report.json)
 //   --preview-links            add a 7-day share preview path for each migrated theme (needs JWT_SECRET)
+//   --switch-on                M6: also turn store_engine on for each store that ends with a live theme, so its
+//                              storefront and Store editor use the new design
 //
 // The connection comes only from DATABASE_URL in this process's environment. The URL is never printed; only the
 // database name is.
@@ -29,7 +31,7 @@ function refuse(message) {
 }
 
 function parseArgs(argv) {
-  const opts = { all: false, businessIds: [], dryRun: false, allowDatabase: null, report: DEFAULT_REPORT, previewLinks: false };
+  const opts = { all: false, businessIds: [], dryRun: false, allowDatabase: null, report: DEFAULT_REPORT, previewLinks: false, switchOn: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -55,6 +57,9 @@ function parseArgs(argv) {
         break;
       case '--preview-links':
         opts.previewLinks = true;
+        break;
+      case '--switch-on':
+        opts.switchOn = true;
         break;
       default:
         refuse(`unknown argument ${JSON.stringify(arg)}.`);
@@ -85,6 +90,7 @@ try {
     dryRun: opts.dryRun,
     allowDatabase: opts.allowDatabase,
     previewLinks: opts.previewLinks,
+    switchOn: opts.switchOn,
   });
 
   const reportPath = resolve(process.cwd(), opts.report);
@@ -96,7 +102,7 @@ try {
   for (const row of out.rows) {
     totals[row.status] = (totals[row.status] ?? 0) + 1;
     const n = row.warnings.length;
-    const extra = row.error ? `  ${row.error}` : '';
+    const extra = `${row.switched_on ? '  switched on' : ''}${row.error ? `  ${row.error}` : ''}`;
     console.log(`${row.subdomain || row.business_id}  ${row.status}  ${row.preset ?? '-'}  ${n} warning${n === 1 ? '' : 's'}${extra}`);
   }
   const summary = Object.entries(totals).map(([k, v]) => `${k} ${v}`).join(', ');

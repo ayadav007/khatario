@@ -36,7 +36,8 @@ type Rule = { tool: string; re: RegExp; defaultPeriod?: PeriodKey; args?: Record
 /** Order matters: more specific questions first ("pending" before "sales"). */
 const RULES: Rule[] = [
   { tool: 'daily_summary', re: /^\s*(summary|report|hisaab|hisab|status)\s*[.!?]*\s*$|\b(daily|business|day|din)\s+(summary|report)\b|\bhow\s+(is|was)\s+(the\s+)?(business|day)\b|\b(aaj|kal)\s+ka\s+(hisaab|hisab|summary)\b|\bkaisa\s+(raha|chal)\b/i },
-  { tool: 'payables_due', re: /\b(payables?|pay\s+(to\s+)?suppliers?|suppliers?\s+(dues?|payments?|bills?|pending)|dena\s+hai|bills?\s+to\s+pay)\b/i },
+  { tool: 'top_creditors', re: /\b(dena\s+hai|dene\s+hai|chukana\s+hai|creditors?|(do\s+)?(i|we)\s+owe|kisko\s+pay)\b/i },
+  { tool: 'payables_due', re: /\b(payables?|pay\s+(to\s+)?suppliers?|suppliers?\s+(dues?|payments?|bills?|pending)|bills?\s+to\s+pay)\b/i },
   { tool: 'overdue_invoices', re: /\boverdue\b|\bunpaid\s+(bills?|invoices?)\b|\blate\s+payments?\b/i },
   { tool: 'top_debtors', re: /\b(pending|outstanding|udhaa?r|baaki|baki|owes?|owe\s+me|receivables?|dues?|lena|highest\s+(due|balance))\b/i },
   { tool: 'top_products', re: /\b(top|best|most|zyada)\b[^.?!]{0,30}\b(products?|items?|selling|sold|bik)\b|\bbest[\s-]?sell(ing|er)s?\b|\bfast[\s-]?moving\b/i, defaultPeriod: 'this_month' },
@@ -47,6 +48,25 @@ const RULES: Rule[] = [
   { tool: 'purchases_expenses', re: /\b(purchases?|kharid|khareed|expenses?|kharcha|kharche|spent|spend)\b/i },
   { tool: 'sales_summary', re: /\b(sales?|sold|sell|becha|bikri|bikaa?|revenue|turnover|business\s+kitna|kitna\s+business)\b/i },
 ];
+
+/** Money the owner pays out (suppliers), as opposed to money customers owe the owner. */
+const PAYING = /\b(dena|dene|chukana|chukane|pay|payables?|creditors?|suppliers?|(i|we)\s+owe)\b/i;
+
+/** "180 days se zyada", "90 din se purane", "more than 60 days", "older than 45 days". */
+const MIN_DAYS =
+  /\b(\d{1,4})\s*(?:days?|din|dino|dinon)\b(?:\s+se)?\s+(?:zyada|jyada|jada|upar|purane?|more|above|over|old|older)\b|\b(?:more\s+than|over|above|older\s+than)\s+(\d{1,4})\s*(?:days?|din)\b/i;
+
+const DIRECTION: Record<string, 'receive' | 'pay'> = {
+  top_debtors: 'receive',
+  overdue_invoices: 'receive',
+  top_creditors: 'pay',
+  payables_due: 'pay',
+};
+
+/** Whether a tool is about money coming in or going out; null for the others. */
+export function moneyDirection(tool: string): 'receive' | 'pay' | null {
+  return DIRECTION[tool] ?? null;
+}
 
 export interface CommandMatch {
   calls: ToolCall[];
@@ -59,6 +79,11 @@ export function matchCommand(text: string): CommandMatch | null {
   if (!t) return null;
   const period = detectPeriod(t);
   const howTo = HOW_TO.test(t) || (MAYBE_HOW_TO.test(t) && !period && !OWN_DATA.test(t));
+  const days = t.match(MIN_DAYS);
+  if (days) {
+    const min = Math.min(3650, Number(days[1] ?? days[2]));
+    return { calls: [{ name: PAYING.test(t) ? 'payables_due' : 'overdue_invoices', args: { min_days_overdue: min } }], howTo };
+  }
   for (const rule of RULES) {
     if (!rule.re.test(t)) continue;
     const args: Record<string, unknown> = { ...(rule.args ?? {}) };
@@ -85,6 +110,8 @@ export const OWNER_HELP_TEXT = [
   '- "Overdue invoices"',
   '- "Top products this month"',
   '- "Payments received yesterday"',
+  '- "Invoices overdue more than 90 days"',
+  '- "Kisko kitna dena hai?" for what you owe suppliers',
   '- "Supplier bills due this week"',
   '- "Low stock"',
   '- "GST alerts"',

@@ -45,9 +45,9 @@ const row = (over: Partial<ThemeListRow>): ThemeListRow =>
   }) as ThemeListRow;
 
 describe('PRESET_CHOICES', () => {
-  it('lists the six presets once each, in order, matching the preset look', () => {
-    expect(PRESET_CHOICES.map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage']);
-    expect(PRESET_CHOICES.map((c) => c.label)).toEqual(['Studio', 'Quick', 'Premium Grocery', 'Khatario', 'Blank', 'Heritage Couture']);
+  it('lists the eight presets once each, in order, matching the preset look', () => {
+    expect(PRESET_CHOICES.map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank', 'heritage', 'drop', 'bazaar']);
+    expect(PRESET_CHOICES.map((c) => c.label)).toEqual(['Studio', 'Quick', 'Premium Grocery', 'Khatario', 'Blank', 'Heritage Couture', 'Drop Culture', 'Bazaar Bright']);
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PRESET_LOOK } = require('@/lib/store/engine/presets/look');
     for (const c of PRESET_CHOICES) {
@@ -56,10 +56,12 @@ describe('PRESET_CHOICES', () => {
       expect(c.description.length).toBeGreaterThan(0);
     }
   });
-  it('marks only Heritage Couture as premium', () => {
-    expect(PRESET_CHOICES.filter((c) => c.premium).map((c) => c.preset)).toEqual(['heritage']);
+  it('marks only Heritage Couture, Drop Culture and Bazaar Bright as premium', () => {
+    expect(PRESET_CHOICES.filter((c) => c.premium).map((c) => c.preset)).toEqual(['heritage', 'drop', 'bazaar']);
     expect(PRESET_CHOICES[PRESET_CHOICES.length - 1].premium).toBe(true);
     expect(presetLabel('heritage')).toBe('Heritage Couture');
+    expect(presetLabel('drop')).toBe('Drop Culture');
+    expect(presetLabel('bazaar')).toBe('Bazaar Bright');
   });
   it('has the migrated choice text', () => {
     expect(MIGRATED_CHOICE).toEqual({
@@ -231,7 +233,11 @@ describe('premium presets', () => {
   it('hides premium presets until the flag is on', () => {
     expect(visiblePresetChoices(false).map((c) => c.preset)).toEqual(['studio', 'quick', 'grocery', 'khatario', 'blank']);
     expect(visiblePresetChoices(true).map((c) => c.preset)).toContain('heritage');
+    expect(visiblePresetChoices(true).map((c) => c.preset)).toContain('drop');
+    expect(visiblePresetChoices(true).map((c) => c.preset)).toContain('bazaar');
     expect(isPremiumPreset('heritage')).toBe(true);
+    expect(isPremiumPreset('drop')).toBe(true);
+    expect(isPremiumPreset('bazaar')).toBe(true);
     expect(isPremiumPreset('studio')).toBe(false);
   });
 });

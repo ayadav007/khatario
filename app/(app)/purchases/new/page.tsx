@@ -406,10 +406,21 @@ export default function NewPurchasePage() {
     let cancelled = false;
     (async () => {
       const res = await fetch(`/api/purchases/${id}`, { credentials: 'include' });
-      if (!res.ok || cancelled) return;
+      if (cancelled) return;
+      if (!res.ok) {
+        toast.error('Could not open this purchase to edit.');
+        router.replace('/purchases');
+        return;
+      }
       const data = await res.json();
       const purchase = data.purchase;
-      if (!purchase || purchase.status !== 'draft' || cancelled) return;
+      if (!purchase || cancelled) return;
+      // Only drafts can be edited; without this the page fell through to a blank form and saved a new bill.
+      if (purchase.status !== 'draft') {
+        toast.error('A final purchase bill cannot be edited. Cancel it and record a new one, or record a purchase return.');
+        router.replace(`/purchases/${purchase.id}`);
+        return;
+      }
       setEditingPurchaseId(purchase.id);
       setSupplierSearch(purchase.supplier_name || '');
       setFormData((prev) => ({

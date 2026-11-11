@@ -50,6 +50,9 @@ module.exports = {
           800: 'var(--color-accent-800, #8e4b13)',
           900: 'var(--color-accent-900, #6e3b0e)',
         },
+        /** Readable text on a primary or accent fill; set by the portal theme (lib/portal-theme.ts). */
+        'on-primary': 'var(--color-on-primary, #ffffff)',
+        'on-accent': 'var(--color-on-accent, #0f172a)',
         surface: {
           DEFAULT: 'var(--color-surface)',
           dark: '#1E293B',

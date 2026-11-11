@@ -18,7 +18,7 @@ Yes. Roles and permissions decide which modules and actions each user can use, f
 
 ## Does Khatario support multiple branches?
 
-Yes. Business and Enterprise plans support multiple branches, each with its own invoice number series, stock and reports, plus inter-branch transfers and reconciliation. Check the plans document for how many branches each plan allows.
+Yes. The Business plan supports multiple branches and warehouses, each with its own invoice number series, stock and reports, plus inter-branch transfers and reconciliation. Check the plans document for how many branches each plan allows.
 
 ## Can I see who changed what?
 

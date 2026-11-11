@@ -60,7 +60,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
       oscillator.stop(audioContext.currentTime + 0.1);
     } catch (err) {
       // Fallback: silently fail if audio context is not available
-      console.debug('Could not play beep sound:', err);
     }
   };
 
@@ -181,11 +180,9 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
           if (navigator.permissions && navigator.permissions.query) {
             const permissionResult = await navigator.permissions.query({ name: 'camera' as PermissionName });
             permissionState = permissionResult.state;
-            console.log('Camera permission state:', permissionState);
           }
         } catch (permQueryErr) {
           // Permissions API might not be supported, continue anyway
-          console.log('Permissions API not available, proceeding with getUserMedia');
         }
 
         // If permission is denied, show helpful message
@@ -308,7 +305,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
             },
             (decodedText) => {
               // Success callback
-              console.log('[Barcode Scanner] Successfully scanned:', decodedText);
               
               // Play beep sound to indicate successful scan
               playBeepSound();
@@ -317,16 +313,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
               onScan(decodedText);
               stopScanner();
             },
-            (errorMessage) => {
-              // Error callback - log for debugging but don't show to user
-              // Most errors are just "no barcode found" which is normal during scanning
-              if (errorMessage && 
-                  !errorMessage.includes('No QR code') && 
-                  !errorMessage.includes('NotFoundException') &&
-                  !errorMessage.includes('No MultiFormat Readers')) {
-                // Only log actual errors, not normal "not found" messages
-                console.debug('[Barcode Scanner] Error:', errorMessage);
-              }
+            () => {
+              // Most errors are just "no barcode found", which is normal while scanning.
             }
           );
           
@@ -495,7 +483,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
                           stream.getTracks().forEach(track => track.stop());
                           
                           // Permission granted! Re-initialize the scanner
-                          console.log('Permission granted, re-initializing scanner...');
                           if (initScannerRef.current) {
                             // Reset the initialization flag so it can run again
                             isInitializingRef.current = false;

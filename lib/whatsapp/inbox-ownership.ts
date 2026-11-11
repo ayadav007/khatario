@@ -58,6 +58,30 @@ const ACTIVE_OWNER_SQL = (alias: string) =>
 export const UNOWNED_SQL = (alias = 'c') =>
   `(${alias}.inbox_state <> 'intervened' OR ${alias}.assigned_to IS NULL OR NOT ${ACTIVE_OWNER_SQL(alias)})`;
 
+/**
+ * SQL: when the customer started waiting for a person, or NULL once someone has answered.
+ * A reply is any outgoing message a person sent: from the inbox ('staff') or typed on the shop's
+ * phone (untagged and not logged as a Khatario send). Bot, flow and reminder sends don't count.
+ * Never earlier than the moment the chat was queued, so messages the bot already handled are skipped.
+ */
+export const WAITING_SINCE_SQL = (alias = 'c') => `CASE
+  WHEN ${alias}.inbox_state <> 'active' AND NOT COALESCE(${alias}.is_group, false) THEN (
+    SELECT CASE WHEN MIN(wim.created_at) IS NOT NULL
+             THEN GREATEST(MIN(wim.created_at), COALESCE(${alias}.requested_at, ${alias}.handoff_requested_at, MIN(wim.created_at)))
+           END
+      FROM whatsapp_conversation_messages wim
+     WHERE wim.conversation_id = ${alias}.id AND wim.direction = 'incoming'
+       AND wim.created_at > COALESCE((
+             SELECT MAX(wom.created_at) FROM whatsapp_conversation_messages wom
+              WHERE wom.conversation_id = ${alias}.id AND wom.direction = 'outgoing'
+                AND (wom.sent_by = 'staff'
+                     OR (wom.sent_by IS NULL AND NOT EXISTS (
+                           SELECT 1 FROM whatsapp_messages wsm
+                            WHERE wsm.business_id = wom.business_id AND wsm.baileys_message_id = wom.message_id)))
+           ), '-infinity')
+  )
+END`;
+
 export async function isInboxSupervisor(userId: string): Promise<boolean> {
   const user = await queryOne<{ is_primary_admin: boolean }>(
     'SELECT is_primary_admin FROM users WHERE id = $1',
@@ -232,7 +256,7 @@ export async function broadcastOwnership(
   try {
     // customer_name / customer_phone mirror the list API so a row that (re)appears live is labelled the same.
     const conv = await queryOne(
-      `SELECT c.*, u.name AS owner_name,
+      `SELECT c.*, u.name AS owner_name, ${WAITING_SINCE_SQL('c')} AS waiting_since,
               COALESCE(cust.name, c.whatsapp_display_name) AS customer_name,
               COALESCE(cust.phone, c.from_number) AS customer_phone,
               COALESCE((SELECT array_agg(la.label_id::text) FROM whatsapp_conversation_label_assignments la

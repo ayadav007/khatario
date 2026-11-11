@@ -29,7 +29,7 @@ You can start with one product and add the other later from the same account. **
 
 ## Where can I use Khatario?
 
-Khatario runs in the web browser on a computer, laptop, tablet or phone, and can be installed on the home screen like an app. There is also an Android app. Your data is the same on every device. Saving a bill needs an internet connection.
+Khatario has an Android phone app on the Play Store, and on paid plans it also runs in the web browser on a computer, laptop, tablet or phone, where it can be installed on the home screen like an app. The Free plan works only in the Android app. Your data is the same on every device. Saving a bill needs an internet connection.
 
 ## How do I get started?
 

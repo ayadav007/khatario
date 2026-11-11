@@ -1,7 +1,5 @@
 'use client';
 
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import {
@@ -90,7 +88,6 @@ const ShellLayoutSettingsContext = createContext<ShellLayoutSettings>({
 });
 
 function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
-  useRenderLoopProbe('LayoutDataProvider');
   const { business, user, loading: authLoading } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);
@@ -255,7 +252,6 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
 
       if (!isOnline) {
         if (cachedSnapshot) {
-          console.log('[LayoutData] Offline: using cached snapshot (age:', Math.floor((Date.now() - (cachedSnapshot.timestamp || 0)) / 1000), 'seconds)');
           setData((prev) => ({
             ...prev,
             subscription: cachedSnapshot.subscription,
@@ -279,7 +275,6 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
       }
 
       if (cachedSnapshot && !isExpired) {
-        console.log('[LayoutData] Online: using valid cache immediately, refreshing in background');
         setData((prev) => ({
           ...prev,
           subscription: cachedSnapshot.subscription,
@@ -366,11 +361,6 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           supplierHubVisible: snapshot.supplierHubVisible ?? false,
         }));
 
-        console.log('[LayoutData] Fresh snapshot saved', {
-          fetchedPermissionsCount,
-          effectivePermissionsCount: Object.keys(snapshot.permissions || {}).length,
-          usedCachedPermissionsFallback: !hasReliablePermissions,
-        });
       } catch (e) {
         console.error('[LayoutData] Capability fetch failed:', e);
         if (!cachedSnapshot) {

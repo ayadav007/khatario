@@ -29,6 +29,7 @@ import type { StoreCategoryStyle, StoreTestimonial } from '@/lib/store/store-the
 import type { StudioBadge, StudioHeroSettings, StudioSection, StudioSettings, StudioSlide, StudioUsp } from '@/lib/store/studio-sections';
 import type { StoreSwatch } from '@/lib/store/product-extras';
 import { tileBadges } from '@/lib/store/engine/card-badges';
+import { unitPrice } from '@/lib/store/unit-price';
 import {
   cardBadgeRow,
   cardButtonPlan,
@@ -176,6 +177,7 @@ export function logoSizeClass(base: string, style?: CSSProperties | Record<strin
 export function StudioHeader({
   s,
   logoUrl,
+  hideName,
   search,
   nav,
   cartCount,
@@ -187,9 +189,12 @@ export function StudioHeader({
   menuButton,
   layoutClass,
   logoStyle,
+  nameBadge,
 }: {
   s: StudioSettings;
   logoUrl?: string | null;
+  /** Engine header: the logo without the store name beside it. */
+  hideName?: boolean;
   /**
    * Engine header layout classes (`headerLayoutClasses`) on the header root. `hdr-logo-center` puts the logo between
    * a left and a right group: search (or the inline menu) on the left, icons (and search after an inline menu) right.
@@ -210,6 +215,8 @@ export function StudioHeader({
   inlineSlot?: ReactNode;
   /** Phone menu button, before the logo. */
   menuButton?: ReactNode;
+  /** Small status pill beside the store name (open or closed); it adds no row. */
+  nameBadge?: ReactNode;
 }) {
   const highlight = (s.highlightLink ?? '').trim().toLowerCase();
   const links: StudioLink[] =
@@ -224,10 +231,20 @@ export function StudioHeader({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logoUrl} alt="" />
       ) : null}
-      <span className="logoText">
-        <b>{s.logo || 'My store'}</b>
-        {s.tagline ? <small>{s.tagline}</small> : null}
-      </span>
+      {hideName ? <span className="sr-only">{s.logo || 'My store'}</span> : null}
+      {!hideName || s.tagline || nameBadge ? (
+        <span className="logoText">
+          {nameBadge ? (
+            <span style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              {hideName ? null : <b>{s.logo || 'My store'}</b>}
+              {nameBadge}
+            </span>
+          ) : hideName ? null : (
+            <b>{s.logo || 'My store'}</b>
+          )}
+          {s.tagline ? <small>{s.tagline}</small> : null}
+        </span>
+      ) : null}
     </a>
   );
   const searchBox =
@@ -751,6 +768,18 @@ export interface StudioProductTileProps {
   tagline?: string | null;
   /** Colour dots under the price. */
   swatches?: StoreSwatch[];
+  /** Card design: size chips for the `sizes` line, sold-out ones marked, and how many more sizes there are. */
+  sizes?: { value: string; soldOut: boolean }[];
+  moreSizes?: number;
+  /** Card design: pack chips for the `packs` line (a product with one option axis), the chosen one pressed, sold-out ones disabled. */
+  packs?: { id: string; label: string; soldOut: boolean }[];
+  /** How many more packs there are ("+N"). */
+  morePacks?: number;
+  /** The chosen pack's id. */
+  packId?: string | null;
+  onPack?: (id: string) => void;
+  /** "+N" opens the option chooser (phones); without it "+N" links to the product. */
+  onMorePacks?: () => void;
   /** Leaves out the "% OFF" badge (a product's own badge replaces it); the struck-through MRP stays. */
   hideDiscountBadge?: boolean;
   /** Card design: the brand line. */
@@ -766,6 +795,8 @@ export interface StudioProductTileProps {
   placeholderLogo?: string | null;
   /** Card design: what the buttons do; the design's button style draws them. Without it the card shows `add` as given. */
   actions?: StudioCardActions;
+  /** Card design: the pack's size as a label ("500 g", "1 L"); with `unit_price` on, the price per kg or litre is worked out from it. */
+  packLabel?: string | null;
 }
 
 /** A designed card's buttons: add, buy now and the − 1 + stepper. Handlers are optional (previews draw them inert). */
@@ -921,8 +952,16 @@ function DesignedProductTile({
   actions,
   tagline,
   swatches,
+  sizes,
+  moreSizes,
+  packs,
+  morePacks,
+  packId,
+  onPack,
+  onMorePacks,
   hideDiscountBadge,
   card,
+  packLabel,
 }: StudioProductTileProps & { card: NonNullable<StudioProductTileProps['card']> }) {
   const { look, schemes } = card;
   const off = discount ?? (mrp && mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
@@ -943,7 +982,11 @@ function DesignedProductTile({
   // The discount beside the price, when the price line shows; it then replaces the automatic "% OFF" badge.
   const priceShown = showPrice && look.lines.some((l) => l.id === 'price' && l.on);
   const saving = priceShown ? cardDiscount(look.discount_style, price, mrp, off) : null;
-  const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving });
+  // "₹91 OFF" instead of "14% OFF": only when that automatic badge would show today.
+  const badgeShows = off > 0 && !hideDiscountBadge && saving == null;
+  const rupeesOff = badgeShows && mrp && mrp > price ? Math.round(mrp - price) : 0;
+  const { badges: shownBadges, struck } = cardBadgeRow(look, { off, badges, hideDiscountBadge, discount: saving, rupeesOff });
+  const perUnit = look.unit_price ? unitPrice(packLabel, price) : null;
   const hasAdd = !!add || !!actions;
   const oos = cardOutOfStock(look, outOfStock, hasAdd);
   const root = designedCardRoot(look, schemes, { outOfStock, hasAlt: !!photo.hover });
@@ -981,6 +1024,7 @@ function DesignedProductTile({
       <span className="pc-now">{rupees(price)}</span>
       {look.show_mrp && struck && mrp ? <del>{rupees(mrp)}</del> : null}
       {saving ? <span className="pc-disc">{saving.kind === 'save' ? `Save ${rupees(saving.amount)}` : `${saving.percent}% off`}</span> : null}
+      {perUnit ? <span className="pc-unitprice">{perUnit}</span> : null}
     </div>
   ) : null;
 
@@ -1032,6 +1076,59 @@ function DesignedProductTile({
             {priceLine}
           </div>
         );
+      case 'packs':
+        return packs?.length ? (
+          <div key={u} className="ppacks" role="group" aria-label="Pack size">
+            {packs.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={p.id === packId}
+                disabled={p.soldOut}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onPack?.(p.id);
+                }}
+              >
+                {p.label}
+                {p.soldOut ? <span className="pc-sr"> (sold out)</span> : null}
+              </button>
+            ))}
+            {morePacks && morePacks > 0 ? (
+              onMorePacks ? (
+                <button
+                  type="button"
+                  className="pc-more"
+                  aria-label={`${morePacks} more ${morePacks === 1 ? 'pack' : 'packs'}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onMorePacks();
+                  }}
+                >
+                  +{morePacks}
+                </button>
+              ) : (
+                <a className="pc-more" href={href} aria-label={`${morePacks} more ${morePacks === 1 ? 'pack' : 'packs'}`}>
+                  +{morePacks}
+                </a>
+              )
+            ) : null}
+          </div>
+        ) : null;
+      case 'sizes':
+        return sizes?.length ? (
+          <div key={u} className="psizes">
+            {sizes.map((s) => (
+              <span key={s.value} className={s.soldOut ? 'is-out' : undefined}>
+                {s.value}
+                {s.soldOut ? <span className="pc-sr"> (sold out)</span> : null}
+              </span>
+            ))}
+            {moreSizes && moreSizes > 0 ? <span className="pc-more">+{moreSizes}</span> : null}
+          </div>
+        ) : null;
       case 'swatches':
         return swatches?.length ? (
           <div key={u} className="pswatches">

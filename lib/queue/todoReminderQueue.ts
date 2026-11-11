@@ -117,9 +117,6 @@ export async function scheduleTodoReminder(
       delayMs: delay,
       reminderIso: reminderTime.toISOString(),
     });
-    console.log(
-      `[Todo Reminder Queue] Scheduled reminder for todo ${todoId} at ${reminderTime.toISOString()} (delay ${delay}ms)`
-    );
   } catch (error) {
     reminderPipelineLog('queue.schedule.error', {
       todoId,
@@ -153,7 +150,6 @@ export async function cancelScheduledTodoReminder(todoId: string): Promise<void>
     if (existingJob) {
       await existingJob.remove();
       reminderPipelineLog('queue.cancel.removed', { todoId, jobId });
-      console.log(`[Todo Reminder Queue] Cancelled scheduled reminder job for todo ${todoId}`);
     } else {
       reminderPipelineLog('queue.cancel.no_job', { todoId });
     }

@@ -313,7 +313,7 @@ export function ConnectionSettings() {
             </div>
           ) : status === 'pending_qr' && qrCode ? (
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <div className="relative inline-block self-start rounded-lg border border-border bg-white p-3">
+              <div className="relative inline-block self-start rounded-lg border border-border bg-surface p-3">
                 <QRCodeSVG value={qrCode} size={184} level="L" includeMargin />
                 {qrCodeAge >= QR_LIFETIME_SECONDS ? (
                   <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
@@ -331,7 +331,7 @@ export function ConnectionSettings() {
                   <li>Point the camera at this code</li>
                 </ol>
                 {qrCodeAge >= 50 && qrCodeAge < QR_LIFETIME_SECONDS ? (
-                  <p className="text-xs font-medium text-amber-700">A fresh code loads in {QR_LIFETIME_SECONDS - qrCodeAge}s</p>
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-300">A fresh code loads in {QR_LIFETIME_SECONDS - qrCodeAge}s</p>
                 ) : null}
               </div>
             </div>

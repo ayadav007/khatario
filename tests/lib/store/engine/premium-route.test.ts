@@ -50,6 +50,26 @@ describe('themes POST with the premium flag off', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses Drop Culture while the flag is off and allows it once on', async () => {
+    const res = await post({ preset: 'drop' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('premium_locked');
+    expect(mockCreate).not.toHaveBeenCalled();
+    mockPremium.mockResolvedValue(true);
+    expect((await post({ preset: 'drop' })).status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith('biz-1', 'user-1', expect.objectContaining({ preset: 'drop' }));
+  });
+
+  it('refuses Bazaar Bright while the flag is off and allows it once on', async () => {
+    const res = await post({ preset: 'bazaar' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Premium themes are not enabled for this store', code: 'premium_locked' });
+    expect(mockCreate).not.toHaveBeenCalled();
+    mockPremium.mockResolvedValue(true);
+    expect((await post({ preset: 'bazaar' })).status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith('biz-1', 'user-1', expect.objectContaining({ preset: 'bazaar' }));
+  });
+
   it('never gates a duplicate of an existing theme', async () => {
     const res = await post({ preset: 'heritage', duplicate_of: DUP });
     expect(res.status).toBe(201);

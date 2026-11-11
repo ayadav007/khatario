@@ -1,0 +1,684 @@
+/* Maglo-inspired marketing preview — scoped to .maglo-mkt only */
+
+.maglo-mkt {
+  --maglo-bg: #f4f5f7;
+  --maglo-surface: #ffffff;
+  --maglo-ink: #1a1d21;
+  --maglo-muted: #6b7280;
+  --maglo-line: #e6e8ec;
+  --maglo-lime: #c8f542;
+  --maglo-lime-deep: #9be15d;
+  --maglo-charcoal: #1c1f24;
+  --maglo-soft: #f0f1f4;
+  min-height: 100vh;
+  background: var(--maglo-bg);
+  color: var(--maglo-ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.maglo-mkt__banner {
+  background: var(--maglo-charcoal);
+  color: #d1d5db;
+  text-align: center;
+  font-size: 12px;
+  padding: 8px 16px;
+}
+
+.maglo-mkt__banner a {
+  color: var(--maglo-lime);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.maglo-mkt__nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--maglo-line);
+}
+
+.maglo-mkt__nav-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.maglo-mkt__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--maglo-ink);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+
+.maglo-mkt__logo-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: linear-gradient(145deg, var(--maglo-lime) 0%, var(--maglo-lime-deep) 100%);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.06);
+}
+
+.maglo-mkt__logo-mark--sm {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.maglo-mkt__nav-links {
+  display: none;
+  gap: 22px;
+  margin-left: 12px;
+  flex: 1;
+}
+
+.maglo-mkt__nav-links a {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--maglo-muted);
+  text-decoration: none;
+}
+
+.maglo-mkt__nav-links a:hover {
+  color: var(--maglo-ink);
+}
+
+.maglo-mkt__nav-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.maglo-mkt__link-quiet {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--maglo-ink);
+  text-decoration: none;
+}
+
+.maglo-mkt__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.maglo-mkt__btn:hover {
+  transform: translateY(-1px);
+}
+
+.maglo-mkt__btn--lime {
+  background: var(--maglo-lime);
+  color: var(--maglo-charcoal);
+  box-shadow: 0 8px 20px rgba(200, 245, 66, 0.35);
+}
+
+.maglo-mkt__btn--dark {
+  background: var(--maglo-charcoal);
+  color: #fff;
+}
+
+.maglo-mkt__btn--ghost {
+  background: var(--maglo-surface);
+  border-color: var(--maglo-line);
+  color: var(--maglo-ink);
+}
+
+.maglo-mkt__btn--on-dark-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.maglo-mkt__hero {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 20px 28px;
+  display: grid;
+  gap: 36px;
+  align-items: center;
+}
+
+.maglo-mkt__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.maglo-mkt__badges span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--maglo-surface);
+  border: 1px solid var(--maglo-line);
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.maglo-mkt__hero h1 {
+  font-size: clamp(2rem, 4.2vw, 3.15rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  font-weight: 750;
+  margin: 0;
+  color: var(--maglo-ink);
+}
+
+.maglo-mkt__accent-text {
+  color: #4b5563;
+  font-weight: 650;
+}
+
+.maglo-mkt__lead {
+  margin: 16px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--maglo-muted);
+  max-width: 34rem;
+}
+
+.maglo-mkt__hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.maglo-mkt__footnote {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.maglo-mkt__hero-visual {
+  min-width: 0;
+}
+
+.maglo-mkt__kpis {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 8px 20px 40px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.maglo-mkt__kpi {
+  background: var(--maglo-surface);
+  border: 1px solid var(--maglo-line);
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.04);
+}
+
+.maglo-mkt__kpi--dark {
+  background: var(--maglo-charcoal);
+  border-color: transparent;
+  color: #fff;
+}
+
+.maglo-mkt__kpi-value {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.maglo-mkt__kpi--dark .maglo-mkt__kpi-value {
+  color: var(--maglo-lime);
+}
+
+.maglo-mkt__kpi-label {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--maglo-muted);
+}
+
+.maglo-mkt__kpi--dark .maglo-mkt__kpi-label {
+  color: #9ca3af;
+}
+
+.maglo-mkt__section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 48px 20px;
+}
+
+.maglo-mkt__section--muted {
+  background: var(--maglo-soft);
+  max-width: none;
+  padding-left: max(20px, calc((100% - 1120px) / 2 + 20px));
+  padding-right: max(20px, calc((100% - 1120px) / 2 + 20px));
+}
+
+.maglo-mkt__eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.maglo-mkt__eyebrow--on-dark {
+  color: var(--maglo-lime);
+}
+
+.maglo-mkt__section h2 {
+  margin: 0;
+  max-width: 40rem;
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  font-weight: 750;
+}
+
+.maglo-mkt__section h2 em {
+  font-style: normal;
+  color: #4b5563;
+}
+
+.maglo-mkt__fact-grid,
+.maglo-mkt__feature-grid {
+  margin-top: 28px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+.maglo-mkt__fact,
+.maglo-mkt__feature {
+  background: var(--maglo-surface);
+  border: 1px solid var(--maglo-line);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.maglo-mkt__fact-value {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--maglo-ink);
+}
+
+.maglo-mkt__fact-label {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--maglo-muted);
+  line-height: 1.4;
+}
+
+.maglo-mkt__feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--maglo-lime);
+  color: var(--maglo-charcoal);
+  margin-bottom: 12px;
+}
+
+.maglo-mkt__feature h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.maglo-mkt__feature p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--maglo-muted);
+}
+
+.maglo-mkt__chips {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.maglo-mkt__chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--maglo-surface);
+  border: 1px solid var(--maglo-line);
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.maglo-mkt__cta-band {
+  margin: 12px 20px 40px;
+  border-radius: 28px;
+  background: var(--maglo-charcoal);
+  color: #fff;
+}
+
+.maglo-mkt__cta-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 36px 28px;
+  display: grid;
+  gap: 24px;
+}
+
+.maglo-mkt__cta-band h2 {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.4vw, 1.85rem);
+  letter-spacing: -0.03em;
+  font-weight: 750;
+  max-width: 28rem;
+}
+
+.maglo-mkt__cta-band p {
+  margin: 10px 0 0;
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 32rem;
+}
+
+.maglo-mkt__cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: start;
+}
+
+.maglo-mkt__footer {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px 36px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* Maglo-style product mock */
+.maglo-dash {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  background: var(--maglo-surface);
+  border: 1px solid var(--maglo-line);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.1);
+  min-height: 420px;
+}
+
+.maglo-dash__side {
+  background: #eef0f3;
+  padding: 18px 12px;
+  border-right: 1px solid var(--maglo-line);
+}
+
+.maglo-dash__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 6px 18px;
+}
+
+.maglo-dash__side ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.maglo-dash__side li {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 9px 10px;
+  border-radius: 10px;
+}
+
+.maglo-dash__side li.is-active {
+  background: var(--maglo-lime);
+  color: var(--maglo-charcoal);
+}
+
+.maglo-dash__main {
+  padding: 18px 18px 16px;
+  background: #fafbfc;
+}
+
+.maglo-dash__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.maglo-dash__hello {
+  margin: 0;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.maglo-dash__top h3 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.maglo-dash__pill {
+  border: 1px solid var(--maglo-line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.maglo-dash__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.maglo-dash__stat {
+  background: #fff;
+  border: 1px solid var(--maglo-line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.maglo-dash__stat--dark {
+  background: var(--maglo-charcoal);
+  border-color: transparent;
+  color: #fff;
+}
+
+.maglo-dash__stat span {
+  display: block;
+  font-size: 11px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.maglo-dash__stat--dark span {
+  color: #9ca3af;
+}
+
+.maglo-dash__stat strong {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.maglo-dash__stat--dark strong {
+  color: var(--maglo-lime);
+}
+
+.maglo-dash__panels {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 8px;
+}
+
+.maglo-dash__chart,
+.maglo-dash__list {
+  background: #fff;
+  border: 1px solid var(--maglo-line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.maglo-dash__chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.maglo-dash__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.maglo-dash__legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  margin-right: 3px;
+}
+
+.maglo-dash__legend i.is-income {
+  background: #9be15d;
+}
+
+.maglo-dash__legend i.is-expense {
+  background: #f5c542;
+}
+
+.maglo-dash__svg {
+  width: 100%;
+  height: 110px;
+}
+
+.maglo-dash__muted {
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.maglo-dash__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #f1f2f4;
+}
+
+.maglo-dash__row:first-of-type {
+  border-top: 0;
+}
+
+.maglo-dash__row strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.maglo-dash__row span {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+.maglo-dash__row em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  .maglo-mkt__nav-links {
+    display: flex;
+  }
+
+  .maglo-mkt__hero {
+    grid-template-columns: 0.95fr 1.05fr;
+    padding-top: 56px;
+  }
+
+  .maglo-mkt__kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .maglo-mkt__fact-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .maglo-mkt__feature-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .maglo-mkt__cta-inner {
+    grid-template-columns: 1.4fr 0.8fr;
+    align-items: center;
+    padding: 44px 36px;
+  }
+}
+
+@media (max-width: 900px) {
+  .maglo-dash {
+    grid-template-columns: 1fr;
+  }
+
+  .maglo-dash__side {
+    display: none;
+  }
+
+  .maglo-dash__panels {
+    grid-template-columns: 1fr;
+  }
+}

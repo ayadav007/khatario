@@ -50,7 +50,7 @@ export function SettingsToggleRow({
       >
         <span
           className={clsx(
-            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
             checked ? 'translate-x-5' : 'translate-x-0'
           )}
         />

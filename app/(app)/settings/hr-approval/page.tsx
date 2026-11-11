@@ -50,7 +50,7 @@ function ModeSelect({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as HrApprovalMode)}
-        className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="input w-full"
       >
         {MODE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -129,13 +129,14 @@ export default function HrApprovalSettingsPage() {
       title="HR approvals"
       description="Configure who can approve leave and expense requests"
       icon={Users}
+      width="form"
     >
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
         </div>
       ) : settings ? (
-        <Card className="max-w-xl space-y-6 p-6">
+        <Card padding="md" className="space-y-6">
           <ModeSelect
             id="leave_mode"
             label="Leave approval"
@@ -190,7 +191,7 @@ export default function HrApprovalSettingsPage() {
               <input
                 type="number"
                 min={1}
-                className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm"
+                className="input mt-1 w-full"
                 value={settings.offer_max_levels ?? ''}
                 onChange={(e) =>
                   setSettings({

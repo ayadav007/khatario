@@ -158,6 +158,8 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
 
   const isEstimate = p.documentType === 'proforma_invoice';
   const nonTaxable = p.documentType === 'bill_of_supply';
+  /** Amending a final invoice opens the printed fields that do not change the tax. */
+  const amendEditable = Boolean(p.amendMode) && !p.datesReadOnly;
   const rate = typeof p.exportState.exchangeRate === 'number' ? p.exportState.exchangeRate : 0;
   const foreign = p.isExport && p.exportState.invoiceCurrency !== 'INR' && rate > 0
     ? { currency: p.exportState.invoiceCurrency, rate }
@@ -430,7 +432,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               billingAddress={p.billingAddress}
               setBillingAddress={p.setBillingAddress}
               readOnly={p.readOnly}
-              amendBillTo={p.amendMode && !p.datesReadOnly}
+              amendBillTo={amendEditable}
               billingName={p.billingName}
               setBillingName={p.setBillingName}
               credit={p.credit}
@@ -442,7 +444,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               billingAddress={p.billingAddress}
               shippingAddress={p.shippingAddress}
               setShippingAddress={p.setShippingAddress}
-              readOnly={p.readOnly}
+              readOnly={p.readOnly && !amendEditable}
             />
           </div>
           <div className="md:col-span-2 xl:col-span-1">
@@ -495,7 +497,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
         <MoreDetailsPanel
           value={p.moreDetails}
           onChange={p.patchMoreDetails}
-          readOnly={p.readOnly}
+          readOnly={p.readOnly && !amendEditable}
           customFields={p.customFields}
           defaultOpen={p.customFieldsRequired}
         />
@@ -528,6 +530,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
               onRemoveAttachment={p.onRemoveAttachment}
               uploading={p.uploadingAttachments}
               readOnly={p.readOnly}
+              notesReadOnly={p.readOnly && !amendEditable}
             />
           </div>
           <TotalsPanel

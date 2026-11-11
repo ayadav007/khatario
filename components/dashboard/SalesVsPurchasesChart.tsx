@@ -212,7 +212,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     y={finalSalesY}
                     width={barHalfWidth}
                     height={finalSalesHeight}
-                    fill="#032B23"
+                    className="fill-primary-600 dark:fill-primary-300"
                     data-bar="sales"
                     data-date={d.date}
                     rx="2"
@@ -226,7 +226,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     y={finalPurchasesY}
                     width={barHalfWidth}
                     height={finalPurchasesHeight}
-                    fill="#F58220"
+                    className="fill-accent-500"
                     data-bar="purchases"
                     data-date={d.date}
                     rx="2"
@@ -265,24 +265,12 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
 
   return (
     <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3 pt-3 md:mb-3 md:px-5 md:pt-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <div className="flex items-center gap-1.5">
-            <BarChart3 className="h-3.5 w-3.5 shrink-0 text-text-muted md:h-4 md:w-4" />
-            <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
-              Sales vs Purchases
-            </h3>
-          </div>
-          <div className="flex items-center gap-2.5 text-2xs text-text-secondary md:text-xs">
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm bg-[#032B23]" />
-              Sales
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm bg-[#F58220]" />
-              Purchases
-            </span>
-          </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3 pt-3 md:mb-4 md:px-5 md:pt-5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <BarChart3 className="h-3.5 w-3.5 shrink-0 text-text-muted md:h-4 md:w-4" />
+          <h3 className="truncate text-sm font-bold text-text-primary md:text-base">
+            Sales vs Purchases
+          </h3>
         </div>
         <select
           value={selectedPeriod}
@@ -296,7 +284,18 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
         </select>
       </div>
 
-      <div className="mt-auto">
+      <div className="flex items-center gap-4 px-3 text-caption text-text-secondary md:px-5 md:text-xs">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-600 dark:bg-primary-300" />
+          Sales
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-accent-500" />
+          Purchases
+        </span>
+      </div>
+
+      <div className="mt-auto pt-3 md:pt-4">
         {barChart}
       </div>
     </Card>

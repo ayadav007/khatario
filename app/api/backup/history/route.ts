@@ -81,12 +81,6 @@ export async function GET(request: NextRequest) {
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `, [...params, limit, offset]);
 
-    console.log('Backup history query result:', { 
-      businessId, 
-      total, 
-      backupsCount: backups.length,
-      backups 
-    }); // DEBUG
 
     return NextResponse.json({
       success: true,

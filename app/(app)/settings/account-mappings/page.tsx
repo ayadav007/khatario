@@ -157,14 +157,14 @@ export default function AccountMappingsPage() {
       >
 
         {success && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2">
+          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/60 rounded-lg p-4 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-green-600" />
-            <span className="text-green-800">Account mappings saved successfully!</span>
+            <span className="text-green-800 dark:text-green-300">Account mappings saved successfully!</span>
           </div>
         )}
 
-        <Card>
-          <div className="space-y-6 p-6">
+        <Card padding="lg">
+          <div className="space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-text-primary mb-4">Sales & Receivables</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -175,7 +175,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.sales_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, sales_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -198,7 +198,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.accounts_receivable_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, accounts_receivable_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -226,7 +226,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.purchases_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, purchases_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -249,7 +249,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.accounts_payable_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, accounts_payable_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -277,7 +277,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.cash_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, cash_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -300,7 +300,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.bank_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, bank_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -328,7 +328,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.inventory_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, inventory_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -351,7 +351,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.cogs_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, cogs_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts
@@ -374,7 +374,7 @@ export default function AccountMappingsPage() {
                   <select
                     value={mappings.expense_account_id || ''}
                     onChange={(e) => setMappings({ ...mappings, expense_account_id: e.target.value || undefined })}
-                    className="w-full p-2 border border-border rounded-md"
+                    className="input w-full"
                   >
                     <option value="">Select account...</option>
                     {accounts

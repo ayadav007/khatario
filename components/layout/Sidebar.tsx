@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import { 
   LayoutDashboard, 
   Users, 
@@ -56,7 +55,9 @@ import {
   Bot,
   Inbox,
   ShoppingBag,
+  Search,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -66,6 +67,7 @@ import { PromotionSidebar } from '@/components/promotions/PromotionSidebar';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { PRODUCT_TOUR_START_EVENT } from '@/components/onboarding/productTourShared';
+import { COMMAND_PALETTE_OPEN_EVENT } from '@/hooks/useCommandPalette';
 import {
   isNavSectionVisible,
 } from '@/lib/platform-modules';
@@ -104,8 +106,33 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/** Section colour of a top-level tile; the colours live in globals.css (`.kh-tone-*`). */
+type NavTone =
+  | 'home'
+  | 'supplier'
+  | 'sales'
+  | 'purchases'
+  | 'inventory'
+  | 'accounting'
+  | 'reports'
+  | 'staff'
+  | 'connect'
+  | 'more';
+
+function NavTile({ icon: Icon, tone }: { icon: LucideIcon; tone?: NavTone }) {
+  return (
+    <span
+      className={clsx(
+        'kh-tile w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
+        `kh-tone-${tone ?? 'more'}`
+      )}
+    >
+      <Icon className="w-4 h-4" strokeWidth={2} aria-hidden />
+    </span>
+  );
+}
+
 export const Sidebar = React.memo(function Sidebar() {
-  useRenderLoopProbe('Sidebar');
   const { sidebarCollapsed, toggleSidebar } = useLayout();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -115,10 +142,19 @@ export const Sidebar = React.memo(function Sidebar() {
   useEffect(() => {
     const read = () => setLocationHash(window.location.hash.replace(/^#/, ''));
     read();
+    // Next's <Link> changes the hash with pushState, which fires no hashchange event, so also
+    // re-read after any click and on back/forward.
+    const readAfterClick = () => window.setTimeout(read, 0);
     window.addEventListener('hashchange', read);
-    return () => window.removeEventListener('hashchange', read);
+    window.addEventListener('popstate', read);
+    document.addEventListener('click', readAfterClick, true);
+    return () => {
+      window.removeEventListener('hashchange', read);
+      window.removeEventListener('popstate', read);
+      document.removeEventListener('click', readAfterClick, true);
+    };
   }, [pathname]);
-  const { business, user, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
+  const { business, user, isPrimaryAdmin, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
@@ -440,7 +476,6 @@ export const Sidebar = React.memo(function Sidebar() {
           setReportRouteMap({});
         }
       } catch (error) {
-        console.debug('[Sidebar] Report definitions not available, using legacy mapping');
         if (!cancelled) setReportRouteMap({});
       } finally {
         if (!cancelled) setReportsDefinitionsResolved(true);
@@ -480,7 +515,6 @@ export const Sidebar = React.memo(function Sidebar() {
           }
         }
       } catch (error) {
-        console.debug('[Sidebar] Error checking supplier status (offline or unavailable):', error);
         if (!cancelled) setIsSupplier(false);
       } finally {
         if (!cancelled) setSupplierStatusResolved(true);
@@ -540,13 +574,15 @@ export const Sidebar = React.memo(function Sidebar() {
   const navItems = useMemo(
     () => [
     // 1. DASHBOARD (Always first - most frequently used)
-    { href: homeHref, label: 'Dashboard', icon: LayoutDashboard, tourId: 'nav-dashboard' },
+    { href: homeHref, label: 'Dashboard', icon: LayoutDashboard, tone: 'home', tourId: 'nav-dashboard' },
     
     // 2. SUPPLIER DASHBOARD (if business is a supplier)
     ...(isSupplier ? [
       {
         label: 'Supplier',
         icon: Store,
+        tone: 'supplier',
+        group: 'Work',
         collapsible: true,
         subItems: [
           { href: '/suppliers/hub', label: 'Supplier Hub' },
@@ -561,6 +597,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'Sales',
       icon: FileText,
+      tone: 'sales',
+      group: 'Work',
       collapsible: true,
       tourId: 'nav-sales',
       subItems: [
@@ -578,6 +616,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'Purchases',
       icon: ShoppingCart,
+      tone: 'purchases',
+      group: 'Work',
       collapsible: true,
       subItems: [
         { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
@@ -594,6 +634,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'Inventory',
       icon: Package,
+      tone: 'inventory',
+      group: 'Work',
       collapsible: true,
       tourId: 'nav-inventory',
       subItems: [
@@ -647,6 +689,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'Accounting',
       icon: DollarSign,
+      tone: 'accounting',
+      group: 'Money',
       collapsible: true,
       subItems: [
         { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart' },
@@ -670,6 +714,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'Reports',
       icon: BarChart3,
+      tone: 'reports',
+      group: 'Money',
       collapsible: true,
       tourId: 'nav-reports',
       subItems: [
@@ -751,6 +797,8 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: getHrNavSectionTitle(hasFeature),
       icon: UserCheck,
+      tone: 'staff',
+      group: 'Team',
       collapsible: true,
       subItems: getVisibleHrAdminNavItems(hasFeature).map((item) => ({
         href: item.href,
@@ -767,6 +815,8 @@ export const Sidebar = React.memo(function Sidebar() {
           {
             label: 'Connect',
             icon: MessageSquare,
+            tone: 'connect',
+            group: 'Team',
             collapsible: true,
             subItems: [
               {
@@ -793,6 +843,7 @@ export const Sidebar = React.memo(function Sidebar() {
     {
       label: 'More',
       icon: Settings,
+      tone: 'more',
       collapsible: true,
       subItems: [
         { 
@@ -873,6 +924,25 @@ export const Sidebar = React.memo(function Sidebar() {
       help: HelpCircle,
     };
 
+    const groupTones: Record<string, NavTone> = {
+      account: 'supplier',
+      team: 'staff',
+      plan: 'inventory',
+      'billing-setup': 'purchases',
+      accounting: 'accounting',
+      'sales-billing': 'sales',
+      'online-store': 'connect',
+      'inventory-items': 'inventory',
+      'hr-organization': 'staff',
+      'hr-time-attendance': 'staff',
+      'hr-leave': 'staff',
+      'hr-payroll': 'staff',
+      'hr-hiring': 'staff',
+      'hr-employee-portal': 'staff',
+      whatsapp: 'connect',
+      integrations: 'reports',
+    };
+
     const linkIcons: Record<string, typeof Settings> = {
       '/settings/business': Building,
       '/settings/branches': Building,
@@ -942,6 +1012,7 @@ export const Sidebar = React.memo(function Sidebar() {
       sectionKey: `settings:${group.groupId}`,
       collapsible: true,
       icon: groupIcons[group.groupId] ?? Settings,
+      tone: groupTones[group.groupId] ?? 'more',
       subItems: group.links.map((link) => {
         const path = link.href.split('#')[0].split('?')[0];
         return {
@@ -958,18 +1029,19 @@ export const Sidebar = React.memo(function Sidebar() {
       }),
     }));
 
+    // Exit links first, so they are reachable without scrolling past every group.
     return [
-      ...items,
-      {
-        href: '/settings',
-        label: 'All settings',
-        icon: SlidersHorizontal,
-      },
       {
         href: homeHref,
         label: 'Back to Dashboard',
         icon: ArrowLeft,
       },
+      {
+        href: '/settings',
+        label: 'All settings',
+        icon: SlidersHorizontal,
+      },
+      ...items,
     ];
   }, [isSettingsPage, enabledModules, hasFeature, homeHref, supplierHubVisible]);
 
@@ -1094,6 +1166,24 @@ export const Sidebar = React.memo(function Sidebar() {
     }
   }, [openSections]);
 
+  // Bring the active row into view when it changes (the settings list is taller than most laptop
+  // screens). Runs after the scroll restore above, and only moves the list when the row is hidden.
+  useEffect(() => {
+    if (!activeNavHref) return;
+    const timer = window.setTimeout(() => {
+      const nav = navRef.current;
+      const row = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!nav || !row) return;
+      const navRect = nav.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      if (rowRect.top < navRect.top || rowRect.bottom > navRect.bottom) {
+        row.scrollIntoView({ block: 'nearest' });
+        scrollPositionRef.current = nav.scrollTop;
+      }
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [activeNavHref]);
+
   const toggleSection = (label: string, e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
@@ -1118,11 +1208,28 @@ export const Sidebar = React.memo(function Sidebar() {
     });
   };
 
+  // Top-level rows get a solid colour tile; sub-items keep a small plain icon.
+  const renderIcon = (item: any, isSubItem: boolean): React.ReactNode => {
+    const Icon = item.icon;
+    if (!Icon) return null;
+    if (isSubItem) return <Icon className="w-4 h-4 flex-shrink-0 opacity-80" aria-hidden />;
+    return <NavTile icon={Icon} tone={item.tone} />;
+  };
+
+  const renderCollapsedTip = (text: string): React.ReactNode =>
+    sidebarCollapsed ? (
+      <div className="kh-nav-tip absolute left-full ml-3 px-2.5 py-1 text-sm font-medium rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+        {text}
+      </div>
+    ) : null;
+
+  const rowClass = (isSubItem: boolean) =>
+    isSubItem ? 'is-sub px-3 py-1.5 text-[13px]' : 'px-2 py-1.5';
+
   const renderNavItems = (items: any[], isSubItem = false, topLevelParentLabel?: string): React.ReactNode => {
     return (
-      <ul className={clsx(isSubItem ? 'ml-4 space-y-1' : 'space-y-1')}>
+      <ul className={clsx(isSubItem ? 'kh-nav-tree space-y-0.5' : 'space-y-0.5')}>
         {items.map((item, index) => {
-          const Icon = item.icon;
           const isActive = item.href ? isItemActive(item.href) : false;
           const sectionKey = sectionKeyOf(item);
           const isSectionOpen = item.collapsible ? openSections[sectionKey] : true;
@@ -1134,23 +1241,24 @@ export const Sidebar = React.memo(function Sidebar() {
             : (isSectionOpen || hasActiveSubItem);
           // Determine the top-level parent for nested items
           const currentTopLevelParent = isSubItem ? topLevelParentLabel : sectionKey;
-          // Check if we're within an expanded section (check top-level parent)
-          const isWithinExpanded = isSubItem && topLevelParentLabel && openSections[topLevelParentLabel];
+          // A label (or a divider when collapsed / ungrouped) starts each new top-level group.
+          const startsGroup = !isSubItem && index > 0 && item.group !== items[index - 1].group;
 
           return (
-            <li key={item.href || item.label + index}>
+            <React.Fragment key={item.href || item.label + index}>
+              {startsGroup &&
+                (sidebarCollapsed || !item.group ? (
+                  <li aria-hidden className="kh-nav-divider mx-2 my-2" />
+                ) : (
+                  <li aria-hidden className="kh-nav-group px-2 pt-4 pb-1">
+                    {item.group}
+                  </li>
+                ))}
+            <li>
               {item.subItems ? (
                 <>
                   {/* Entire item is clickable to toggle expand/collapse */}
-                  <div 
-                    className={clsx(
-                      'flex items-center rounded-lg transition-all',
-                      // Background color when expanded (top-level items)
-                      isExpanded && !isSubItem && 'bg-slate-100/50 dark:bg-slate-800/35',
-                      // Background color for sub-items when within any expanded section
-                      isSubItem && isWithinExpanded && 'bg-gray-50/50 dark:bg-slate-800/45'
-                    )}
-                  >
+                  <div className={clsx('kh-nav-section rounded-lg', isExpanded && !isSubItem && 'is-open')}>
                     {/* Main link - navigates to href if exists, but also toggles section */}
                     <Link
                       href={item.href || '#'}
@@ -1172,7 +1280,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           }, 100);
                           return;
                         }
-                        
+
                         // For collapsible items when sidebar is expanded:
                         // - If no href (or href is '#'): prevent navigation and toggle section only
                         // - If has valid href: allow Next.js Link to handle client-side navigation
@@ -1188,7 +1296,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           // Next.js Link will handle client-side navigation
                           // Don't toggle section when navigating
                         }
-                        
+
                         // For non-collapsible items: if no href, prevent navigation
                         if (!item.collapsible && (!item.href || item.href === '#')) {
                           e.preventDefault();
@@ -1197,32 +1305,26 @@ export const Sidebar = React.memo(function Sidebar() {
 
                       }}
                       className={clsx(
-                        'flex items-center gap-3 flex-1 px-3 py-2.5 rounded-lg transition-all group relative cursor-pointer',
-                        'hover:bg-slate-100 dark:hover:bg-slate-700/90',
-                        isActive
-                          ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
-                          : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                        sidebarCollapsed && 'justify-center',
-                        'min-w-0'
+                        'kh-nav-link flex items-center gap-3 rounded-lg group relative cursor-pointer min-w-0',
+                        rowClass(isSubItem),
+                        isActive && 'is-active',
+                        sidebarCollapsed && 'justify-center'
                       )}
                     >
-                      {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
+                      {renderIcon(item, isSubItem)}
                       {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                      {sidebarCollapsed && (
-                        <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                          {item.label}
-                        </div>
+                      {/* Chevron is a visual indicator; the whole row toggles */}
+                      {!sidebarCollapsed && item.collapsible && (
+                        <ChevronDown
+                          className={clsx('kh-nav-chev w-4 h-4 flex-shrink-0', isExpanded ? 'rotate-180' : 'rotate-0')}
+                          aria-hidden
+                        />
                       )}
+                      {renderCollapsedTip(item.label)}
                     </Link>
-                    {/* Chevron icon - visual indicator only, not clickable separately */}
-                    {!sidebarCollapsed && item.collapsible && (
-                      <div className="px-2 flex items-center">
-                        <ChevronDown className={clsx('w-4 h-4 transition-transform text-text-secondary', isExpanded ? 'rotate-180' : 'rotate-0')} />
-                      </div>
-                    )}
                   </div>
-                  {isExpanded && item.subItems && (
-                    <div className={clsx("overflow-hidden transition-all duration-300 ease-in-out mt-1", sidebarCollapsed ? "hidden" : "block")}>
+                  {isExpanded && item.subItems && !sidebarCollapsed && (
+                    <div className="kh-nav-reveal mt-0.5">
                       {renderNavItems(item.subItems, true, currentTopLevelParent)}
                     </div>
                   )}
@@ -1233,223 +1335,203 @@ export const Sidebar = React.memo(function Sidebar() {
                   {(() => {
                     // Check for explicit lock (via isLocked prop or feature check)
                     const isExplicitlyLocked = item.isLocked === true || (item.featureKey && !hasFeature(item.featureKey));
-                    
+
                     // Check route-based lock
                     const routeLock = item.href ? isRouteLocked(item.href) : { locked: false };
-                    
+
                     const isLocked = isExplicitlyLocked || routeLock.locked;
                     const featureKey = item.featureKey || routeLock.featureKey;
-                    
+
                     if (isLocked && featureKey) {
-                      // Special handling for WhatsApp features - show addon modal
-                      if (featureKey.includes('whatsapp') || featureKey === 'integration_whatsapp_bot' || featureKey === 'integration_whatsapp_manual') {
-                        return (
-                          <button
-                            onClick={(e) => {
+                      // WhatsApp features open the add-on modal; everything else opens the upgrade modal
+                      const isWhatsAppAddon =
+                        featureKey.includes('whatsapp') ||
+                        featureKey === 'integration_whatsapp_bot' ||
+                        featureKey === 'integration_whatsapp_manual';
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            if (isWhatsAppAddon) {
                               e.preventDefault();
                               setSelectedAddonType('whatsapp_bot');
                               setShowAddonModal(true);
-                            }}
-                            className={clsx(
-                              'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative w-full text-left',
-                              'hover:bg-yellow-50 dark:hover:bg-amber-950/35',
-                              'text-text-secondary hover:text-text-primary',
-                              'cursor-pointer opacity-75'
-                            )}
-                            title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
-                          >
+                              return;
+                            }
+                            handleLockedItemClick(e, featureKey);
+                          }}
+                          className={clsx(
+                            'kh-nav-link is-locked flex items-center gap-3 rounded-lg group relative w-full text-left cursor-pointer',
+                            rowClass(isSubItem),
+                            sidebarCollapsed && 'justify-center'
+                          )}
+                          title={`${item.label}: upgrade to unlock`}
+                        >
+                          {item.icon && (
                             <span className="relative flex-shrink-0">
-                              {Icon && <Icon className="w-5 h-5" />}
+                              {renderIcon(item, isSubItem)}
                               {sidebarCollapsed && (
                                 <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
                               )}
                             </span>
-                            {!sidebarCollapsed && (
-                              <>
-                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                                <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
-                              </>
-                            )}
-                            {sidebarCollapsed && (
-                              <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label} — upgrade to unlock
-                              </div>
-                            )}
-                          </button>
-                        );
-                      }
-                      
-                      // For other features - show upgrade modal
-                      return (
-                        <button
-                          onClick={(e) => handleLockedItemClick(e, featureKey)}
-                          className={clsx(
-                            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative w-full text-left',
-                            'hover:bg-yellow-50 dark:hover:bg-amber-950/35',
-                            'text-text-secondary hover:text-text-primary',
-                            'cursor-pointer opacity-75'
                           )}
-                          title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
-                        >
-                          <span className="relative flex-shrink-0">
-                            {Icon && <Icon className="w-5 h-5" />}
-                            {sidebarCollapsed && (
-                              <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
-                            )}
-                          </span>
                           {!sidebarCollapsed && (
                             <>
                               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                              <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
+                              <span className="kh-nav-lockchip shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide">
+                                {isWhatsAppAddon ? 'Add-on' : 'Upgrade'}
+                              </span>
                             </>
                           )}
-                          {sidebarCollapsed && (
-                              <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label} — upgrade to unlock
-                              </div>
-                            )}
-                          </button>
-                        );
-                      }
-                      
-                      // Normal unlocked item
-                      const createRoute = getCreateRoute(item);
-                      return (
-                        <div 
-                      className={clsx(
-                            'rounded-lg transition-all group/item relative',
-                        // Background color for sub-items when within any expanded section
-                        isSubItem && isWithinExpanded && 'bg-gray-50/50 dark:bg-slate-800/45'
-                      )}
-                    >
-                      <Link
-                        href={item.href!}
-                        prefetch={false}
-                        data-tour={item.tourId}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={clsx(
-                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative min-w-0',
-                          'hover:bg-slate-100 dark:hover:bg-slate-700/90',
-                          isActive
-                            ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
-                            : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                          sidebarCollapsed && 'justify-center',
-                          !sidebarCollapsed && createRoute && 'pr-16'
-                        )}
-                        title={item.label}
-                      >
-                        {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
-                        {!sidebarCollapsed && (
-                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        )}
-                        {!sidebarCollapsed && item.badge && (
-                          <span className="shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
-                            {item.badge}
-                          </span>
-                        )}
-                        {sidebarCollapsed && (
-                          <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                            {item.label}
-                          </div>
-                        )}
-                      </Link>
-                          {/* Hover reveal "New" link */}
-                          {!sidebarCollapsed && createRoute && (
-                            <Link
-                              href={createRoute}
-                              prefetch={false}
-                              onClick={(e) => e.stopPropagation()}
-                              className={clsx(
-                                'absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-sm font-medium',
-                                'opacity-0 group-hover/item:opacity-100 transition-opacity',
-                                'bg-primary-600 text-white hover:bg-primary-700',
-                                'flex items-center gap-1'
-                              )}
-                              title={`Create New ${item.label}`}
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>New</span>
-                            </Link>
-                          )}
-                        </div>
+                          {renderCollapsedTip(`${item.label} — upgrade to unlock`)}
+                        </button>
                       );
-                    })()}
+                    }
+
+                    // Normal unlocked item
+                    const createRoute = getCreateRoute(item);
+                    return (
+                      <div className="rounded-lg group/item relative">
+                        <Link
+                          href={item.href!}
+                          prefetch={false}
+                          data-tour={item.tourId}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={clsx(
+                            'kh-nav-link flex items-center gap-3 rounded-lg group relative min-w-0',
+                            rowClass(isSubItem),
+                            isActive && 'is-active',
+                            sidebarCollapsed && 'justify-center',
+                            !sidebarCollapsed && createRoute && 'pr-9'
+                          )}
+                          title={item.label}
+                        >
+                          {renderIcon(item, isSubItem)}
+                          {!sidebarCollapsed && (
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          )}
+                          {!sidebarCollapsed && item.badge && (
+                            <span className="kh-nav-badge shrink-0 rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide">
+                              {item.badge}
+                            </span>
+                          )}
+                          {renderCollapsedTip(item.label)}
+                        </Link>
+                        {/* Hover reveal "New" link */}
+                        {!sidebarCollapsed && createRoute && (
+                          <Link
+                            href={createRoute}
+                            prefetch={false}
+                            onClick={(e) => e.stopPropagation()}
+                            className={clsx(
+                              'kh-nav-new absolute right-1.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-md',
+                              'opacity-0 group-hover/item:opacity-100 focus-visible:opacity-100 transition-opacity'
+                            )}
+                            title={`Create New ${item.label}`}
+                            aria-label={`Create New ${item.label}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" aria-hidden />
+                          </Link>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
             </li>
+            </React.Fragment>
           );
         })}
       </ul>
     );
   };
 
+  const renderBusinessMark = (compact: boolean): React.ReactNode =>
+    business?.logo_url ? (
+      <img
+        src={business.logo_url}
+        alt={businessName}
+        className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+      />
+    ) : (
+      <div className="kh-ws-logo w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+        <span className="font-bold text-sm">{compact ? businessInitials.substring(0, 1) : businessInitials}</span>
+      </div>
+    );
+
+  const userName = user?.name || 'You';
+  const userRole = isPrimaryAdmin
+    ? 'Primary Admin'
+    : (user as { role_name?: string } | null)?.role_name || 'User';
+
   return (
     <>
       {/* Sidebar */}
       <aside
         className={clsx(
-          'khatario-sidebar fixed top-0 left-0 h-screen z-50 flex flex-col text-base',
+          'khatario-sidebar fixed top-0 left-0 h-screen z-50 flex flex-col text-sm',
           'transition-all duration-300 ease-in-out hidden lg:flex',
           sidebarCollapsed ? 'w-16' : 'w-64'
         )}
       >
-        {/* Header */}
-        <div className={clsx(
-          "flex border-b border-border flex-shrink-0",
-          sidebarCollapsed ? "flex-col items-center gap-2 p-3" : "flex-row items-center justify-between p-4"
-        )}>
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              {business?.logo_url ? (
-                <img 
-                  src={business.logo_url} 
-                  alt={businessName}
-                  className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-white font-bold text-sm">{businessInitials}</span>
-                </div>
-              )}
+        {/* Collapse handle on the sidebar's edge */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!sidebarCollapsed}
+          className="kh-edge-toggle absolute -right-3 top-[26px] z-10 flex h-6 w-6 items-center justify-center rounded-full"
+        >
+          {sidebarCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Header: business card, then Jump to (opens the command palette) */}
+        <div
+          className={clsx(
+            'flex-shrink-0',
+            sidebarCollapsed ? 'flex flex-col items-center gap-2 px-2 pt-3 pb-2' : 'space-y-2 px-2.5 pt-3 pb-2'
+          )}
+        >
+          {sidebarCollapsed ? (
+            renderBusinessMark(true)
+          ) : (
+            <div className="kh-ws-card flex items-center gap-2.5 rounded-xl px-2.5 py-2 min-w-0">
+              {renderBusinessMark(false)}
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="font-semibold text-lg truncate text-text-primary">{businessName}</span>
+                <span className="font-semibold text-[15px] leading-tight truncate">{businessName}</span>
                 {userBranch && showBranchSubtitle && (
-                  <span className="text-sm text-text-muted truncate">
+                  <span className="kh-muted text-xs truncate">
                     {userBranch.name}{userBranch.code && ` (${userBranch.code})`}
                   </span>
                 )}
               </div>
             </div>
           )}
-          {sidebarCollapsed && (
-            business?.logo_url ? (
-              <img 
-                src={business.logo_url} 
-                alt={businessName}
-                className="w-8 h-8 rounded-lg object-contain"
-              />
-            ) : (
-              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{businessInitials.substring(0, 1)}</span>
-              </div>
-            )
-          )}
-          
+
           <button
             type="button"
-            onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!sidebarCollapsed}
-            className={clsx("p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/90 rounded-lg transition-colors text-text-secondary", !sidebarCollapsed && "ml-2")}
+            onClick={() => window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_OPEN_EVENT))}
+            aria-label="Search or jump to a page"
+            title={sidebarCollapsed ? 'Jump to… (Ctrl K)' : undefined}
+            className={clsx(
+              'kh-jump flex items-center rounded-lg',
+              sidebarCollapsed ? 'h-9 w-9 justify-center' : 'w-full gap-2 px-2.5 py-1.5 text-left'
+            )}
           >
-             {sidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+            <Search className="w-4 h-4 flex-shrink-0" aria-hidden />
+            {!sidebarCollapsed && (
+              <>
+                <span className="flex-1 truncate">Jump to…</span>
+                <kbd className="kh-kbd rounded px-1 font-sans text-[11px]">Ctrl K</kbd>
+              </>
+            )}
           </button>
         </div>
 
         {/* Navigation - Scrollable area */}
-        <nav 
+        <nav
           ref={navRef}
-          className="p-2 flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+          className="kh-nav-scroll px-2 py-2 flex-1 overflow-y-auto overflow-x-hidden min-h-0"
           onWheel={(e) => {
             e.stopPropagation();
           }}
@@ -1466,16 +1548,33 @@ export const Sidebar = React.memo(function Sidebar() {
         </nav>
 
         {/* Pinned above footer: not inside scrollable nav so it stays visible while menu scrolls */}
-        <div className="flex-shrink-0 z-10 border-t border-border/60 bg-surface/98 backdrop-blur-sm shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.3)]">
+        <div className="flex-shrink-0 z-10 border-t border-border/60">
           <PromotionSidebar collapsed={sidebarCollapsed} />
         </div>
 
+        {/* Footer: who is signed in, and the guided tour */}
         <div
-          className="flex-shrink-0 border-t border-border p-2 bg-surface/95 backdrop-blur-sm"
-          data-tour="nav-sidebar-tour-button"
+          className={clsx(
+            'flex-shrink-0 border-t border-border p-2',
+            sidebarCollapsed ? 'flex flex-col items-center gap-1.5' : 'flex items-center gap-2.5 px-3'
+          )}
         >
+          <div
+            className="kh-avatar w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
+            title={sidebarCollapsed ? `${userName} · ${userRole}` : undefined}
+            aria-hidden
+          >
+            {userName.charAt(0).toUpperCase()}
+          </div>
+          {!sidebarCollapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-medium leading-tight">{userName}</div>
+              <div className="kh-muted truncate text-xs">{userRole}</div>
+            </div>
+          )}
           <button
             type="button"
+            data-tour="nav-sidebar-tour-button"
             onClick={() =>
               window.dispatchEvent(
                 new CustomEvent(PRODUCT_TOUR_START_EVENT, {
@@ -1483,23 +1582,11 @@ export const Sidebar = React.memo(function Sidebar() {
                 })
               )
             }
-            className={clsx(
-              'w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-base font-medium transition-colors',
-              'text-text-primary bg-slate-100 hover:bg-slate-200 dark:text-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800/80',
-              'border border-border dark:border-slate-600',
-              'shadow-sm',
-              sidebarCollapsed && 'justify-center px-2'
-            )}
-            title={
-              sidebarCollapsed
-                ? 'Guided tour: main menu, then business profile'
-                : undefined
-            }
+            className="kh-foot-btn w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+            aria-label="Guided tour: main menu, then business profile"
+            title="Menu & profile tour"
           >
-            <Sparkles className="w-4 h-4 flex-shrink-0 text-primary-600 dark:text-primary-500" aria-hidden />
-            {!sidebarCollapsed && (
-              <span className="truncate text-left leading-tight">Menu & profile tour</span>
-            )}
+            <Sparkles className="w-4 h-4" aria-hidden />
           </button>
         </div>
       </aside>

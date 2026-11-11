@@ -115,9 +115,6 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
       
       // Dispatch global event to refresh all Feature Registry instances
       // This ensures sidebar and other components update immediately
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[PlanFeatureMatrix] Dispatching feature-registry-updated event', { planId });
-      }
       window.dispatchEvent(new CustomEvent('feature-registry-updated', {
         detail: { planId }
       }));

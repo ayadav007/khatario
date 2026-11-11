@@ -50,11 +50,6 @@ async function dispatchReminders(
   }
 
   const batch = transport === 'baileys' ? jobs.slice(0, INLINE_BAILEYS_MAX_PER_RUN) : jobs;
-  if (batch.length < jobs.length) {
-    console.log(
-      `[Reminder Check] Queue unavailable; sending ${batch.length} of ${jobs.length} ${kind} reminders inline for QR business ${businessId}`,
-    );
-  }
 
   const result: ReminderRunResult = { ...EMPTY, skipped: skippedSoFar + (jobs.length - batch.length) };
   for (const [index, job] of batch.entries()) {
@@ -64,7 +59,6 @@ async function dispatchReminders(
       if (outcome.outcome === 'sent') result.sent++;
       else {
         result.skipped++;
-        console.log(`[Reminder Check] Invoice ${job.invoiceId} ${outcome.outcome}: ${outcome.reason}`);
       }
     } catch (error) {
       result.errors++;
@@ -89,7 +83,6 @@ export async function checkAndSendPaymentDueReminders(
   try {
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
     if (!hasAccess) {
-      console.log(`[Reminder Check] Business ${businessId} does not have whatsapp_auto_reminders feature`);
       return { ...EMPTY };
     }
 
@@ -119,17 +112,14 @@ export async function checkAndSendPaymentDueReminders(
       const targetDate = new Date(Date.now() + testMinutes * 60 * 1000);
       dueFrom = targetDate.toISOString().split('T')[0];
       dueTo = dueFrom;
-      console.log(`[Reminder Check] 🧪 TEST MODE — matching invoices due on ${dueFrom} (${testMinutes}min from now instead of ${daysBefore} days)`);
     } else {
       const window = paymentDueWindow(timeZone, daysBefore);
       dueFrom = window.from;
       dueTo = window.to;
-      console.log(`[Reminder Check] Matching invoices due ${dueFrom} through ${dueTo} (${timeZone}, days_before=${daysBefore})`);
     }
 
     const limitCheck = await checkLimit(businessId, 'whatsapp');
     if (!limitCheck.allowed) {
-      console.log(`[Reminder Check] Business ${businessId} has reached WhatsApp limit`);
       return { ...EMPTY };
     }
 
@@ -159,9 +149,6 @@ export async function checkAndSendPaymentDueReminders(
     );
 
     const quota = remainingQuota(limitCheck);
-    if (invoices.length > quota) {
-      console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
-    }
     const selected = invoices.slice(0, quota === Infinity ? undefined : quota).map((i) => i.id);
 
     return await dispatchReminders(
@@ -188,7 +175,6 @@ export async function checkAndSendOverdueReminders(
   try {
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
     if (!hasAccess) {
-      console.log(`[Reminder Check] Business ${businessId} does not have whatsapp_auto_reminders feature`);
       return { ...EMPTY };
     }
 
@@ -210,7 +196,6 @@ export async function checkAndSendOverdueReminders(
 
     const limitCheck = await checkLimit(businessId, 'whatsapp');
     if (!limitCheck.allowed) {
-      console.log(`[Reminder Check] Business ${businessId} has reached WhatsApp limit`);
       return { ...EMPTY };
     }
 
@@ -251,7 +236,6 @@ export async function checkAndSendOverdueReminders(
         if (testMinutesOverdue !== null && testMinutesOverdue > 0) {
           const minutesSinceLast = (Date.now() - lastSent.getTime()) / (1000 * 60);
           shouldSkip = minutesSinceLast < testMinutesOverdue;
-          if (shouldSkip) console.log(`[Reminder Check] 🧪 TEST MODE — skipping overdue (last sent ${minutesSinceLast.toFixed(1)}min ago, interval ${testMinutesOverdue}min)`);
         } else {
           const daysSinceLastReminder = Math.floor((Date.now() - lastSent.getTime()) / (1000 * 60 * 60 * 24));
           shouldSkip = daysSinceLastReminder < intervalDays;
@@ -265,9 +249,6 @@ export async function checkAndSendOverdueReminders(
     }
 
     const quota = remainingQuota(limitCheck);
-    if (due.length > quota) {
-      console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
-    }
     const selected = due.slice(0, quota === Infinity ? undefined : quota);
 
     return await dispatchReminders(

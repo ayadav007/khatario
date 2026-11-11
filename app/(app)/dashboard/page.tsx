@@ -4,9 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Chip } from '@/components/ui/Chip';
-import { TrendingUp, TrendingDown, Loader2, IndianRupee, Wallet } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -23,7 +21,9 @@ import {
   LowStockRestockMenu,
   suggestedRestockQty,
 } from '@/components/dashboard/LowStockRestockMenu';
-import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
+import { PendingActionsButton, usePendingActions } from '@/components/dashboard/PendingActionsButton';
+import { NeedsAttentionStrip } from '@/components/dashboard/NeedsAttentionStrip';
+import { DashboardPeriodPicker } from '@/components/dashboard/DashboardPeriodPicker';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
 import { KhataDashboardCard } from '@/components/dashboard/KhataDashboardCard';
@@ -56,14 +56,12 @@ import {
 } from '@/lib/offline/repositories/entity-cache-repository';
 import { markAppSynced } from '@/lib/sync-timestamp';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import {
   probeDashboardRefresh,
   probeDashboardRefreshKeyBump,
 } from '@/lib/debug/dashboard-refresh-probe';
 
 function DashboardPage() {
-  useRenderLoopProbe('DashboardPage');
   useLayoutEffect(() => {
     bumpDashboardRenderCounter();
   });
@@ -265,61 +263,54 @@ function DashboardPage() {
     void handleCardClick(type);
   }, [handleCardClick]);
 
+  // Brand colours (primary/accent) follow the business theme; money-in green stays fixed.
   const financialSnapshotItems: DashboardKpiItem[] = useMemo(
     () => [
       {
         id: 'sales',
-        title: `${periodPrefix} Sales`,
+        title: 'Sales',
         value: `₹ ${sales.toLocaleString('en-IN')}`,
-        icon: TrendingUp,
-        iconColor: 'text-text-secondary',
+        topBorderClassName: 'border-t-primary-600 dark:border-t-primary-400',
         valueColor: 'text-text-primary',
-        iconWellClassName: 'border border-border bg-background',
         clickType: 'sales',
-        tooltipTitle: 'Sales',
+        tooltipTitle: `${periodPrefix} Sales`,
         tooltipBody: 'Invoice revenue in the selected period (final invoices, incl. GST).',
       },
       {
         id: 'collection',
-        title: `${periodPrefix} Collection`,
+        title: 'Collection',
         value: `₹ ${collection.toLocaleString('en-IN')}`,
-        icon: Wallet,
-        iconColor: 'text-text-secondary',
+        topBorderClassName: 'border-t-emerald-600',
         valueColor: 'text-text-primary',
-        iconWellClassName: 'border border-border bg-background',
         clickType: 'collection',
-        tooltipTitle: 'Collection',
+        tooltipTitle: `${periodPrefix} Collection`,
         tooltipBody: 'Customer payments received in the selected period.',
       },
       {
         id: 'purchases',
-        title: `${periodPrefix} Purchases`,
+        title: 'Purchases',
         value: `₹ ${purchases.toLocaleString('en-IN')}`,
-        icon: TrendingDown,
-        iconColor: 'text-text-secondary',
+        topBorderClassName: 'border-t-primary-300',
         valueColor: 'text-text-primary',
-        iconWellClassName: 'border border-border bg-background',
         clickType: 'purchases',
-        tooltipTitle: 'Purchases',
+        tooltipTitle: `${periodPrefix} Purchases`,
         tooltipBody: 'Purchase bills recorded in the selected period.',
       },
       {
         id: 'profit',
-        title: `${periodPrefix} Profit`,
+        title: 'Profit',
         value: `₹ ${profit.toLocaleString('en-IN')}`,
-        icon: IndianRupee,
-        iconColor: profit >= 0 ? 'text-text-secondary' : 'text-red-600 dark:text-red-300',
+        topBorderClassName: profit >= 0 ? 'border-t-accent-500' : 'border-t-red-600',
         valueColor: profit >= 0 ? 'text-text-primary' : 'text-red-600 dark:text-red-400',
-        iconWellClassName:
-          profit >= 0
-            ? 'border border-border bg-background'
-            : 'border border-red-200/80 bg-red-50 dark:border-red-800/55 dark:bg-red-950/40',
-        tooltipTitle: 'Gross profit',
+        tooltipTitle: `${periodPrefix} Gross profit`,
         tooltipBody: 'Sales minus cost of goods sold (COGS) for the period.',
       },
     ],
     [collection, periodPrefix, profit, purchases, sales]
   );
+
+  const pending = usePendingActions(data);
+  const [pendingOpen, setPendingOpen] = useState(false);
 
   const chartDateRange = useMemo(
     () => ({ start: dateRange.start, end: dateRange.end }),
@@ -376,6 +367,9 @@ function DashboardPage() {
   const payablesAging =
     typeof data?.payables === 'object' && data?.payables?.aging ? data.payables.aging : emptyAging;
 
+  const overdueOf = (aging: typeof emptyAging) =>
+    aging.days_1_15 + aging.days_16_30 + aging.days_31_45 + aging.days_45_plus;
+
   const minimal = isDashboardMinimalMode();
   const hideBody = isDashboardBodyDisabled();
 
@@ -383,8 +377,8 @@ function DashboardPage() {
     <>
       <div className={STACK_PAGE_CLASS}>
         <ListPageHeader
-          title="Dashboard"
-          description={`Welcome back, ${user?.name ?? 'there'}! Here's what's happening today.`}
+          title={`Welcome back, ${user?.name ?? 'there'}!`}
+          description="Dashboard · Here's what's happening today."
         />
 
         <SubscriptionUsageBanner businessId={business?.id} variant="dashboard" />
@@ -392,29 +386,58 @@ function DashboardPage() {
         <QuickActionsFAB />
         <MobileCreateSheet />
 
-        <DashboardFinancialSnapshot
-          items={financialSnapshotItems}
-          onItemClick={handleKpiClick}
-        />
-
-        {business?.id ? (
-          <DashboardSalesInsightsSection
-            businessId={business.id}
-            dateRange={salesInsightsDateRange}
+        {!hideBody && data ? (
+          <NeedsAttentionStrip
+            receivablesOverdue={overdueOf(receivablesAging)}
+            payablesOverdue={overdueOf(payablesAging)}
+            lowStockCount={data.lowStockItems?.length ?? 0}
+            pendingCount={pending.totalPending}
+            onOpenPending={() => setPendingOpen(true)}
           />
         ) : null}
 
-        {!hideBody && data ? (
-          <div className="grid grid-cols-1 gap-stack-section md:grid-cols-2 md:gap-stack-page">
-            <ReceivablesCard total={receivablesTotal} aging={receivablesAging} />
-            <PayablesCard total={payablesTotal} aging={payablesAging} />
-          </div>
-        ) : null}
+        <DashboardFinancialSnapshot
+          items={financialSnapshotItems}
+          periodLabel={periodLabel}
+          hideDesktopPeriodLabel={['Today', 'This Week', 'This Month'].includes(periodLabel)}
+          actions={
+            // Desktop only; phones keep the date stepper in the top bar.
+            <div className="hidden lg:block">
+              <DashboardPeriodPicker />
+            </div>
+          }
+          onItemClick={handleKpiClick}
+        />
+
+        <div className="grid grid-cols-1 gap-stack-section md:gap-stack-page lg:grid-cols-12">
+          {business?.id ? (
+            <div className={`min-w-0 ${!hideBody && data ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
+              <DashboardSalesInsightsSection
+                businessId={business.id}
+                dateRange={salesInsightsDateRange}
+              />
+            </div>
+          ) : null}
+
+          {!hideBody && data ? (
+            <div className="grid min-w-0 grid-cols-1 gap-stack-section md:grid-cols-2 md:gap-stack-page lg:col-span-4 lg:grid-cols-1">
+              <ReceivablesCard total={receivablesTotal} aging={receivablesAging} />
+              <PayablesCard total={payablesTotal} aging={payablesAging} />
+            </div>
+          ) : null}
+        </div>
 
         {!hideBody && data ? <KhataDashboardCard /> : null}
 
-        {/* Pending Actions Button - Sticky in top-right */}
-        {!hideBody && data ? <PendingActionsButton data={data} /> : null}
+        {/* Pending actions panel; the "Needs your attention" tile opens it */}
+        {!hideBody && data ? (
+          <PendingActionsButton
+            pending={pending}
+            isOpen={pendingOpen}
+            setIsOpen={setPendingOpen}
+            showTrigger={false}
+          />
+        ) : null}
 
         {!hideBody && business?.id ? (
           <DashboardChartsSection businessId={business.id} chartDateRange={chartDateRange} />
@@ -427,32 +450,50 @@ function DashboardPage() {
         {data?.lowStockItems?.length > 0 ? (
           <Card padding="none" className="overflow-hidden">
             <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-5 md:pt-5 md:pb-3">
-              <h2 className="text-sm font-semibold text-text-primary md:text-base">Low stock</h2>
-              <Link href="/items?stock=low">
-                <Button variant="ghost" size="sm" className="h-8 text-xs md:h-9 md:text-sm">View all</Button>
+              <h2 className="text-sm font-bold text-text-primary md:text-base">Low stock</h2>
+              <Link
+                href="/items?stock=low"
+                className="inline-flex min-h-9 items-center text-xs font-semibold text-primary-600 hover:underline dark:text-primary-300 md:text-sm"
+              >
+                View all ›
               </Link>
             </div>
-            <div className="flex gap-2 overflow-x-auto border-t border-border px-3 py-3 md:px-5">
-              {data.lowStockItems.slice(0, 8).map((item: any) => (
-                <div key={item.id} className="w-52 shrink-0 rounded-lg border border-border px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Link href={`/items/${item.id}`} className="min-w-0 flex-1 truncate text-xs font-semibold text-text-primary hover:underline md:text-sm">
+            <div className="flex gap-3 overflow-x-auto px-3 pb-3 md:px-5 md:pb-5">
+              {data.lowStockItems.slice(0, 8).map((item: any) => {
+                const outOfStock = Number(item.current_stock) <= 0;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex w-52 shrink-0 flex-col gap-1.5 rounded-xl bg-background p-3 dark:bg-slate-800/60"
+                  >
+                    <Link
+                      href={`/items/${item.id}`}
+                      className="truncate text-xs font-bold text-text-primary hover:underline md:text-sm"
+                    >
                       {item.name}
                     </Link>
-                    <Chip variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'} className="shrink-0 !px-1.5 !py-0.5 !text-2xs md:!text-xs">
-                      {formatStockQuantity(item.current_stock, item.unit, item.pack_size, item.pack_unit)}
-                    </Chip>
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`truncate text-base font-extrabold tabular-nums md:text-lg ${
+                          outOfStock
+                            ? 'text-red-700 dark:text-red-400'
+                            : 'text-orange-700 dark:text-orange-300'
+                        }`}
+                      >
+                        {formatStockQuantity(item.current_stock, item.unit, item.pack_size, item.pack_unit)}
+                      </span>
+                      <LowStockRestockMenu
+                        itemId={String(item.id)}
+                        itemName={String(item.name || 'item')}
+                        suggestedQty={suggestedRestockQty(item.current_stock, item.min_stock)}
+                      />
+                    </div>
+                    <p className="truncate text-caption text-text-secondary md:text-xs">
+                      Min: {item.min_stock} {item.unit}
+                    </p>
                   </div>
-                  <div className="mt-1 flex items-center justify-between gap-2 text-caption text-text-secondary md:text-xs">
-                    <p className="truncate">Min: {item.min_stock} {item.unit}</p>
-                    <LowStockRestockMenu
-                      itemId={String(item.id)}
-                      itemName={String(item.name || 'item')}
-                      suggestedQty={suggestedRestockQty(item.current_stock, item.min_stock)}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         ) : null}

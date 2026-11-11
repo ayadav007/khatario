@@ -36,7 +36,8 @@ No migration. Deploy the code to staging as usual, then check each line on a com
 ## Apply (signed in, a store with the store engine on)
 - [ ] Apply theme on a card goes straight to "Add <Name> to your themes?"; Add and customise opens the editor on a new draft named "Heritage Couture" (a second time: "Heritage Couture 2").
 - [ ] A role without settings permission sees "Ask an admin…"; at 20 themes the page says "Delete a draft to add another".
-- [ ] The library's Explore themes opens `/themes`; Copy current store design adds "<name> (from your store)" as before.
+- [ ] The library's Explore themes opens the store inside the app (`/settings/online-store/themes/explore`): the app's own menu, no website header, Login or Start free trial; Details opens `/settings/online-store/themes/explore/<theme>`; Apply goes straight to the Apply page; every Back link stays in the app.
+- [ ] Copy current store design adds "<name> (from your store)" as before.
 - [ ] The live store is unchanged until the new draft is published.
 
 ## Fixes shown by the previews

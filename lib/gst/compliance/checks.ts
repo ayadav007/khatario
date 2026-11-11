@@ -3,7 +3,7 @@
  * testable without a database. The law decides the rule; the business's own books decide whether
  * it applies. Nothing here is tax advice: every alert names its provision and suggests a CA.
  */
-import { daysBetween, RULE37_DAYS, type Rule37Row } from '@/lib/gst/rule37';
+import { daysBetween, RULE37_DAYS, rule37Interest, type Rule37Row } from '@/lib/gst/rule37';
 import { rule47aResult, type Rule47aSupply } from '@/lib/gst/rule47a';
 import {
   calculateLateFee,
@@ -141,7 +141,12 @@ export function rule37Findings(bills: Rule37BillInput[], asOn: string): Complian
 
   const pending = bills.filter((b) => headsTotal(b.target_reversal) - headsTotal(b.already_reversed) >= 1);
   if (pending.length) {
-    const toReverse = round2(pending.reduce((s, b) => s + headsTotal(b.target_reversal) - headsTotal(b.already_reversed), 0));
+    const open = pending.map((b) => {
+      const to_reverse = round2(headsTotal(b.target_reversal) - headsTotal(b.already_reversed));
+      return { ...brief(b), to_reverse, interest_if_utilised: rule37Interest(to_reverse, b.bill_date, asOn) };
+    });
+    const toReverse = round2(open.reduce((s, b) => s + b.to_reverse, 0));
+    const interest = round2(open.reduce((s, b) => s + b.interest_if_utilised, 0));
     out.push({
       checkId: 'rule37',
       key: 'rule37:reversal_pending',
@@ -150,17 +155,16 @@ export function rule37Findings(bills: Rule37BillInput[], asOn: string): Complian
       title: `Reverse ${inr(toReverse)} ITC on bills unpaid for over 180 days`,
       message:
         `${plural(pending.length, 'supplier bill')} ${pending.length === 1 ? 'is' : 'are'} unpaid for more than 180 days. ` +
-        `The ITC on the unpaid part has to be reversed in your next GSTR-3B, with interest if that credit was already used. ` +
-        `Post the reversal here; Khatario re-claims it automatically in the books when you pay the supplier.`,
+        `Reverse the ITC on the unpaid part in your next GSTR-3B, Table 4(B)(2). Interest under Section 50 is due only if that credit was already used. ` +
+        `When you pay the supplier, claim it again in Table 4(A)(5) and show it in Table 4(D)(1). ` +
+        `Post the reversal here; Khatario re-claims it in the books when you pay.`,
       legalRef: 'CGST Act, Section 16(2) second proviso and Section 50; CGST Rules, Rule 37',
       actionUrl: null,
       actionLabel: 'Post ITC reversal',
       askQuestion: 'How do I reverse ITC for supplier bills unpaid for 180 days under Rule 37?',
       dueDate: asOn,
       amount: toReverse,
-      details: {
-        bills: pending.slice(0, 20).map((b) => ({ ...brief(b), to_reverse: round2(headsTotal(b.target_reversal) - headsTotal(b.already_reversed)) })),
-      },
+      details: { bills: open.slice(0, 20), bill_count: open.length, interest_if_utilised: interest },
     });
   }
   return out;
@@ -526,6 +530,16 @@ export interface RcmUnregisteredBill {
   reverse_charge?: boolean;
 }
 
+function rcmSupplyLabel(b: RcmUnregisteredBill): string {
+  const kind = b.document === 'expense' ? 'Expense' : 'Bill';
+  const ref = b.bill_number ? b.bill_number : `dated ${formatDate(b.bill_date)}`;
+  return `${kind} ${ref}${b.supplier_name ? ` from ${b.supplier_name}` : ''}`;
+}
+
+function joinAnd(parts: string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]): ComplianceFinding | null {
   const evaluated = bills.map((b) => {
     const supply: Rule47aSupply = {
@@ -550,8 +564,13 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
   const firstDue = deadlines[0]?.result.due ?? null;
   const daysLeft = firstDue ? daysBetween(asOn, firstDue) : null;
   const tax = round2([...deadlines, ...unverified].reduce((s, e) => s + e.bill.tax, 0));
+  // Name up to three bills so the alert (and its notification) says which ones need details.
+  const unverifiedWho =
+    unverified.length && unverified.length <= 3
+      ? joinAnd(unverified.map((e) => rcmSupplyLabel(e.bill)))
+      : plural(unverified.length, 'supply');
   const unverifiedNote = unverified.length
-    ? ` ${plural(unverified.length, 'supply')} still ${unverified.length === 1 ? 'has' : 'have'} an unverified Rule 47A deadline.`
+    ? ` ${unverifiedWho} still ${unverified.length === 1 ? 'has' : 'have'} an unverified Rule 47A deadline.`
     : '';
   return {
     checkId: 'rcm_self_invoice',
@@ -574,6 +593,7 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
     details: {
       rcm_bills: deadlines.slice(0, 20).map((e) => ({
         purchase_id: e.bill.purchase_id,
+        document: e.bill.document ?? 'purchase',
         bill_number: e.bill.bill_number,
         bill_date: e.bill.bill_date,
         supplier_name: e.bill.supplier_name,
@@ -582,6 +602,11 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
       })),
       unverified: unverified.slice(0, 20).map((e) => ({
         purchase_id: e.bill.purchase_id,
+        document: e.bill.document ?? 'purchase',
+        bill_number: e.bill.bill_number,
+        bill_date: e.bill.bill_date,
+        supplier_name: e.bill.supplier_name,
+        tax: round2(e.bill.tax),
         message: e.result.kind === 'unverified' ? e.result.message : '',
       })),
     },

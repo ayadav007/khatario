@@ -1,3 +1,4 @@
+import { sanitizeThemeData } from '@/lib/store/engine/sanitize';
 import { defaultSettings, sanitizeSettings, sanitizeSettingValue } from '@/lib/store/engine/settings';
 import type { SettingSchema, SettingType } from '@/lib/store/engine/schema-types';
 
@@ -134,4 +135,15 @@ it('accepts the new fonts and rejects unknown ones', () => {
   const font = { id: 'f', type: 'font', label: 'F' } as const;
   expect(sanitizeSettingValue(font, 'newsreader')).toBe('newsreader');
   expect(sanitizeSettingValue(font, 'comic-sans')).toBeUndefined();
+});
+
+it('accepts anton and space-grotesk as heading and body fonts', () => {
+  const data = sanitizeThemeData({ settings: { font_heading: 'anton', font_body: 'space-grotesk' } });
+  expect(data.settings.font_heading).toBe('anton');
+  expect(data.settings.font_body).toBe('space-grotesk');
+});
+
+it('accepts baloo as a heading font', () => {
+  const data = sanitizeThemeData({ settings: { font_heading: 'baloo' } });
+  expect(data.settings.font_heading).toBe('baloo');
 });

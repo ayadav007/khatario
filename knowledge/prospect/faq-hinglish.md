@@ -14,7 +14,7 @@ Khatario Indian dukaan aur business ke liye billing software hai. Isme GST bill 
 
 ## Kya Khatario free hai?
 
-Haan. Free plan hamesha ke liye free hai, bas mahine mein invoice, customer aur item ki limit hai. Naye account ko 30 din ka free trial milta hai jisme poora product chalta hai, aur card ki zarurat nahi hai. Paid plan ki kimat plans and pricing document mein likhi hai.
+Haan. Free plan Android app mein ek user ke liye hamesha free hai, bas mahine mein invoice, customer aur item ki limit hai. Computer par chalane ke liye Starter ya upar ka plan chahiye. Naye account ko 30 din ka free trial milta hai jisme poora product chalta hai, aur card ki zarurat nahi hai. Paid plan ki kimat plans and pricing document mein likhi hai.
 
 ## Bill kaise banaye? Kitna time lagta hai?
 
@@ -26,7 +26,7 @@ Haan. Har bill mein HSN/SAC code hota hai aur CGST, SGST ya IGST place of supply
 
 ## GST return (GSTR-1) kaise bhare?
 
-Khatario aapke bills se GSTR-1 aur GSTR-3B taiyaar karta hai. Inhe Excel ya JSON mein export karke GST portal par upload karo ya apne CA ko bhej do. Khatario seedha portal par return file nahi karta. GST report Business aur Enterprise plan mein aur trial mein milti hai.
+Khatario aapke bills se GSTR-1 aur GSTR-3B taiyaar karta hai. Inhe Excel ya JSON mein export karke GST portal par upload karo ya apne CA ko bhej do. Khatario seedha portal par return file nahi karta. GST report har plan mein milti hai, Free mein bhi.
 
 ## Udhaar (baaki paisa) ka hisaab kaise rakhe?
 
@@ -42,7 +42,7 @@ Nahi. Bill save karne ke liye internet chahiye. Internet aane par bill dubara sa
 
 ## Mobile se chala sakte hain?
 
-Haan. Khatario phone, tablet aur computer ke browser mein chalta hai, aur Android app bhi hai. Sab device par ek hi data dikhta hai. iPhone ke liye alag app nahi hai, Safari mein khol kar home screen par add kar lo.
+Haan. Khatario ka Android phone app Play Store par hai. Paid plan par Khatario phone, tablet aur computer ke browser mein bhi chalta hai. Free plan sirf Android app mein chalta hai. Sab device par ek hi data dikhta hai. iPhone ke liye alag app nahi hai; paid plan par Safari mein khol kar home screen par add kar lo.
 
 ## Printer kaunsa chalega?
 

@@ -55,6 +55,9 @@ export interface StoredAlert {
   notified_stage: string | null;
   notified_at: string | null;
   dismissed_stage: string | null;
+  dismissed_reason: string | null;
+  dismissed_at: string | null;
+  dismissed_by_name: string | null;
 }
 
 const FILED = `('filed', 'revised')`;
@@ -356,6 +359,8 @@ export async function syncComplianceAlerts(
          details = EXCLUDED.details, last_seen_at = CURRENT_TIMESTAMP,
          first_seen_at = CASE WHEN gst_compliance_alerts.resolved_at IS NOT NULL THEN CURRENT_TIMESTAMP ELSE gst_compliance_alerts.first_seen_at END,
          dismissed_stage = CASE WHEN gst_compliance_alerts.resolved_at IS NOT NULL THEN NULL ELSE gst_compliance_alerts.dismissed_stage END,
+         dismissed_reason = CASE WHEN gst_compliance_alerts.resolved_at IS NOT NULL THEN NULL ELSE gst_compliance_alerts.dismissed_reason END,
+         dismissed_at = CASE WHEN gst_compliance_alerts.resolved_at IS NOT NULL THEN NULL ELSE gst_compliance_alerts.dismissed_at END,
          notified_stage = CASE WHEN gst_compliance_alerts.resolved_at IS NOT NULL THEN NULL ELSE gst_compliance_alerts.notified_stage END,
          resolved_at = NULL
        RETURNING id`,
@@ -400,13 +405,17 @@ export async function syncComplianceAlerts(
   return { active: evaluation.findings.length, notified, resolved: resolved?.rowCount ?? 0 };
 }
 
+const ALERT_COLUMNS = `a.id, a.check_id, a.alert_key, a.severity, a.stage, a.title, a.message, a.legal_ref, a.action_url,
+            a.action_label, a.ask_question, to_char(a.due_date, 'YYYY-MM-DD') AS due_date, a.amount, a.details,
+            a.first_seen_at, a.last_seen_at, a.resolved_at, a.notified_stage, a.notified_at, a.dismissed_stage,
+            a.dismissed_reason, a.dismissed_at, u.name AS dismissed_by_name`;
+
 export async function listActiveComplianceAlerts(businessId: string): Promise<StoredAlert[]> {
   const rows = await queryRows<StoredAlert>(
-    `SELECT id, check_id, alert_key, severity, stage, title, message, legal_ref, action_url, action_label, ask_question,
-            to_char(due_date, 'YYYY-MM-DD') AS due_date, amount, details, first_seen_at, last_seen_at, resolved_at,
-            notified_stage, notified_at, dismissed_stage
-       FROM gst_compliance_alerts
-      WHERE business_id = $1::uuid AND resolved_at IS NULL`,
+    `SELECT ${ALERT_COLUMNS}
+       FROM gst_compliance_alerts a
+       LEFT JOIN users u ON u.id = a.dismissed_by
+      WHERE a.business_id = $1::uuid AND a.resolved_at IS NULL`,
     [businessId],
   );
   return rows.sort(
@@ -415,11 +424,42 @@ export async function listActiveComplianceAlerts(businessId: string): Promise<St
   );
 }
 
-export async function dismissComplianceAlert(businessId: string, alertId: string, userId: string): Promise<boolean> {
+/** Alerts the checks stopped raising on or after `since` (the FY start on the alerts page), newest first. */
+export async function listResolvedComplianceAlerts(businessId: string, since: string, limit = 200): Promise<StoredAlert[]> {
+  return queryRows<StoredAlert>(
+    `SELECT ${ALERT_COLUMNS}
+       FROM gst_compliance_alerts a
+       LEFT JOIN users u ON u.id = a.dismissed_by
+      WHERE a.business_id = $1::uuid AND a.resolved_at >= $2::date
+      ORDER BY a.resolved_at DESC
+      LIMIT $3`,
+    [businessId, since, limit],
+  );
+}
+
+/** Hide an alert until its stage changes. The reason, user and time stay on the row as the audit trail. */
+export async function dismissComplianceAlert(
+  businessId: string,
+  alertId: string,
+  userId: string,
+  reason: string,
+): Promise<boolean> {
   const res = await query(
-    `UPDATE gst_compliance_alerts SET dismissed_stage = stage, dismissed_by = $3::uuid
+    `UPDATE gst_compliance_alerts
+        SET dismissed_stage = stage, dismissed_by = $3::uuid, dismissed_reason = $4, dismissed_at = CURRENT_TIMESTAMP
       WHERE id = $1::uuid AND business_id = $2::uuid AND resolved_at IS NULL`,
-    [alertId, businessId, userId],
+    [alertId, businessId, userId, reason],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** Undo a dismissal: the alert shows as active again. */
+export async function restoreComplianceAlert(businessId: string, alertId: string): Promise<boolean> {
+  const res = await query(
+    `UPDATE gst_compliance_alerts
+        SET dismissed_stage = NULL, dismissed_by = NULL, dismissed_reason = NULL, dismissed_at = NULL
+      WHERE id = $1::uuid AND business_id = $2::uuid AND resolved_at IS NULL`,
+    [alertId, businessId],
   );
   return (res.rowCount ?? 0) > 0;
 }

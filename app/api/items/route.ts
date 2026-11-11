@@ -421,7 +421,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
-    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_swatches', 'store_returnable'].some((k) =>
+    const hasExtras = ['video_url', 'store_tabs', 'size_chart', 'store_badge', 'store_tagline', 'store_fit_note', 'store_swatches', 'store_returnable'].some((k) =>
       Object.prototype.hasOwnProperty.call(body, k),
     );
     let extras: Awaited<ReturnType<typeof import('@/lib/store/product-extras').validateProductExtras>> | null = null;
@@ -586,6 +586,10 @@ export async function POST(request: NextRequest) {
           vals.push(v.store_tagline);
           sets.push(`store_tagline = $${vals.length}`);
         }
+        if (v.store_fit_note !== undefined) {
+          vals.push(v.store_fit_note);
+          sets.push(`store_fit_note = $${vals.length}`);
+        }
         if (v.store_swatches !== undefined) {
           vals.push(JSON.stringify(v.store_swatches));
           sets.push(`store_swatches = $${vals.length}::jsonb`);
@@ -692,7 +696,6 @@ export async function POST(request: NextRequest) {
 
     // Handle Variants
     if (has_variants && variants.length > 0) {
-      console.log(`[Items API] Creating ${variants.length} variants for item ${item.id}`);
       
       for (const variant of variants) {
         try {
@@ -730,20 +733,6 @@ export async function POST(request: NextRequest) {
             }
           }
           
-          const variantData = {
-            item_id: item.id,
-            variant_name: variant.name,
-            sku: variant.sku,
-            barcode: variantBarcode,
-            barcode_type: variantBarcodeType,
-            purchase_price: variant.purchase_price || purchase_price,
-            selling_price: variant.selling_price || selling_price,
-            opening_stock: variant.opening_stock || 0,
-            attributes: variant.attributes || {}
-          };
-          
-          console.log(`[Items API] Inserting variant:`, variantData);
-          
           const insertParams = [
             item.id,
             variant.name,
@@ -757,7 +746,6 @@ export async function POST(request: NextRequest) {
             JSON.stringify(variant.attributes || {})
           ];
           
-          console.log(`[Items API] Insert params:`, insertParams);
           
           const insertResult = await query(`
             INSERT INTO item_variants (
@@ -768,7 +756,6 @@ export async function POST(request: NextRequest) {
             RETURNING id, variant_name
           `, insertParams);
           
-          console.log(`[Items API] Successfully created variant: ${variant.name}`, insertResult.rows[0]);
 
           if ((variant.opening_stock || 0) > 0) {
             await query(`
@@ -803,7 +790,6 @@ export async function POST(request: NextRequest) {
           'SELECT id, variant_name FROM item_variants WHERE item_id = $1',
           [item.id]
         );
-        console.log(`[Items API] Verified ${createdVariants.length} variants created for item ${item.id}`);
         
         if (createdVariants.length < variants.length) {
           console.error(`[Items API] WARNING: Only ${createdVariants.length} out of ${variants.length} variants were created!`);

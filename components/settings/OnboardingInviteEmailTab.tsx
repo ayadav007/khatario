@@ -124,7 +124,7 @@ export function OnboardingInviteEmailTab() {
           <div>
             <label className="text-sm text-text-secondary">Intro (HTML)</label>
             <textarea
-              className="mt-1 w-full rounded-md border border-border px-3 py-2 font-mono text-sm"
+              className="input mt-1 w-full font-mono"
               rows={6}
               value={settings.intro_html}
               onChange={(e) => setSettings({ ...settings, intro_html: e.target.value })}
@@ -137,7 +137,7 @@ export function OnboardingInviteEmailTab() {
           <div>
             <label className="text-sm text-text-secondary">Footer (HTML)</label>
             <textarea
-              className="mt-1 w-full rounded-md border border-border px-3 py-2 font-mono text-sm"
+              className="input mt-1 w-full font-mono"
               rows={3}
               value={settings.footer_html}
               onChange={(e) => setSettings({ ...settings, footer_html: e.target.value })}
@@ -167,7 +167,7 @@ export function OnboardingInviteEmailTab() {
             <div>
               <label className="text-sm text-text-secondary">Custom login steps (HTML, optional)</label>
               <textarea
-                className="mt-1 w-full rounded-md border border-border px-3 py-2 font-mono text-sm"
+                className="input mt-1 w-full font-mono"
                 rows={5}
                 placeholder="Leave blank for default OTP steps"
                 value={settings.login_steps_html ?? ''}
@@ -193,7 +193,7 @@ export function OnboardingInviteEmailTab() {
         <h2 className="mb-1 font-semibold text-text-primary">Preview</h2>
         <p className="mb-4 text-sm text-text-secondary">Subject: {previewSubject}</p>
         <div
-          className="rounded-lg border border-border bg-white p-4 text-sm"
+          className="rounded-lg border border-border bg-surface p-4 text-sm"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
       </Card>

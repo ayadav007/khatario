@@ -2,6 +2,7 @@ import {
   clampPan,
   clampScale,
   createScrollLock,
+  galleryGridSpans,
   initialVariantId,
   isDoubleTap,
   pickVariant,
@@ -135,5 +136,19 @@ describe('createScrollLock', () => {
     lock.unlock();
     expect(lock.count).toBe(0);
     expect(overflow).toBe('auto');
+  });
+});
+
+describe('galleryGridSpans', () => {
+  it('uses one column for a single tile', () => {
+    expect(galleryGridSpans(1)).toEqual({ columns: 1, wideLast: false });
+    expect(galleryGridSpans(0)).toEqual({ columns: 1, wideLast: false });
+  });
+
+  it('uses two columns, with an odd last tile spanning both', () => {
+    expect(galleryGridSpans(2)).toEqual({ columns: 2, wideLast: false });
+    expect(galleryGridSpans(3)).toEqual({ columns: 2, wideLast: true });
+    expect(galleryGridSpans(4)).toEqual({ columns: 2, wideLast: false });
+    expect(galleryGridSpans(5)).toEqual({ columns: 2, wideLast: true });
   });
 });

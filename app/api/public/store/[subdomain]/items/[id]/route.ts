@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { storeForPublicApi } from '@/lib/store/engine/preview-access';
 import { parseRatingAvg, parseRatingCount, storeProductImages } from '@/lib/store/map-store-product';
+import { storeCollectsGst, withStoreGst } from '@/lib/store/seller-gst';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function GET(
             i.category_id, c.name AS category_name, i.brand, i.video_url,
             COALESCE(i.store_tabs, '[]'::jsonb) AS store_tabs,
             COALESCE(i.size_chart, c.size_chart) AS size_chart,
-            i.store_badge, i.store_tagline, COALESCE(i.store_returnable, true) AS store_returnable,
+            i.store_badge, i.store_tagline, i.store_fit_note, COALESCE(i.store_returnable, true) AS store_returnable,
             COALESCE(i.store_swatches, '[]'::jsonb) AS store_swatches,
             COALESCE(i.current_stock, 0)::text AS current_stock,
             COALESCE(i.has_variants, false) AS has_variants,
@@ -62,7 +63,12 @@ export async function GET(
     [params.id],
   );
 
-  return NextResponse.json({
+  const collectsGst = await storeCollectsGst({
+    businessId: store.business_id,
+    branchId: request.nextUrl.searchParams.get('branch_id'),
+  });
+
+  return NextResponse.json(withStoreGst({
     ...item,
     selling_price: parseFloat(item.selling_price as string) || 0,
     mrp: item.mrp ? parseFloat(item.mrp as string) : null,
@@ -75,6 +81,7 @@ export async function GET(
     size_chart: item.size_chart ?? null,
     store_badge: (item.store_badge as string) || null,
     store_tagline: (item.store_tagline as string) || null,
+    store_fit_note: (item.store_fit_note as string) || null,
     returnable: item.store_returnable !== false,
     store_swatches: Array.isArray(item.store_swatches) ? item.store_swatches : [],
     seo_title: (item.seo_title as string) || null,
@@ -87,5 +94,5 @@ export async function GET(
       selling_price: parseFloat(v.selling_price) || 0,
       current_stock: parseFloat(v.current_stock) || 0,
     })),
-  });
+  }, collectsGst));
 }

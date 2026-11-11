@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { getPool, queryOne, queryRows } from '@/lib/db';
-import { STORE_THEME_PRESETS } from '@/lib/store/store-theme';
+import { sanitizeStoreTheme, STORE_THEME_PRESETS } from '@/lib/store/store-theme';
 import type { ThemeData, ThemeListRow, ThemePreset, ThemeRow } from './types';
 import { ENGINE_LIMITS, sanitizeThemeData, themeTooLarge } from './sanitize';
 import { presetTheme, type PresetContext } from './presets';
@@ -140,12 +140,16 @@ export async function insertMigratedLiveLocked(
   let data = sanitizeThemeData(result.data);
   if (themeTooLarge(data)) {
     // The store facts presetContextFor reads, taken from the input so nothing is read outside this transaction.
-    const ctx = presetContextFromRow({
-      name: input.ctx.businessName,
-      tagline: input.ctx.tagline,
-      store_theme: input.raw,
-      hero_url: input.ctx.heroUrl,
-    });
+    // A migrated store keeps its own colour, so the fallback carries the store's accent as the migration does.
+    const ctx = {
+      ...presetContextFromRow({
+        name: input.ctx.businessName,
+        tagline: input.ctx.tagline,
+        store_theme: input.raw,
+        hero_url: input.ctx.heroUrl,
+      }),
+      accent: sanitizeStoreTheme(input.raw).accent,
+    };
     preset = 'studio';
     name = STORE_THEME_PRESETS.studio.label;
     data = sanitizeThemeData(presetTheme('studio', ctx));
@@ -261,6 +265,27 @@ function withSuffix(base: string, suffix: string): string {
 /** "<live name> (editing)", never doubled when the live name already ends with it. */
 function workingDraftName(liveName: string): string {
   return withSuffix(baseName(liveName), EDITING_SUFFIX);
+}
+
+/**
+ * M6: moves the store to the new design. Under the business lock it gives the store its migrated design as the live
+ * theme when it has none (D33), then turns `store_engine` on. `no_store_design` when there is no store settings row.
+ */
+export async function switchStoreToEngine(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {
+  return inTransaction(async (client) => {
+    await lockBusinessThemes(client, businessId);
+    let live = (await client.query(`SELECT ${ROW_COLS} FROM store_themes WHERE business_id = $1 AND role = 'live'`, [businessId]))
+      .rows[0] as ThemeRow | undefined;
+    if (!live) {
+      const input = await migrationInputFor(businessId, client);
+      if (!input) return fail<ThemeRow>('no_store_design');
+      const migrated = await insertMigratedLiveLocked(client, businessId, userId, input);
+      if (!migrated) return fail<ThemeRow>('limit');
+      live = migrated.theme;
+    }
+    await client.query(`UPDATE business_settings SET store_engine = true WHERE business_id = $1`, [businessId]);
+    return good(cleanRow(live));
+  });
 }
 
 async function insertWorkingDraft(businessId: string, userId: string): Promise<RepoResult<ThemeRow>> {

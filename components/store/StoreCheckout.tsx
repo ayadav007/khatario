@@ -5,11 +5,13 @@ import {
   ArrowLeft, MapPin, User, Phone, Mail, FileText,
   Truck, Package, Loader2, CheckCircle2,
 } from 'lucide-react';
+import { cartLineTotal } from '@/lib/store/pricing';
 import { useStore } from '@/lib/store/store-context';
 import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
 import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
 import UpiPayActions from '@/components/payments/UpiPayActions';
 import type { upiAppLinks } from '@/lib/payments/upi-pay-link';
+import { ClosedNotice } from '@/components/store/engine/OpenStatusBadge';
 import clsx from 'clsx';
 
 type UpiLinks = ReturnType<typeof upiAppLinks>;
@@ -564,7 +566,7 @@ export function StoreCheckout({
                       <span className="text-gray-400">x{c.quantity}</span>
                     </span>
                     <span className="font-medium text-gray-900">
-                      &#x20B9;{(c.price * c.quantity).toLocaleString('en-IN')}
+                      &#x20B9;{cartLineTotal(c).toLocaleString('en-IN')}
                     </span>
                   </div>
                 ))}
@@ -621,6 +623,7 @@ export function StoreCheckout({
           </div>
 
           <div className="shrink-0 border-t border-gray-200 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <ClosedNotice hours={store?.store_hours} className="mb-3" />
             <button
               type="submit"
               disabled={submitting || cart.length === 0 || quote?.serviceable === false}

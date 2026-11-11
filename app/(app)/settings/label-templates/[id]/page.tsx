@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import {
   LabelTemplateEditor,
   serverTemplateToState,
@@ -14,6 +14,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function EditLabelTemplatePage() {
   const router = useRouter();
@@ -72,35 +75,41 @@ export default function EditLabelTemplatePage() {
 
   if (!hasFeature('barcode_label_templates')) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center">
-        <h2 className="text-xl font-semibold">Feature not available</h2>
-      </div>
+      <SettingsPageShell title="Label templates" description="Design barcode and price labels for your items." icon={FileText}>
+        <PlanFeatureDeniedCallout
+          featureKey="barcode_label_templates"
+          title="Label designer isn't in your plan"
+          description="Upgrade to design your own barcode and price labels."
+        />
+      </SettingsPageShell>
     );
   }
 
   if (isSystem) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center">
-        <h2 className="text-xl font-semibold">System templates are read-only</h2>
-        <p className="text-text-secondary mt-2">
-          To customise this template, click <b>Duplicate</b> from the list
-          page and edit the copy.
-        </p>
-        <Link
-          href="/settings/label-templates"
-          className="inline-block mt-4 text-primary-600 hover:underline"
-        >
-          Back to templates
-        </Link>
-      </div>
+      <SettingsPageShell title="Label templates" icon={FileText}>
+        <EmptyState
+          className="card"
+          icon={FileText}
+          title="System templates are read-only"
+          description={<>To customise this template, choose <b>Duplicate</b> on the list page and edit the copy.</>}
+          action={<Link href="/settings/label-templates" className="inline-flex min-h-11 items-center rounded-lg px-3 font-medium text-primary-600 hover:bg-gray-100 dark:text-primary-200 dark:hover:bg-slate-800">Back to label templates</Link>}
+        />
+      </SettingsPageShell>
     );
   }
 
   if (!state) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center">
-        <h2 className="text-xl font-semibold">Template not found</h2>
-      </div>
+      <SettingsPageShell title="Label templates" icon={FileText}>
+        <EmptyState
+          className="card"
+          icon={FileText}
+          title="Template not found"
+          description="It may have been deleted."
+          action={<Link href="/settings/label-templates" className="inline-flex min-h-11 items-center rounded-lg px-3 font-medium text-primary-600 hover:bg-gray-100 dark:text-primary-200 dark:hover:bg-slate-800">Back to label templates</Link>}
+        />
+      </SettingsPageShell>
     );
   }
 

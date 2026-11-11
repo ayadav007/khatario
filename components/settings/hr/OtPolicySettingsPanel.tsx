@@ -223,7 +223,7 @@ export function OtPolicySettingsPanel() {
         {bundle.rules.map((rule) => (
           <div
             key={rule.scenario}
-            className="grid gap-4 rounded-lg border border-border bg-white p-4 sm:grid-cols-2"
+            className="grid gap-4 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2"
           >
             <p className="sm:col-span-2 text-sm font-semibold text-text-primary">
               {SCENARIO_LABELS[rule.scenario]}
