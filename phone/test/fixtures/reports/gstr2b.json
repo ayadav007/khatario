@@ -1,0 +1,15 @@
+{
+  "summary": {"total_inward_supplies": 84000, "total_tax_amount": 9500, "total_itc_eligible": 8800, "total_itc_available": 8800, "purchase_count": 5, "b2b_count": 4, "import_count": 1},
+  "b2b": [
+    {"supplier_gstin": "27AABCA1234B1ZP", "supplier_name": "Agro Wholesale Co", "bill_number": "BILL-2026-0018", "bill_date": "2026-11-02", "bill_value": 10620, "place_of_supply": "27", "reverse_charge": "N", "rate": 18, "taxable_value": 9000, "igst": 0, "cgst": 810, "sgst": 810, "itc_eligible": "Y", "itc_availed": "Y", "reconciliation_decision": null, "reconciliation_status": null}
+  ],
+  "imports": [
+    {"port_code": "INNSA1", "bill_number": "BOE-7781", "bill_date": "2026-11-04", "bill_value": 45000, "taxable_value": 40000, "igst": 4500, "cess": 0}
+  ],
+  "cdnr": [
+    {"supplier_gstin": "27AABCA1234B1ZP", "supplier_name": "Agro Wholesale Co", "note_number": "PR-2026-0003", "note_date": "2026-11-09", "note_type": "C", "bill_number": "BILL-2026-0018", "bill_date": "2026-11-02", "note_value": 1180, "taxable_value": 1000, "rate": 18, "igst": 0, "cgst": 90, "sgst": 90}
+  ],
+  "itc_summary": [
+    {"description": "ITC available - all other ITC", "igst": 4500, "cgst": 2150, "sgst": 2150, "cess": 0}
+  ]
+}

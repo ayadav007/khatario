@@ -34,7 +34,9 @@ import '../purchases/order_list_screen.dart';
 import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
+import '../reports/eway_bills_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../reports/gst_reports.dart';
 import '../reports/reports_home_screen.dart';
 import '../reports/other_reports.dart';
 import '../reports/purchase_reports.dart';
@@ -178,6 +180,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return PriceLevelsScreen(session: session);
     case '/pricing/schemes':
       return SchemesScreen(session: session);
+    case '/eway-bills':
+      return EwayBillsScreen(session: session);
     case '/reports/aging/receivables':
     case '/reports/aging/payables':
       return AgingReportScreen(session: session, payables: href.endsWith('payables'));
@@ -238,7 +242,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/reports/profit-loss' => ProfitLossScreen(session: session),
     '/reports/balance-sheet' => BalanceSheetScreen(session: session),
     '/reports/trial-balance' => TrialBalanceScreen(session: session),
-    _ => stockReportScreen(session, href) ??
+    _ => gstReportScreen(session, href) ??
+        stockReportScreen(session, href) ??
         salesReportScreen(session, href) ??
         purchaseReportScreen(session, href) ??
         otherReportScreen(session, href),

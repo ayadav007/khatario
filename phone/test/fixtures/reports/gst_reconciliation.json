@@ -1,0 +1,30 @@
+{
+  "status": "mismatch",
+  "mode": "live_vs_live",
+  "gst_period": "2026-11",
+  "branch_id": "b1111111-0000-4000-8000-000000000001",
+  "meta": {"gstr1_head_source": "live_generator", "gstr3b_source": "live_generator", "voucher_map_source": "live_gstr1_generator"},
+  "head_wise": {
+    "igst": {"gstr1": 3600, "gstr3b": 3600, "difference": 0, "status": "matched"},
+    "cgst": {"gstr1": 7200, "gstr3b": 7000, "difference": 200, "status": "mismatch"},
+    "sgst": {"gstr1": 7200, "gstr3b": 7000, "difference": 200, "status": "mismatch"},
+    "cess": {"gstr1": 0, "gstr3b": 0, "difference": 0, "status": "matched"}
+  },
+  "totals": {"gstr1": 18000, "gstr3b": 17600, "difference": 400},
+  "categories": {
+    "outward_taxable": {"gstr1": {"taxable_value": 100000, "igst": 3600, "cgst": 7200, "sgst": 7200, "cess": 0}, "gstr3b": {"taxable_value": 100000, "igst": 3600, "cgst": 7000, "sgst": 7000, "cess": 0}, "difference": {"taxable_value": 0, "igst": 0, "cgst": 200, "sgst": 200, "cess": 0}},
+    "zero_rated": {"gstr1": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "gstr3b": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "difference": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}},
+    "exempt": {"gstr1": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "gstr3b": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "difference": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}},
+    "nil_rated": {"gstr1": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "gstr3b": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "difference": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}},
+    "inward_rcm": {"gstr1": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "gstr3b": {"taxable_value": 2000, "igst": 0, "cgst": 180, "sgst": 180, "cess": 0}, "difference": {"taxable_value": -2000, "igst": 0, "cgst": -180, "sgst": -180, "cess": 0}},
+    "cdn_adjustments": {"gstr1": {"taxable_value": -1200, "igst": 0, "cgst": -108, "sgst": -108, "cess": 0}, "gstr3b": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}, "difference": {"taxable_value": -1200, "igst": 0, "cgst": -108, "sgst": -108, "cess": 0}, "note": "3B nets credit notes inside 3.1(a)."}
+  },
+  "exceptions": [
+    {"type": "tax_mismatch", "document_id": "5a1d0c10-0000-4000-8000-000000000001", "invoice_id": "5a1d0c10-0000-4000-8000-000000000001", "voucher_type": "invoice", "difference": 200, "details": "INV-2026-0042: GSTR-1 tax 1800 against ledger 1600"},
+    {"type": "missing_invoice", "document_id": "5a1d0c10-0000-4000-8000-000000000009", "voucher_type": "invoice", "difference": 90, "details": "INV-2026-0050 is in GSTR-1 but not in the ledger"}
+  ],
+  "stats": {"total_vouchers_compared": 9, "matched": 6, "mismatched": 2, "missing_in_ledger": 1, "missing_in_gstr1": 0, "b2cs_aggregated_rows": 2},
+  "vouchers": [],
+  "warnings": ["Filed GSTR-1 snapshot is older than the books."],
+  "insights": {"context": {"mode_label": "Live GSTR-1 vs live GSTR-3B"}}
+}

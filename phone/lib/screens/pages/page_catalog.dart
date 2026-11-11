@@ -153,7 +153,6 @@ const websiteByDesign = <String>{
 
 /// Links that open the website today and are meant to get a phone screen. Later tasks delete entries.
 const websiteForNow = <String>{
-  '/eway-bills',
   '/employees/new',
 };
 
@@ -161,13 +160,6 @@ const websiteForNow = <String>{
 /// `route_coverage_test.dart` fails when a link falls back to the list without being named here.
 const stillGeneric = <String>{
   '/suppliers/dashboard',
-  '/reports/gst/gstr1',
-  '/reports/gst/cash-ledger',
-  '/reports/gst/compliance',
-  '/reports/gst/gstr2b',
-  '/reports/gst/gstr2b-reconciliation',
-  '/reports/gst/reconciliation',
-  '/reports/gst/gstr3b',
   '/hr/dashboard',
   '/employees/org-chart',
   '/employees/manager',
