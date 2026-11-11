@@ -206,6 +206,48 @@ Deploy e9bd4db4 to staging first: the GSTR-2B decision and reconcile routes now 
 139. Profit & Loss → tap an expense account → its entries; tap Cost of goods sold → its parts including opening stock, purchases and closing stock; tap Purchases → the purchase items; tap Net profit → its parts.
 140. An account statement PDF from the ledger still opens with the same name.
 
+## Stage 6: HR (commits be77c385 to 4aaae3c1)
+
+Deploy these to staging first: they change server routes for adding employees, shift roster and bulk assignment, salary payments, advances, commissions, exits, recruitment interviews and conversion, and tasks.
+
+### Employees (Task 35)
+141. More › HR › Employees › + → the phone form with personal, job, pay, bank and login sections → save → the new employee opens.
+142. Edit an employee and change only the phone number → saved; their PAN, bank and pay are unchanged on the website.
+143. On a Staff Lite plan, the reporting manager, PAN, Aadhaar and PF/ESI fields are hidden.
+144. Deactivate from the profile → asks first → the employee can no longer sign in.
+145. Org chart → expand and collapse; tap a person → their profile.
+
+### Attendance, shifts, leaves (Task 36)
+146. Attendance › History → a month grid; tap a day → its status.
+147. Attendance › Reviews → approve one check-in and reject one with a reason; approve an attendance correction.
+148. Shift roster → change one person's day → saved; next week → loads.
+149. Bulk assign → pick a shift, dates and three people → asks naming 3 → done.
+150. Leaves › Apply on behalf → pick dates → the server's day count and balance show → submitted.
+151. Leaves → cancel an approved leave and delete a pending one, each asking first.
+152. Leave balances and the leave calendar load.
+
+### Pay (Task 37)
+153. Pay salary → pick an employee and month → amounts fill from the server → asks with the form total → paid; the toast shows the server's net.
+154. Pay salary into a locked month → refused before anything is saved.
+155. Open a payslip PDF → share it.
+156. Advances → new, approve, reject. Expenses → new with a bill photo, approve, reject with a reason, reimburse, voucher PDF.
+157. Commissions → approve, then pay. Targets → set one.
+
+### Manager, hiring, exits (Task 38a)
+158. HR dashboard → each tile opens its screen.
+159. Manager → pending approvals: approve a leave, hold an overtime request with a reason, approve an expense.
+160. Recruitment → add a job → add a candidate → schedule an interview → mark it passed.
+161. Create an offer → Submit for approval with one approver per level → approve it → open the offer PDF.
+162. Convert the candidate → their new employee profile opens.
+163. Exits → start one → tick off checklist items → approve.
+
+### Engagement, documents, reports, tasks (Task 38b)
+164. Engagement → add an announcement, a poll and an article; archive the announcement and unpublish the article.
+165. HR documents → generate a document for an employee → the PDF opens.
+166. HR reports → download a payroll register and the ECR → the share sheet opens with a CSV.
+167. Tasks → add one assigned to an employee, mark it done, delete another.
+168. Performance → the summary loads.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
@@ -221,3 +263,8 @@ Deploy e9bd4db4 to staging first: the GSTR-2B decision and reconcile routes now 
 - Depreciation cannot be previewed before it is posted.
 - `recordDecision` in `lib/gst/gstr2b-reconciliation.ts` still has no business check of its own; the decision route now checks first, but any other caller would not.
 - Profit & Loss earnings rows (PBT, EBIT, EBITDA) and the Schedule III layout are website-only.
+- The employee routes do not check the HR plan for the reporting manager, PAN, Aadhaar and PF/ESI fields; only the forms hide them.
+- A salary payment is still not saved in one step: a failure other than a locked month after it is saved can leave it without a journal entry (the phone says so).
+- Starting a termination is not limited to HR on the server.
+- The task routes have no permission check: any signed-in user of the business can create, edit or delete tasks.
+- Owner-side poll voting and closing, template delete, onboarding tasks, candidate document checks and portal invites are website-only.
