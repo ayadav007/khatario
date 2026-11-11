@@ -17,7 +17,9 @@ import '../expenses/expense_categories_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../hr/attendance_screen.dart';
+import '../hr/employee_form_screen.dart';
 import '../hr/employees_screen.dart';
+import '../hr/org_chart_screen.dart';
 import '../hr/leaves_screen.dart';
 import '../hr/salary_payments_screen.dart';
 import '../hub/hub_directory_screen.dart';
@@ -222,6 +224,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/payments/reminders' || '/whatsapp/reminders' => PaymentRemindersScreen(session: session),
     '/payments/reconciliation' => PaymentReconciliationScreen(session: session),
     '/employees' => EmployeesScreen(session: session),
+    '/employees/new' => EmployeeFormScreen(session: session),
+    '/employees/org-chart' => OrgChartScreen(session: session),
     '/employees/attendance' => AttendanceScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),
     '/employees/salary/payments' => SalaryPaymentsScreen(session: session),

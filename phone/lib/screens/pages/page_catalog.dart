@@ -152,16 +152,13 @@ const websiteByDesign = <String>{
 };
 
 /// Links that open the website today and are meant to get a phone screen. Later tasks delete entries.
-const websiteForNow = <String>{
-  '/employees/new',
-};
+const websiteForNow = <String>{};
 
 /// More links that still open the automatic read-only list (`RecordPage`). Later tasks delete entries;
 /// `route_coverage_test.dart` fails when a link falls back to the list without being named here.
 const stillGeneric = <String>{
   '/suppliers/dashboard',
   '/hr/dashboard',
-  '/employees/org-chart',
   '/employees/manager',
   '/employees/recruitment',
   '/hr/shifts/roster',
@@ -193,7 +190,6 @@ const stillGeneric = <String>{
 /// Website pages with no GET the phone can list (forms, wizards, device setup). Their path is the
 /// website href. Kept exactly as before so the list/website split does not change for any user.
 const _webOnly = {
-  '/employees/new',
   '/pricing/party-item',
   '/hr/leaves/year-end',
   '/hr/leaves/import-balances',

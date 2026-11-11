@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/hr/attendance_screen.dart';
+import 'package:khatario_phone/screens/hr/employee_form_screen.dart';
 import 'package:khatario_phone/screens/hr/leave_logic.dart';
 import 'package:khatario_phone/screens/hr/leaves_screen.dart';
 import 'package:khatario_phone/screens/hr/roll_call_logic.dart';
 import 'package:khatario_phone/screens/hr/salary_payments_logic.dart';
 import 'package:khatario_phone/screens/hr/salary_payments_screen.dart';
+import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/pages/record_page.dart';
 import 'package:khatario_phone/screens/pages/website_page_screen.dart';
@@ -28,10 +30,16 @@ void main() {
   });
 
   test('pages without a phone screen open the website, signed in, inside the app', () {
-    final page = pageForHref('/employees/new')!;
+    final page = pageForHref('/pricing/party-item')!;
     expect(page.path.startsWith('/api'), isFalse);
-    expect(websiteUri('/employees/new').path, '/employees/new');
+    expect(websiteUri('/pricing/party-item').path, '/pricing/party-item');
     expect(websiteUri('docs').path, '/docs');
+  });
+
+  test('/employees/new opens the phone form, not the website', () {
+    expect(nativeScreenFor(session, '/employees/new'), isA<EmployeeFormScreen>());
+    expect(dedicatedPageScreen(session, '/employees/new'), isA<EmployeeFormScreen>());
+    expect(isWebsiteOnlyHref('/employees/new'), isFalse);
   });
 
   group('roll call', () {

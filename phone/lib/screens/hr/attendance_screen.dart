@@ -7,6 +7,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../pages/website_page_screen.dart';
+import 'employee_form_screen.dart';
 import 'roll_call_logic.dart';
 
 /// Website `/employees/attendance` roll call: one row per employee for the chosen day,
@@ -189,7 +190,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           action: KButton(
             label: 'Add employee',
             expand: false,
-            onPressed: () => openWebsiteInApp(context, widget.session, '/employees/new', 'Add Employee'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EmployeeFormScreen(session: widget.session))).then((_) {
+              if (mounted) _load();
+            }),
           ),
         ),
       ]);
