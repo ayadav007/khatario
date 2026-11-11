@@ -63,8 +63,8 @@ export async function runShiftRosterAbsentMarking(options?: {
     }>(
       `SELECT r.employee_id, r.shift_id, s.start_time::text AS start_time
        FROM shift_roster_entries r
-       INNER JOIN shifts s ON s.id = r.shift_id
-       INNER JOIN employees e ON e.id = r.employee_id
+       INNER JOIN shifts s ON s.id = r.shift_id AND s.business_id = r.business_id
+       INNER JOIN employees e ON e.id = r.employee_id AND e.business_id = r.business_id
        WHERE r.business_id = $1 AND r.roster_date = $2::date
          AND r.is_day_off = false AND e.is_active = true`,
       [businessId, targetDate],
@@ -83,9 +83,10 @@ export async function runShiftRosterAbsentMarking(options?: {
       }
 
       const existing = await queryOne<{ id: string; check_in_time: string | null; status: string }>(
-        `SELECT id, check_in_time::text, status FROM employee_attendance
-         WHERE employee_id = $1 AND date = $2::date`,
-        [row.employee_id, targetDate],
+        `SELECT a.id, a.check_in_time::text, a.status FROM employee_attendance a
+         INNER JOIN employees e ON e.id = a.employee_id AND e.business_id = $3
+         WHERE a.employee_id = $1 AND a.date = $2::date`,
+        [row.employee_id, targetDate, businessId],
       );
 
       if (existing?.check_in_time) {
@@ -102,14 +103,15 @@ export async function runShiftRosterAbsentMarking(options?: {
         await query(
           `UPDATE employee_attendance
            SET status = 'absent', shift_id = COALESCE(shift_id, $2), updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND check_in_time IS NULL`,
-          [existing.id, row.shift_id],
+           WHERE id = $1 AND check_in_time IS NULL
+             AND employee_id IN (SELECT id FROM employees WHERE business_id = $3)`,
+          [existing.id, row.shift_id, businessId],
         );
       } else {
         await queryOne(
           `INSERT INTO employee_attendance (employee_id, date, shift_id, status)
-           VALUES ($1, $2::date, $3, 'absent')`,
-          [row.employee_id, targetDate, row.shift_id],
+           SELECT e.id, $2::date, $3, 'absent' FROM employees e WHERE e.id = $1 AND e.business_id = $4`,
+          [row.employee_id, targetDate, row.shift_id, businessId],
         );
       }
       marked++;

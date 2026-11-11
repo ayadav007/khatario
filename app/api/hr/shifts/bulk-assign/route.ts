@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { bulkAssignShift } from '@/lib/hr/shift-overtime/shift-assignment';
+import { bulkAssignShift, ownsEmployeesAndShifts } from '@/lib/hr/shift-overtime/shift-assignment';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +13,13 @@ export async function POST(request: NextRequest) {
     await authorize(userId, 'leave_requests', 'update', { businessId });
 
     const body = await request.json();
+    const employeeIds: unknown[] | undefined = Array.isArray(body.employee_ids) ? body.employee_ids : undefined;
+    if (body.employee_ids != null && !employeeIds) {
+      return NextResponse.json({ error: 'employee_ids must be a list' }, { status: 400 });
+    }
+    const owned = await ownsEmployeesAndShifts(businessId, employeeIds ?? [], body.shift_id ? [body.shift_id] : []);
+    if (!owned) return NextResponse.json({ error: 'Employee or shift not found' }, { status: 404 });
+
     const count = await bulkAssignShift({
       businessId,
       shiftId: body.shift_id ?? null,

@@ -1100,21 +1100,50 @@ class KBackBar extends StatelessWidget {
 
 /// Asks for a short reason (for a reject). Returns the text, '' when left blank, or null when closed.
 Future<String?> showReasonSheet(BuildContext context, {required String title, required String confirmLabel, String hint = 'Reason (optional)'}) {
-  final controller = TextEditingController();
-  return showKSheet<String>(
-    context,
-    title: title,
-    builder: (ctx) => Padding(
+  return showKSheet<String>(context, title: title, builder: (_) => _ReasonSheet(confirmLabel: confirmLabel, hint: hint));
+}
+
+/// The body of [showReasonSheet]. It owns its text controller and disposes it with the sheet, so
+/// closing the sheet while it animates out never touches a disposed controller. A double tap answers once.
+class _ReasonSheet extends StatefulWidget {
+  const _ReasonSheet({required this.confirmLabel, required this.hint});
+
+  final String confirmLabel;
+  final String hint;
+
+  @override
+  State<_ReasonSheet> createState() => _ReasonSheetState();
+}
+
+class _ReasonSheetState extends State<_ReasonSheet> {
+  final _controller = TextEditingController();
+  bool _done = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_done) return;
+    _done = true;
+    Navigator.of(context).pop(_controller.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(controller: controller, autofocus: true, maxLines: 3, minLines: 1, decoration: InputDecoration(hintText: hint)),
+          TextField(controller: _controller, autofocus: true, maxLines: 3, minLines: 1, decoration: InputDecoration(hintText: widget.hint)),
           const SizedBox(height: AppSpace.md),
-          KButton(label: confirmLabel, kind: KButtonKind.danger, onPressed: () => Navigator.of(ctx).pop(controller.text.trim())),
+          KButton(label: widget.confirmLabel, kind: KButtonKind.danger, onPressed: _submit),
         ],
       ),
-    ),
-  ).whenComplete(controller.dispose);
+    );
+  }
 }

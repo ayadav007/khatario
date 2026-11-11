@@ -5,10 +5,18 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/toast.dart';
+import '../sales/doc_action_sheets.dart';
 import '../pages/website_page_screen.dart';
+import 'attendance_leave_logic.dart';
+import 'leave_calendar_screen.dart';
+import 'leave_form_screen.dart';
 import 'leave_logic.dart';
 
-/// Website `/employees/leaves`: leave requests, with Approve / Reject on pending ones.
+/// Website `/employees/leaves`: leave requests, with Approve / Reject on pending ones. Applying for
+/// someone, the team calendar and balances open from the bar. Cancel (pending or approved, as on
+/// the website) and Delete (pending) are row actions that ask first. What stays on the website is one
+/// row at the foot of the list: the date-range filter.
 class LeavesScreen extends StatefulWidget {
   const LeavesScreen({super.key, required this.session});
 
@@ -25,11 +33,21 @@ class _LeavesScreenState extends State<LeavesScreen> {
   String? _error;
   bool _notInPlan = false;
   final Set<String> _busy = {};
+  HrAccess _access = HrAccess.open;
 
   @override
   void initState() {
     super.initState();
     _load();
+    loadHrAccess(widget.session).then((a) {
+      if (mounted) setState(() => _access = a);
+    });
+  }
+
+  void _open(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen)).then((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
@@ -94,6 +112,37 @@ class _LeavesScreenState extends State<LeavesScreen> {
     }
   }
 
+  /// Cancel (`PATCH {action: 'cancel'}`) or Delete (`DELETE`) after asking, naming the employee and dates.
+  Future<void> _cancelOrDelete(LeaveRow row, {required bool delete}) async {
+    if (_busy.contains(row.id)) return;
+    final what = '${row.employeeName}\'s ${row.leaveName} leave on ${leaveDates(row)}';
+    final ok = await askSheet(
+      context,
+      title: delete ? 'Delete leave request?' : 'Cancel leave?',
+      text: delete ? 'Delete $what? This cannot be undone.' : 'Cancel $what?',
+      confirmLabel: delete ? 'Delete' : 'Cancel leave',
+      cancelLabel: 'Keep it',
+    );
+    if (!ok || !mounted || _busy.contains(row.id)) return;
+    setState(() => _busy.add(row.id));
+    try {
+      final api = widget.session.api;
+      if (delete) {
+        await api.deleteJson('/api/employees/leave-requests/${row.id}');
+      } else {
+        await api.patchJson('/api/employees/leave-requests/${row.id}', {'action': 'cancel'});
+      }
+      if (mounted) showKToast(context, delete ? 'Leave request deleted' : 'Leave cancelled', tone: KTone.positive);
+    } on ApiException catch (e) {
+      if (mounted) showKToast(context, e.message, tone: KTone.negative);
+    } catch (_) {
+      if (mounted) showKToast(context, 'Could not save. Try again.', tone: KTone.negative);
+    }
+    if (mounted) setState(() => _busy.remove(row.id));
+    // Reload either way: after a refusal the list may already have moved on.
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,11 +153,12 @@ class _LeavesScreenState extends State<LeavesScreen> {
           children: [
             KBackBar(
               'Leaves',
-              trailing: KIconButton(
-                icon: LucideIcons.globe,
-                tooltip: 'Open on website',
-                onTap: () => openWebsiteInApp(context, widget.session, '/employees/leaves', 'Leaves'),
-              ),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_access.has('leave_requests', 'create'))
+                  KIconButton(icon: LucideIcons.plus, tooltip: 'Apply leave', onTap: () => _open(LeaveFormScreen(session: widget.session))),
+                KIconButton(icon: LucideIcons.calendarDays, tooltip: 'Leave calendar', onTap: () => _open(LeaveCalendarScreen(session: widget.session))),
+                KIconButton(icon: LucideIcons.wallet, tooltip: 'Leave balances', onTap: () => _open(LeaveBalancesScreen(session: widget.session))),
+              ]),
             ),
             KChipBar<String>(
               value: _filter,
@@ -149,6 +199,15 @@ class _LeavesScreenState extends State<LeavesScreen> {
             )
           else
             KCard(child: KDivided(indent: 0, children: [for (final row in _rows) _row(row)])),
+          const SizedBox(height: AppSpace.lg),
+          KCard(
+            child: KListRow(
+              title: 'Open on website',
+              subtitle: 'Filter by dates',
+              leading: const Icon(LucideIcons.globe, size: 22, color: AppColors.ink2),
+              onTap: () => openWebsiteInApp(context, widget.session, '/employees/leaves', 'Leaves'),
+            ),
+          ),
         ],
       ),
     );
@@ -194,6 +253,15 @@ class _LeavesScreenState extends State<LeavesScreen> {
               ),
             ]),
           ],
+          if (row.isPending || row.status == 'approved')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                KTextButton(label: 'Cancel request', onTap: busy ? null : () => _cancelOrDelete(row, delete: false)),
+                const Spacer(),
+                if (row.isPending) KTextButton(label: 'Delete', color: AppColors.negative, onTap: busy ? null : () => _cancelOrDelete(row, delete: true)),
+              ]),
+            ),
         ],
       ),
     );

@@ -20,8 +20,10 @@ import '../hr/attendance_screen.dart';
 import '../hr/employee_form_screen.dart';
 import '../hr/employees_screen.dart';
 import '../hr/org_chart_screen.dart';
+import '../hr/leave_calendar_screen.dart';
 import '../hr/leaves_screen.dart';
 import '../hr/salary_payments_screen.dart';
+import '../hr/shift_roster_screen.dart';
 import '../hub/hub_directory_screen.dart';
 import '../hub/hub_home_screen.dart';
 import '../hub/incoming_bills_screen.dart';
@@ -227,7 +229,10 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/employees/new' => EmployeeFormScreen(session: session),
     '/employees/org-chart' => OrgChartScreen(session: session),
     '/employees/attendance' => AttendanceScreen(session: session),
+    '/hr/shifts/roster' => ShiftRosterScreen(session: session),
+    '/hr/shifts/bulk-assign' => BulkShiftAssignScreen(session: session),
     '/employees/leaves' => LeavesScreen(session: session),
+    '/employees/leaves/calendar' => LeaveCalendarScreen(session: session),
     '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
     '/pricing/price-list' => PriceListScreen(session: session),
     '/items/cleanup' => ItemCleanupScreen(session: session),
