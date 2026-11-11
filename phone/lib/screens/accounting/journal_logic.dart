@@ -2,13 +2,16 @@ import '../docs/doc_logic.dart';
 
 /// One line of a journal entry as typed on the phone. [amount] is the text in the box.
 class JournalLine {
-  const JournalLine({this.accountId = '', this.accountLabel = '', this.debit = true, this.amount = '', this.narration = ''});
+  const JournalLine({this.accountId = '', this.accountLabel = '', this.debit = true, this.amount = '', this.narration = '', this.reference = ''});
 
   final String accountId;
   final String accountLabel;
   final bool debit;
   final String amount;
   final String narration;
+
+  /// The line's own `reference_number` (kept when an entry is edited; the form has no box for it).
+  final String reference;
 
   /// Nothing entered yet: no account and no amount. Such lines are left out of the entry.
   bool get isBlank => accountId.isEmpty && (journalPaise(amount) ?? 0) == 0;
@@ -64,6 +67,20 @@ num _money(int paise) => paise % 100 == 0 ? paise ~/ 100 : paise / 100;
 
 String _isoDay(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+/// The `lines` of a journal body (`POST /api/journal-entries`, and `PATCH .../[id]` when the lines change).
+/// A blank line is left out.
+List<Map<String, dynamic>> journalLinesBody(List<JournalLine> lines) => [
+      for (final l in lines)
+        if (!l.isBlank)
+          {
+            'account_id': l.accountId,
+            'debit': l.debit ? _money(journalPaise(l.amount) ?? 0) : 0,
+            'credit': l.debit ? 0 : _money(journalPaise(l.amount) ?? 0),
+            'narration': l.narration.trim().isEmpty ? null : l.narration.trim(),
+            if (l.reference.trim().isNotEmpty) 'reference_number': l.reference.trim(),
+          },
+    ];
+
 /// The `POST /api/journal-entries` body, as the website builds it. The other side of a line is 0.
 /// The server fills in the business and the user.
 Map<String, dynamic> journalBody({
@@ -81,16 +98,7 @@ Map<String, dynamic> journalBody({
     'entry_date': _isoDay(date),
     'reference_number': orNull(reference),
     'narration': orNull(narration),
-    'lines': [
-      for (final l in lines)
-        if (!l.isBlank)
-          {
-            'account_id': l.accountId,
-            'debit': l.debit ? _money(journalPaise(l.amount) ?? 0) : 0,
-            'credit': l.debit ? 0 : _money(journalPaise(l.amount) ?? 0),
-            'narration': orNull(l.narration),
-          },
-    ],
+    'lines': journalLinesBody(lines),
     if (templateId != null && templateId.isNotEmpty) 'template_id': templateId,
     if (backdateReason != null && backdateReason.trim().isNotEmpty) 'backdate_reason': backdateReason.trim(),
   };

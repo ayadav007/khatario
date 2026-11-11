@@ -9,14 +9,25 @@ import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../../ui/toast.dart';
 import '../docs/doc_logic.dart';
+import '../pages/website_page_screen.dart';
+import 'journal_list_logic.dart';
 import 'journal_logic.dart';
 
-/// New journal entry. The server rejects it unless debits equal credits, so Save waits until
-/// the typed amounts match. The business and user come from the session on the server.
+/// New journal entry, or (with [entryId]) an edit of a saved one. The server rejects an entry unless
+/// debits equal credits, so Save waits until the typed amounts match. The business and user come from
+/// the session on the server.
+///
+/// Edit (`PATCH /api/journal-entries/[id]`): the form waits for `GET /api/journal-entries/[id]`. If that
+/// fails it offers "Try again" with no form and no Save. A locked, reversed or automatic reversing entry,
+/// or one whose lines the form cannot show, is refused with the reason and "Open on website"
+/// ([journalEditRefusal]). Only what changed is sent; changed lines are sent whole, because the route
+/// replaces every line. The server still refuses an entry in a locked or GST-filed period; its message is
+/// shown and the form stays filled.
 class JournalFormScreen extends StatefulWidget {
-  const JournalFormScreen({super.key, required this.session});
+  const JournalFormScreen({super.key, required this.session, this.entryId});
 
   final AppSession session;
+  final String? entryId;
 
   @override
   State<JournalFormScreen> createState() => _JournalFormScreenState();
@@ -24,13 +35,16 @@ class JournalFormScreen extends StatefulWidget {
 
 /// The boxes behind one line card.
 class _Row {
-  _Row({this.accountId = '', this.accountLabel = '', this.debit = true, String amount = '', String narration = '', required VoidCallback onEdit})
+  _Row({this.accountId = '', this.accountLabel = '', this.debit = true, String amount = '', String narration = '', this.reference = '', required VoidCallback onEdit})
       : amount = TextEditingController(text: amount)..addListener(onEdit),
         narration = TextEditingController(text: narration)..addListener(onEdit);
 
   String accountId;
   String accountLabel;
   bool debit;
+
+  /// The saved line's reference number: the form has no box for it, so an edit carries it through.
+  final String reference;
   final TextEditingController amount;
   final TextEditingController narration;
 
@@ -40,6 +54,7 @@ class _Row {
         debit: debit,
         amount: amount.text,
         narration: narration.text,
+        reference: reference,
       );
 
   bool get touched => accountId.isNotEmpty || amount.text.isNotEmpty || narration.text.isNotEmpty;
@@ -59,6 +74,80 @@ class _JournalFormScreenState extends State<JournalFormScreen> {
   DateTime _date = DateTime.now();
   String? _templateId;
 
+  Map<String, dynamic> _oldEntry = const {};
+  List<Map<String, dynamic>> _oldLines = const [];
+  bool _loading = false;
+  String? _loadError;
+  String? _refusal;
+
+  bool get _editing => widget.entryId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_editing) _load();
+  }
+
+  /// Edit: read the entry first. Nothing can be typed or saved until it has loaded and been accepted.
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+      _refusal = null;
+    });
+    try {
+      final doc = journalDetailDoc(await widget.session.api.getData('/api/journal-entries/${widget.entryId}'));
+      if (doc.isEmpty) throw ApiException('Journal entry not found');
+      final lines = docRows(doc, 'lines');
+      final refusal = journalEditRefusal(doc, lines);
+      if (!mounted) return;
+      final old = [..._rows];
+      setState(() {
+        _oldEntry = doc;
+        _oldLines = lines;
+        _refusal = refusal;
+        _loading = false;
+        if (refusal == null) {
+          _reference.text = docText(doc['reference_number']);
+          _narration.text = docText(doc['narration']);
+          final d = docDate(doc['entry_date']);
+          _date = dateOnly(d ?? DateTime.now());
+          _rows
+            ..clear()
+            ..addAll([
+              for (final l in journalLinesFromEntry(lines))
+                _Row(onEdit: _refresh, accountId: l.accountId, accountLabel: l.accountLabel, debit: l.debit, amount: l.amount, narration: l.narration, reference: l.reference),
+            ]);
+        }
+      });
+      // Only when the rows were replaced; a refused entry keeps (and later disposes) the blank ones.
+      if (refusal == null) _disposeLater(old);
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadError = e.message;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadError = 'Could not reach the server.';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Map<String, dynamic> get _changes => journalEditChanges(
+        oldEntry: _oldEntry,
+        oldLines: _oldLines,
+        date: _date,
+        reference: _reference.text,
+        narration: _narration.text,
+        lines: _lines,
+      );
+
   @override
   void dispose() {
     _reference.dispose();
@@ -76,7 +165,9 @@ class _JournalFormScreenState extends State<JournalFormScreen> {
 
   List<JournalLine> get _lines => [for (final r in _rows) r.line];
 
-  bool get _dirty => _rows.any((r) => r.touched) || _reference.text.isNotEmpty || _narration.text.isNotEmpty || _reason.text.isNotEmpty || _templateId != null;
+  bool get _dirty => _editing
+      ? _changes.isNotEmpty
+      : _rows.any((r) => r.touched) || _reference.text.isNotEmpty || _narration.text.isNotEmpty || _reason.text.isNotEmpty || _templateId != null;
 
   /// Controllers still sit in the old widgets until the next frame, so free them after it.
   void _disposeLater(Iterable<_Row> rows) {
@@ -101,6 +192,7 @@ class _JournalFormScreenState extends State<JournalFormScreen> {
 
   Future<void> _save() async {
     if (!journalBalanced(_lines)) return;
+    if (_editing) return _saveEdit();
     if (_needsReason && _reason.text.trim().isEmpty) {
       setState(() => _reasonShown = true);
       return;
@@ -118,6 +210,57 @@ class _JournalFormScreenState extends State<JournalFormScreen> {
       ),
     );
     if (mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _saveEdit() async {
+    final changes = _changes;
+    if (changes.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    try {
+      await widget.session.api.patchJson('/api/journal-entries/${widget.entryId}', changes);
+    } on ApiException catch (e) {
+      throw ApiException(journalActionMessage(e.code, e.message, verb: 'edited'), status: e.status, code: e.code, body: e.body);
+    }
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  Widget _editGate() {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('Edit journal entry'),
+            Expanded(
+              child: _loading
+                  ? const KSpinner(padding: EdgeInsets.symmetric(vertical: 64))
+                  : ListView(children: [
+                      if (_loadError != null)
+                        KEmptyState(
+                          icon: LucideIcons.cloudOff,
+                          title: 'Could not load the journal entry',
+                          body: _loadError,
+                          action: KButton.secondary(label: 'Try again', expand: false, onPressed: _load),
+                        )
+                      else
+                        KEmptyState(
+                          icon: LucideIcons.lock,
+                          title: _refusal ?? '',
+                          action: KButton.secondary(
+                            label: 'Open on website',
+                            expand: false,
+                            onPressed: () => openWebsiteInApp(context, widget.session, '/journal-entries/${widget.entryId}', 'Journal entry'),
+                          ),
+                        ),
+                    ]),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _useTemplate() async {
@@ -195,20 +338,21 @@ class _JournalFormScreenState extends State<JournalFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_editing && (_loading || _loadError != null || _refusal != null)) return _editGate();
     final lines = _lines;
     final totals = journalTotals(lines);
     final balanced = journalBalanced(lines);
     return KFormScaffold(
-      title: 'New journal entry',
-      saveLabel: 'Post entry',
+      title: _editing ? 'Edit journal entry' : 'New journal entry',
+      saveLabel: _editing ? 'Save changes' : 'Post entry',
       onSave: _save,
       canSave: balanced,
       dirty: _dirty,
       children: [
-        KButton(label: 'Use a template', kind: KButtonKind.secondary, icon: LucideIcons.layoutTemplate, onPressed: _useTemplate),
+        if (!_editing) KButton(label: 'Use a template', kind: KButtonKind.secondary, icon: LucideIcons.layoutTemplate, onPressed: _useTemplate),
         KFormSection(title: 'Entry details', children: [
           KDateField(label: 'Entry date', value: _date, onChanged: (d) => setState(() => _date = d)),
-          if (_needsReason)
+          if (_needsReason && !_editing)
             KTextField(
               label: 'Reason for back-dating',
               controller: _reason,

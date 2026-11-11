@@ -4,6 +4,9 @@ import '../../capability.dart';
 import '../../session.dart';
 import '../accounting/account_form_screen.dart';
 import '../accounting/accounts_screen.dart';
+import '../accounting/advances_screen.dart';
+import '../accounting/contra_screen.dart';
+import '../accounting/journal_entries_screen.dart';
 import '../accounting/ledger_screen.dart';
 import '../expenses/expense_categories_screen.dart';
 import '../expenses/expense_form_screen.dart';
@@ -97,6 +100,12 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return AccountFormScreen(session: session);
     case '/ledger':
       return LedgerScreen(session: session);
+    case '/journal-entries':
+      return JournalEntriesScreen(session: session);
+    case '/contra':
+      return ContraScreen(session: session);
+    case '/advances':
+      return AdvancesScreen(session: session);
     case '/expenses':
       return ExpensesScreen(session: session);
     case '/expenses/new':

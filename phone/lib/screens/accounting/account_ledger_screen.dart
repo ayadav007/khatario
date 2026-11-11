@@ -12,11 +12,11 @@ import '../../ui/kit.dart';
 import '../../ui/toast.dart';
 import '../docs/doc_logic.dart';
 import '../invoices/invoice_detail_screen.dart';
-import '../pages/website_page_screen.dart';
 import '../payments/payment_in_screen.dart';
 import '../purchases/purchase_section.dart';
 import '../reports/report_period.dart';
 import 'books_logic.dart';
+import 'journal_entries_screen.dart';
 
 /// Shows a statement PDF. Replaceable so a test can see the bytes without the platform viewer.
 typedef PdfOpener = Future<void> Function(BuildContext context, List<int> bytes, String title);
@@ -126,14 +126,10 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
       LedgerSource.invoice => InvoiceDetailScreen(api: session.api, invoiceId: id, businessName: session.businessName, session: session),
       LedgerSource.purchase => PurchaseDetailScreen(session: session, title: 'Purchase', path: '/api/purchases/$id', objectKey: 'purchase', kind: PurchaseKind.bills),
       LedgerSource.payment => PaymentInScreen(session: session, highlightIds: [id]),
-      LedgerSource.journal || LedgerSource.none => null,
+      LedgerSource.journal => JournalDetailScreen(session: session, voucherId: id),
+      LedgerSource.none => null,
     };
-    if (screen != null) {
-      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
-    } else if (ledgerSourceOf(row) == LedgerSource.journal) {
-      // Journal entries get their own phone screen in a later task; until then the website page.
-      openWebsiteInApp(context, session, '/journal-entries/$id', 'Journal entry');
-    }
+    if (screen != null) Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   @override
