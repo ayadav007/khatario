@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../../capability.dart';
 import '../../session.dart';
@@ -35,6 +35,7 @@ import '../purchases/purchase_section.dart';
 import '../reports/aging_report_screen.dart';
 import '../reports/cash_flow_screen.dart';
 import '../reports/financial_statements_screens.dart';
+import '../reports/reports_home_screen.dart';
 import '../reports/stock_reports.dart';
 import '../sales/credit_approvals_screen.dart';
 import '../sales/credit_debit_notes_screen.dart';
@@ -67,6 +68,8 @@ import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
 import 'page_catalog.dart';
+import 'record_page.dart';
+import 'website_page_screen.dart';
 
 /// Where a More link ends up on the phone.
 enum RouteTier {
@@ -227,12 +230,36 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     '/stock-transfers' => StockTransfersScreen(session: session),
     '/stock-transfers/new' => StockTransferFormScreen(session: session),
     '/whatsapp/orders' => OrderVerificationScreen(session: session),
+    '/reports' => ReportsHomeScreen(session: session),
     '/reports/cash-flow' => CashFlowScreen(session: session),
     '/reports/profit-loss' => ProfitLossScreen(session: session),
     '/reports/balance-sheet' => BalanceSheetScreen(session: session),
     '/reports/trial-balance' => TrialBalanceScreen(session: session),
     _ => stockReportScreen(session, href),
   };
+}
+
+/// Opens the phone screen for a website link, or its automatic read-only list. Returns false when
+/// the link has neither (the caller then opens a tab or the website).
+bool openKnownScreen(BuildContext context, AppSession session, String href, String label) {
+  final navigator = Navigator.of(context);
+  final screen = nativeScreenFor(session, href);
+  if (screen != null) {
+    navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
+    return true;
+  }
+  final page = pageForHref(href)?.withTitle(label);
+  if (page != null) {
+    navigator.push(MaterialPageRoute<void>(builder: (_) => RecordPage(session: session, page: page)));
+    return true;
+  }
+  return false;
+}
+
+/// Opens any website link on the phone: its screen, its automatic list, or the website page inside
+/// the app, signed in. The More menu and the reports overview both come through here.
+void openAppHref(BuildContext context, AppSession session, String href, String label) {
+  if (!openKnownScreen(context, session, href, label)) openWebsiteInApp(context, session, href, label);
 }
 
 /// Which of the five homes a link has. Tabs and the website decisions come before screens, so a
