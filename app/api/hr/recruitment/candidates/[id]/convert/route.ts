@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { queryOne } from '@/lib/db';
 import { convertCandidateToEmployee } from '@/lib/hr/recruitment/convert-candidate';
 
 export const dynamic = 'force-dynamic';
@@ -26,12 +27,23 @@ export async function POST(
       );
     }
 
+    const reportingManagerId = body?.reporting_manager_id ? String(body.reporting_manager_id) : null;
+    if (reportingManagerId) {
+      const manager = await queryOne(
+        `SELECT id FROM employees WHERE id = $1 AND business_id = $2`,
+        [reportingManagerId, businessId],
+      );
+      if (!manager) {
+        return NextResponse.json({ error: 'Reporting manager not found' }, { status: 404 });
+      }
+    }
+
     const result = await convertCandidateToEmployee({
       businessId,
       candidateId: params.id,
       actorUserId: userId,
       physicalDocumentsVerified: true,
-      reportingManagerId: body?.reporting_manager_id || null,
+      reportingManagerId,
       employeeCode: body?.employee_code || null,
     });
 

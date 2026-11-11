@@ -3,6 +3,7 @@ import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getExitDetail, updateExitTask, updateFnf } from '@/lib/hr/exit-process';
 import { decideExitApproval } from '@/lib/hr/exit-approval';
+import { queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,7 +75,17 @@ export async function PATCH(
     await authorize(userId, 'employees', 'update', { businessId });
 
     if (body.action === 'update_task') {
-      await updateExitTask(params.id, String(body.task_id), {
+      const ownExit = await queryOne(
+        `SELECT 1 FROM employee_exits WHERE id = $1 AND business_id = $2`,
+        [params.id, businessId],
+      );
+      if (!ownExit) return NextResponse.json({ error: 'Exit not found' }, { status: 404 });
+      const ownTask = await queryOne(
+        `SELECT id FROM hr_exit_tasks WHERE exit_id = $1 AND id = $2`,
+        [params.id, String(body.task_id)],
+      );
+      if (!ownTask) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      await updateExitTask(params.id, businessId, String(body.task_id), {
         status: body.status ? String(body.status) : undefined,
         notes: body.notes != null ? String(body.notes) : undefined,
       });

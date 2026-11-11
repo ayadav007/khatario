@@ -169,6 +169,7 @@ export async function getExitDetail(businessId: string, exitId: string) {
 
 export async function updateExitTask(
   exitId: string,
+  businessId: string,
   taskId: string,
   patch: { status?: string; notes?: string },
 ) {
@@ -177,8 +178,9 @@ export async function updateExitTask(
        status = COALESCE($3, status),
        notes = COALESCE($4, notes),
        completed_at = CASE WHEN $3 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END
-     WHERE id = $2 AND exit_id = $1`,
-    [exitId, taskId, patch.status ?? null, patch.notes ?? null],
+     WHERE id = $2 AND exit_id = $1
+       AND exit_id IN (SELECT id FROM employee_exits WHERE id = $1 AND business_id = $5)`,
+    [exitId, taskId, patch.status ?? null, patch.notes ?? null, businessId],
   );
 }
 

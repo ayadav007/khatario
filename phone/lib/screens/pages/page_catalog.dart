@@ -158,12 +158,8 @@ const websiteForNow = <String>{};
 /// `route_coverage_test.dart` fails when a link falls back to the list without being named here.
 const stillGeneric = <String>{
   '/suppliers/dashboard',
-  '/hr/dashboard',
-  '/employees/manager',
-  '/employees/recruitment',
   '/hr/engagement',
   '/hr/documents',
-  '/hr/exits',
   '/hr/reports',
   '/employees/performance',
   '/employees/tasks',

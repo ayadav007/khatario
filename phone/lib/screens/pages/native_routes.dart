@@ -19,6 +19,11 @@ import '../expenses/expenses_screen.dart';
 import '../hr/attendance_screen.dart';
 import '../hr/employee_form_screen.dart';
 import '../hr/employees_screen.dart';
+import '../hr/exits_screen.dart';
+import '../hr/hr_dashboard_screen.dart';
+import '../hr/manager_approvals_screen.dart';
+import '../hr/manager_screen.dart';
+import '../hr/recruitment_screen.dart';
 import '../hr/org_chart_screen.dart';
 import '../hr/leave_calendar_screen.dart';
 import '../hr/leaves_screen.dart';
@@ -111,6 +116,18 @@ const _tabHrefs = {'/items', '/invoices', '/customers', '/suppliers', '/search',
 /// [capabilities] is for screens that hide actions the role cannot use; none of today's do.
 Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabilities}) {
   switch (href) {
+    case '/hr/dashboard':
+      return HrDashboardScreen(session: session);
+    case '/employees/manager':
+      return ManagerScreen(session: session);
+    case '/employees/manager/approvals':
+      return ManagerApprovalsScreen(session: session);
+    case '/employees/manager/team':
+      return ManagerTeamScreen(session: session);
+    case '/employees/recruitment':
+      return RecruitmentScreen(session: session);
+    case '/hr/exits':
+      return ExitsScreen(session: session);
     case '/payments/in':
     case '/payments/out':
       return PaymentInScreen(session: session, payable: href == '/payments/out');
