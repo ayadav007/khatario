@@ -5,20 +5,25 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import 'pl_drilldown_screen.dart';
 import 'report_period.dart';
 import 'statement_kit.dart';
+import 'statement_pdf.dart';
 
 /// Website `/reports/profit-loss`: income and expense sections for a period.
 class ProfitLossScreen extends StatefulWidget {
-  const ProfitLossScreen({super.key, required this.session});
+  const ProfitLossScreen({super.key, required this.session, this.openPdf});
 
   final AppSession session;
+
+  /// Shows the downloaded PDF; replaceable so a test can see the bytes.
+  final PdfOpener? openPdf;
 
   @override
   State<ProfitLossScreen> createState() => _ProfitLossScreenState();
 }
 
-class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoader {
+class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoader, StatementPdfSharing {
   ReportPeriod _period = ReportPeriod.of('this_fy');
 
   @override
@@ -33,6 +38,7 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoade
   Widget build(BuildContext context) {
     return StatementScaffold(
       title: 'Profit & loss',
+      onShare: () => shareStatementPdf(widget.session, profitLossPdfPath(_period), 'Profit & loss', openPdf: widget.openPdf),
       period: _period,
       onPeriod: (p) {
         setState(() => _period = p);
@@ -51,19 +57,79 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoade
       for (final s in (b['sections'] is List ? b['sections'] as List : const []).whereType<Map>())
         s['key']?.toString() ?? '': Map<String, dynamic>.from(s),
     };
+    final period = b['period'] is Map ? b['period'] as Map : const {};
+    final fy = period['financial_year']?.toString();
+    final schedule = b['periodic_cogs'] is Map ? Map<String, dynamic>.from(b['periodic_cogs'] as Map) : null;
+
+    List<Map> accountsOf(String key) =>
+        (sections[key]?['accounts'] is List ? sections[key]!['accounts'] as List : const []).whereType<Map>().toList();
+    String accountLabel(Map a) => [a['account_code'], a['account_name']].where((v) => v != null && '$v'.isNotEmpty).join(' ');
+    PlDrillTarget accountTarget(Map a, String key) =>
+        PlDrillTarget.entries(label: a['account_name']?.toString() ?? 'Entries', accountIds: plAccountSubtreeIds(a), section: key);
+    // The website's `sectionTarget`: the stock schedule (cost of goods sold) then each account.
+    PlDrillTarget? sectionTarget(String key) {
+      final s = sections[key];
+      if (s == null) return null;
+      final parts = [
+        if (key == 'cost_of_goods_sold' && schedule != null) ...[
+          PlDrillPart(label: 'Opening Stock', amount: toNum(schedule['opening_stock']), sign: 1, target: const PlDrillTarget.entries(label: 'Opening Stock', line: 'opening_stock')),
+          PlDrillPart(label: 'Purchases (net of returns)', amount: toNum(schedule['purchases']), sign: 1, target: const PlDrillTarget.entries(label: 'Purchases', line: 'purchases')),
+          PlDrillPart(label: 'Closing Stock', amount: toNum(schedule['closing_stock']), sign: -1, target: const PlDrillTarget.entries(label: 'Closing Stock', line: 'closing_stock')),
+        ],
+        for (final a in accountsOf(key)) PlDrillPart(label: accountLabel(a), amount: toNum(a['total']), sign: 1, target: accountTarget(a, key)),
+      ];
+      if (parts.isEmpty) return null;
+      return PlDrillTarget.breakdown(label: 'Total for ${s['label']}', total: toNum(s['total']), parts: parts);
+    }
+
+    PlDrillPart? sectionPart(String key, int sign) {
+      final s = sections[key];
+      return s == null ? null : PlDrillPart(label: s['label']?.toString() ?? key, amount: toNum(s['total']), sign: sign, target: sectionTarget(key));
+    }
+
+    // The website's `profitTarget`: parts that are zero are left out.
+    PlDrillTarget profitTarget(String label, num total, List<PlDrillPart?> parts) =>
+        PlDrillTarget.breakdown(label: label, total: total, parts: [for (final p in parts) if (p != null && p.amount.abs() > 0.004) p]);
+
+    final grossTarget = profitTarget('Gross profit', toNum(b['gross_profit']), [sectionPart('operating_income', 1), sectionPart('cost_of_goods_sold', -1)]);
+    final operatingTarget = profitTarget('Operating profit', toNum(b['operating_profit']), [
+      PlDrillPart(label: 'Gross profit', amount: toNum(b['gross_profit']), sign: 1, target: grossTarget),
+      sectionPart('operating_expense', -1),
+    ]);
+    final elimination = b['elimination'] is Map ? toNum((b['elimination'] as Map)['net']) : 0;
+    final net = toNum(b['net_profit']);
+    final netTarget = profitTarget(net >= 0 ? 'Net profit' : 'Net loss', net, [
+      PlDrillPart(label: 'Operating profit', amount: toNum(b['operating_profit']), sign: 1, target: operatingTarget),
+      sectionPart('other_income', 1),
+      sectionPart('other_expense', -1),
+      if (elimination.abs() > 0.004) PlDrillPart(label: 'Inter-branch difference (not eliminated)', amount: elimination, sign: 1),
+    ]);
+
+    void open(PlDrillTarget t) => openPlTarget(context, widget.session, _period, t, financialYear: fy);
+
     Widget section(String key) {
       final s = sections[key];
       if (s == null) return const SizedBox.shrink();
+      final accounts = accountsOf(key);
+      final scheduleLines = key == 'cost_of_goods_sold' && schedule != null
+          ? <(StatementLine, PlDrillTarget)>[
+              ((label: 'Opening stock', amount: toNum(schedule['opening_stock'])), const PlDrillTarget.entries(label: 'Opening Stock', line: 'opening_stock')),
+              ((label: 'Add: Purchases (net of returns)', amount: toNum(schedule['purchases'])), const PlDrillTarget.entries(label: 'Purchases', line: 'purchases')),
+              ((label: 'Less: Closing stock', amount: -toNum(schedule['closing_stock'])), const PlDrillTarget.entries(label: 'Closing Stock', line: 'closing_stock')),
+            ]
+          : const <(StatementLine, PlDrillTarget)>[];
+      final total = sectionTarget(key);
       return StatementSection(
         title: s['label']?.toString() ?? key,
-        lines: plAccountLines(s['accounts']),
+        lines: [for (final (l, _) in scheduleLines) l, ...plAccountLines(s['accounts'])],
+        onLineTap: (i) => open(i < scheduleLines.length ? scheduleLines[i].$2 : accountTarget(accounts[i - scheduleLines.length], key)),
+        onTotalTap: total == null ? null : () => open(total),
         totalLabel: 'Total ${(s['label']?.toString() ?? '').toLowerCase()}',
         total: toNum(s['total']),
         signed: false,
       );
     }
 
-    final net = toNum(b['net_profit']);
     return [
       StatementHeadline(tiles: [
         ('Income', toNum(sections['operating_income']?['total']) + toNum(sections['other_income']?['total']), null),
@@ -77,16 +143,16 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoade
       ]),
       section('operating_income'),
       section('cost_of_goods_sold'),
-      _subtotal('Gross profit', toNum(b['gross_profit'])),
+      _subtotal('Gross profit', toNum(b['gross_profit']), () => open(grossTarget)),
       section('operating_expense'),
-      _subtotal('Operating profit', toNum(b['operating_profit'])),
+      _subtotal('Operating profit', toNum(b['operating_profit']), () => open(operatingTarget)),
       section('other_income'),
       section('other_expense'),
-      _subtotal(net >= 0 ? 'Net profit' : 'Net loss', net),
+      _subtotal(net >= 0 ? 'Net profit' : 'Net loss', net, () => open(netTarget)),
     ];
   }
 
-  Widget _subtotal(String label, num amount) => Padding(
+  Widget _subtotal(String label, num amount, VoidCallback onTap) => Padding(
         padding: const EdgeInsets.only(top: AppSpace.md),
         child: KCard(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -94,6 +160,7 @@ class _ProfitLossScreenState extends State<ProfitLossScreen> with StatementLoade
             label: label,
             amount: amount,
             strong: true,
+            onTap: onTap,
             color: amount.abs() < 0.005 ? null : (amount < 0 ? AppColors.negative : AppColors.positive),
           ),
         ),
@@ -146,15 +213,18 @@ class AsOnBar extends StatelessWidget {
 
 /// Website `/reports/balance-sheet`: assets against liabilities and equity on a date.
 class BalanceSheetScreen extends StatefulWidget {
-  const BalanceSheetScreen({super.key, required this.session});
+  const BalanceSheetScreen({super.key, required this.session, this.openPdf});
 
   final AppSession session;
+
+  /// Shows the downloaded PDF; replaceable so a test can see the bytes.
+  final PdfOpener? openPdf;
 
   @override
   State<BalanceSheetScreen> createState() => _BalanceSheetScreenState();
 }
 
-class _BalanceSheetScreenState extends State<BalanceSheetScreen> with StatementLoader {
+class _BalanceSheetScreenState extends State<BalanceSheetScreen> with StatementLoader, StatementPdfSharing {
   DateTime _asOn = dateOnly(DateTime.now());
 
   @override
@@ -169,6 +239,7 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> with StatementL
   Widget build(BuildContext context) {
     return StatementScaffold(
       title: 'Balance sheet',
+      onShare: () => shareStatementPdf(widget.session, balanceSheetPdfPath(_asOn), 'Balance sheet', openPdf: widget.openPdf),
       period: null,
       onPeriod: null,
       periodBar: AsOnBar(
@@ -236,15 +307,18 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> with StatementL
 
 /// Website `/reports/trial-balance`: every account's debit or credit balance on a date.
 class TrialBalanceScreen extends StatefulWidget {
-  const TrialBalanceScreen({super.key, required this.session});
+  const TrialBalanceScreen({super.key, required this.session, this.openPdf});
 
   final AppSession session;
+
+  /// Shows the downloaded PDF; replaceable so a test can see the bytes.
+  final PdfOpener? openPdf;
 
   @override
   State<TrialBalanceScreen> createState() => _TrialBalanceScreenState();
 }
 
-class _TrialBalanceScreenState extends State<TrialBalanceScreen> with StatementLoader {
+class _TrialBalanceScreenState extends State<TrialBalanceScreen> with StatementLoader, StatementPdfSharing {
   DateTime _asOn = dateOnly(DateTime.now());
   final _search = TextEditingController();
 
@@ -266,6 +340,7 @@ class _TrialBalanceScreenState extends State<TrialBalanceScreen> with StatementL
   Widget build(BuildContext context) {
     return StatementScaffold(
       title: 'Trial balance',
+      onShare: () => shareStatementPdf(widget.session, trialBalancePdfPath(_asOn), 'Trial balance', openPdf: widget.openPdf),
       period: null,
       onPeriod: null,
       periodBar: AsOnBar(

@@ -1,8 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:printing/printing.dart';
 
 import '../../api.dart';
 import '../../format.dart';
@@ -15,11 +12,11 @@ import '../invoices/invoice_detail_screen.dart';
 import '../payments/payment_in_screen.dart';
 import '../purchases/purchase_section.dart';
 import '../reports/report_period.dart';
+import '../reports/statement_pdf.dart';
 import 'books_logic.dart';
 import 'journal_entries_screen.dart';
 
-/// Shows a statement PDF. Replaceable so a test can see the bytes without the platform viewer.
-typedef PdfOpener = Future<void> Function(BuildContext context, List<int> bytes, String title);
+export '../reports/statement_pdf.dart' show PdfOpener;
 
 /// `app/(app)/ledger/account/[id]/page.tsx`: one account's ledger for a period.
 ///
@@ -271,41 +268,6 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 }
 
 Future<void> _openPdfViewer(BuildContext context, List<int> bytes, String title) {
-  return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => _StatementPdfScreen(bytes: Uint8List.fromList(bytes), title: title)));
-}
-
-/// The statement PDF with print and share, in the same viewer the invoice PDF uses.
-class _StatementPdfScreen extends StatelessWidget {
-  const _StatementPdfScreen({required this.bytes, required this.title});
-
-  final Uint8List bytes;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final safe = title.replaceAll(RegExp(r'[^\w.-]+'), '_');
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            KBackBar('Statement · $title'),
-            Expanded(
-              child: PdfPreview(
-                build: (_) async => bytes,
-                pdfFileName: 'Statement-${safe.isEmpty ? 'account' : safe}.pdf',
-                canChangePageFormat: false,
-                canChangeOrientation: false,
-                canDebug: false,
-                scrollViewDecoration: const BoxDecoration(color: AppColors.bg),
-                actionBarTheme: PdfActionBarTheme(backgroundColor: AppColors.brand, iconColor: AppColors.onBrand),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  final safe = title.replaceAll(RegExp(r'[^\w.-]+'), '_');
+  return openPdfViewer(context, bytes, title: 'Statement · $title', fileName: 'Statement-${safe.isEmpty ? 'account' : safe}.pdf');
 }

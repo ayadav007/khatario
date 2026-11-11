@@ -6,18 +6,22 @@ import '../../theme.dart';
 import '../../ui/kit.dart';
 import 'report_period.dart';
 import 'statement_kit.dart';
+import 'statement_pdf.dart';
 
 /// Website `/reports/cash-flow`: indirect-method cash flow for a period.
 class CashFlowScreen extends StatefulWidget {
-  const CashFlowScreen({super.key, required this.session});
+  const CashFlowScreen({super.key, required this.session, this.openPdf});
 
   final AppSession session;
+
+  /// Shows the downloaded PDF; replaceable so a test can see the bytes.
+  final PdfOpener? openPdf;
 
   @override
   State<CashFlowScreen> createState() => _CashFlowScreenState();
 }
 
-class _CashFlowScreenState extends State<CashFlowScreen> with StatementLoader {
+class _CashFlowScreenState extends State<CashFlowScreen> with StatementLoader, StatementPdfSharing {
   ReportPeriod _period = ReportPeriod.of('this_fy');
 
   @override
@@ -37,6 +41,7 @@ class _CashFlowScreenState extends State<CashFlowScreen> with StatementLoader {
   Widget build(BuildContext context) {
     return StatementScaffold(
       title: 'Cash flow',
+      onShare: () => shareStatementPdf(widget.session, cashFlowPdfPath(_period), 'Cash flow', openPdf: widget.openPdf),
       period: _period,
       onPeriod: _setPeriod,
       loading: loading,
