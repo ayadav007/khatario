@@ -1,10 +1,10 @@
+import 'package:khatario_phone/screens/hub/supplier_dashboard_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/more/more_navigation.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/pages/page_catalog.dart';
-import 'package:khatario_phone/screens/pages/record_page.dart';
 import 'package:khatario_phone/screens/reports/financial_statements_screens.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/screens/reports/reports_home_logic.dart';
@@ -169,7 +169,7 @@ void main() {
     });
   });
 
-  testWidgets('openAppHref: native screen, then the automatic list', (t) async {
+  testWidgets('openAppHref: native screens open (the supplier dashboard is native now)', (t) async {
     final (s, _) = fakeSession(_reply);
     late BuildContext ctx;
     await t.pumpWidget(MaterialApp(home: Builder(builder: (c) {
@@ -183,7 +183,7 @@ void main() {
     await t.pumpAndSettle();
     openAppHref(ctx, s, '/suppliers/dashboard', 'Supplier dashboard');
     await t.pumpAndSettle();
-    expect(find.byType(RecordPage), findsOneWidget);
+    expect(find.byType(SupplierDashboardScreen), findsOneWidget);
   });
 
   test('route: /reports is native and not generic', () {

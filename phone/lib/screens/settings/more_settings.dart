@@ -452,7 +452,7 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
         SettingsSection(title: 'Danger zone', danger: true, children: [
           SettingRow(
             label: 'Restore from a backup',
-            help: 'Replaces today’s data with a backup. Done on the website, where you can preview it first.',
+            help: 'Restoring a backup replaces your data, so it is done on the website.',
             trailing: KTextButton(label: 'Open', color: AppColors.negative, onTap: () => openPhoneSetting(context, widget.session, '/settings/backup')),
           ),
         ]),

@@ -44,6 +44,7 @@ import '../hub/hub_home_screen.dart';
 import '../hub/incoming_bills_screen.dart';
 import '../hub/my_catalog_screen.dart';
 import '../hub/new_arrivals_screen.dart';
+import '../hub/supplier_dashboard_screen.dart';
 import '../hub/supply_orders_screen.dart';
 import '../orders/orders_screen.dart';
 import '../parties/supplier_form_screen.dart';
@@ -88,6 +89,7 @@ import '../stock/stock_transfer_form_screen.dart';
 import '../stock/stock_transfers_screen.dart';
 import '../tools/calculators_screen.dart';
 import '../tools/lookup_tools_screens.dart';
+import '../tools/todo_screen.dart';
 import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
@@ -267,6 +269,14 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return ExpenseCategoriesScreen(session: session);
     case '/tools':
       return ToolsHubScreen(session: session);
+    case '/suppliers/dashboard':
+      return SupplierDashboardScreen(session: session);
+    case '/suppliers/dashboard/analytics':
+      return SupplierAnalyticsScreen(session: session);
+    case '/suppliers/dashboard/thresholds':
+      return SupplierThresholdsScreen(session: session);
+    case '/tools/todo':
+      return TodoScreen(session: session);
     case '/tools/hsn-finder':
       return HsnFinderScreen(session: session);
     case '/tools/google-lead-extractor':
