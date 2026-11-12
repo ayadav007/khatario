@@ -275,6 +275,10 @@ function allowOfflineAppShellNavigation(request: NextRequest): boolean {
   return rsc === '1' || !!nextRouter || accept.includes('text/html');
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '[::1]' || /^127(\.\d{1,3}){3}$/.test(hostname);
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -426,17 +430,31 @@ export async function middleware(request: NextRequest) {
 
   if (rotate) {
     const refreshUrl = new URL('/api/auth/refresh', request.url);
-    let refreshRes: Response;
-    let refreshUnreachable = false;
-    try {
-      refreshRes = await fetch(refreshUrl, {
+    const callRefresh = (url: URL) =>
+      fetch(url, {
         method: 'POST',
         headers: { cookie: request.headers.get('cookie') ?? '' },
         cache: 'no-store',
       });
+    let refreshRes: Response;
+    let refreshUnreachable = false;
+    try {
+      refreshRes = await callRefresh(refreshUrl);
     } catch {
-      refreshUnreachable = true;
-      refreshRes = { ok: false, headers: new Headers() } as Response;
+      try {
+        // Behind nginx (`X-Forwarded-Proto https`) Next reports this app as https://localhost:<port>
+        // although `next start` listens on plain HTTP there, so the call above cannot connect.
+        // Retry over HTTP, on this machine only: the refresh cookie must never leave it unencrypted.
+        if (refreshUrl.protocol !== 'https:' || !isLoopbackHostname(refreshUrl.hostname)) {
+          throw new Error('refresh unreachable');
+        }
+        const plainUrl = new URL(refreshUrl);
+        plainUrl.protocol = 'http:';
+        refreshRes = await callRefresh(plainUrl);
+      } catch {
+        refreshUnreachable = true;
+        refreshRes = { ok: false, headers: new Headers() } as Response;
+      }
     }
 
     if (!refreshRes.ok) {
