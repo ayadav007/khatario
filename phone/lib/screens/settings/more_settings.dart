@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../chats/saved_replies_screen.dart';
 import '../parties/party_logic.dart' show partyDay;
 import 'appearance_screen.dart';
 import 'plan_billing_screen.dart';
@@ -276,6 +277,11 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> with 
           ),
           NavSetting(label: 'Message templates', value: 'Approved wording for invoices and updates', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/templates')),
           NavSetting(label: 'Inbox & team', value: 'Who sees which chats, saved replies', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/inbox')),
+          NavSetting(
+            label: 'Saved replies',
+            value: 'Ready answers your team inserts in a chat',
+            onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => SavedRepliesScreen(session: widget.session))),
+          ),
           NavSetting(label: 'AI agent', value: 'Answers questions and takes orders', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/ai-agent')),
           NavSetting(label: 'Updates for you', value: 'Evening summary on your phone', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/notifications')),
         ]),
@@ -446,7 +452,7 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
         SettingsSection(title: 'Danger zone', danger: true, children: [
           SettingRow(
             label: 'Restore from a backup',
-            help: 'Replaces today’s data with a backup. Done on the website, where you can preview it first.',
+            help: 'Restoring a backup replaces your data, so it is done on the website.',
             trailing: KTextButton(label: 'Open', color: AppColors.negative, onTap: () => openPhoneSetting(context, widget.session, '/settings/backup')),
           ),
         ]),

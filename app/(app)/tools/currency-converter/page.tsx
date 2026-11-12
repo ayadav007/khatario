@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { RefreshCw, ArrowLeftRight, DollarSign, Info, Loader2 } from 'lucide-react';
+import { exchangeRate as rateFor } from '@/lib/tools/currency-converter';
 
 const CURRENCIES = [
   { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
@@ -23,21 +24,6 @@ const CURRENCIES = [
   { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
   { code: 'CHF', name: 'Swiss Franc', symbol: 'CHF' },
 ];
-
-// Fallback exchange rates (approximate, as of common rates)
-const FALLBACK_RATES: Record<string, number> = {
-  USD: 83.0,
-  EUR: 90.0,
-  GBP: 105.0,
-  AED: 22.6,
-  SAR: 22.1,
-  JPY: 0.56,
-  CNY: 11.5,
-  AUD: 54.0,
-  CAD: 61.0,
-  SGD: 61.5,
-  CHF: 92.0,
-};
 
 export default function CurrencyConverterPage() {
   const [amount, setAmount] = useState('');
@@ -59,27 +45,9 @@ export default function CurrencyConverterPage() {
 
     setLoading(true);
     try {
-      // Try to fetch from a free API (you can use exchangerate-api.com or similar)
-      // For now, using fallback rates
-      if (fromCurrency === 'INR' && FALLBACK_RATES[toCurrency]) {
-        setExchangeRate(FALLBACK_RATES[toCurrency]);
-      } else if (toCurrency === 'INR' && FALLBACK_RATES[fromCurrency]) {
-        setExchangeRate(1 / FALLBACK_RATES[fromCurrency]);
-      } else {
-        // For other currency pairs, use approximate conversion via USD
-        const fromToUSD = fromCurrency === 'USD' ? 1 : (FALLBACK_RATES[fromCurrency] ? 1 / FALLBACK_RATES[fromCurrency] : 1);
-        const usdToTo = toCurrency === 'USD' ? 1 : (FALLBACK_RATES[toCurrency] || 1);
-        setExchangeRate(fromToUSD * usdToTo);
-      }
+      // No live feed yet: approximate rupee table, rate = (rupees per from) / (rupees per to).
+      setExchangeRate(rateFor(fromCurrency, toCurrency));
       setLastUpdated(new Date());
-    } catch (error) {
-      console.error('Error fetching exchange rate:', error);
-      // Use fallback rates
-      if (fromCurrency === 'INR' && FALLBACK_RATES[toCurrency]) {
-        setExchangeRate(FALLBACK_RATES[toCurrency]);
-      } else if (toCurrency === 'INR' && FALLBACK_RATES[fromCurrency]) {
-        setExchangeRate(1 / FALLBACK_RATES[fromCurrency]);
-      }
     } finally {
       setLoading(false);
     }

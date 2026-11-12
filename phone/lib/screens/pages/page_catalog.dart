@@ -156,21 +156,7 @@ const websiteForNow = <String>{};
 
 /// More links that still open the automatic read-only list (`RecordPage`). Later tasks delete entries;
 /// `route_coverage_test.dart` fails when a link falls back to the list without being named here.
-const stillGeneric = <String>{
-  '/suppliers/dashboard',
-  '/whatsapp/dashboard',
-  '/whatsapp/conversations',
-  '/whatsapp/leads',
-  '/whatsapp/pipeline',
-  '/whatsapp/lead-sources',
-  '/whatsapp/flows',
-  '/whatsapp/campaigns',
-  '/whatsapp/who-to-message',
-  '/whatsapp/contacts',
-  '/whatsapp/contacts/groups',
-  '/whatsapp/unsubscribes',
-  '/tools/todo',
-};
+const stillGeneric = <String>{};
 
 /// Website pages with no GET the phone can list (forms, wizards, device setup). Their path is the
 /// website href. Kept exactly as before so the list/website split does not change for any user.
@@ -178,7 +164,6 @@ const _webOnly = {
   '/pricing/party-item',
   '/hr/leaves/year-end',
   '/hr/leaves/import-balances',
-  '/whatsapp/send-message',
   '/settings/automation',
   '/settings/bluetooth-printer',
   '/settings/help',

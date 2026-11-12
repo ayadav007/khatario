@@ -44,6 +44,7 @@ import '../hub/hub_home_screen.dart';
 import '../hub/incoming_bills_screen.dart';
 import '../hub/my_catalog_screen.dart';
 import '../hub/new_arrivals_screen.dart';
+import '../hub/supplier_dashboard_screen.dart';
 import '../hub/supply_orders_screen.dart';
 import '../orders/orders_screen.dart';
 import '../parties/supplier_form_screen.dart';
@@ -88,9 +89,27 @@ import '../stock/stock_transfer_form_screen.dart';
 import '../stock/stock_transfers_screen.dart';
 import '../tools/calculators_screen.dart';
 import '../tools/lookup_tools_screens.dart';
+import '../tools/todo_screen.dart';
 import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
+import '../chats/campaign_report_screen.dart';
+import '../chats/campaigns_screen.dart';
+import '../chats/flows_screen.dart';
+import '../chats/saved_replies_screen.dart';
+import '../chats/chat_thread_screen.dart';
+import '../chats/chats_inbox_screen.dart';
+import '../chats/connect_dashboard_screen.dart';
+import '../chats/contact_groups_screen.dart';
+import '../chats/contacts_screen.dart';
+import '../chats/lead_profile_screen.dart';
+import '../chats/lead_sources_screen.dart';
+import '../chats/leads_screen.dart';
+import '../chats/pipeline_screen.dart';
+import '../chats/send_message_screen.dart';
+import '../chats/unsubscribes_screen.dart';
+import '../chats/who_to_message_screen.dart';
+import '../../theme.dart';
 import 'page_catalog.dart';
 import 'record_page.dart';
 import 'website_page_screen.dart';
@@ -118,9 +137,72 @@ const _tabHrefs = {'/items', '/invoices', '/customers', '/suppliers', '/search',
 /// The phone screen for a website href, or null when the link has none.
 ///
 /// Query strings matter: `/supply-orders?role=vendor` is matched before the query is stripped.
-/// [capabilities] is for screens that hide actions the role cannot use; none of today's do.
+/// [capabilities] is for screens that hide what the plan or role cannot use (Send message, Who to message).
 Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabilities}) {
+  final query = Uri.tryParse(href);
+  if (query != null && query.queryParameters.isNotEmpty) {
+    // Links that name one lead or one chat open it directly.
+    final lead = query.queryParameters['lead'];
+    if (query.path == '/whatsapp/leads' && lead != null && lead.isNotEmpty) return LeadProfileScreen(session: session, leadId: lead);
+    final chat = query.queryParameters['c'];
+    if (query.path == '/whatsapp/conversations' && chat != null && chat.isNotEmpty) {
+      return ChatThreadScreen(session: session, conversationId: chat, title: 'Chat');
+    }
+    // The website redirects bot rules to `/whatsapp/flows?from=bot-rules`; `?new=1` opens New flow.
+    if (query.path == '/whatsapp/flows') {
+      return FlowsScreen(
+        session: session,
+        capabilities: capabilities,
+        fromBotRules: query.queryParameters['from'] == 'bot-rules',
+        openNew: query.queryParameters['new'] == '1',
+      );
+    }
+    if (query.path == '/whatsapp/send-message' && query.queryParameters['tab'] == 'campaign') {
+      return SendMessageScreen(session: session, capabilities: capabilities, startOnCampaign: true);
+    }
+    // Any other filter on a Connect page (`?status=open`) opens the same screen.
+    if (query.path.startsWith('/whatsapp/')) return nativeScreenFor(session, query.path, capabilities: capabilities);
+  }
+  // One campaign's report: `/whatsapp/campaigns/<id>`.
+  const campaignPrefix = '/whatsapp/campaigns/';
+  if (href.startsWith(campaignPrefix) && href.length > campaignPrefix.length) {
+    return CampaignReportScreen(session: session, campaignId: Uri.decodeComponent(href.substring(campaignPrefix.length)));
+  }
+  // One flow's visual editor is a website page, opened inside the app.
+  const flowPrefix = '/whatsapp/flows/';
+  if (href.startsWith(flowPrefix) && href.length > flowPrefix.length) {
+    return WebsitePageScreen(session: session, href: href, title: 'Flow editor');
+  }
   switch (href) {
+    case '/whatsapp/dashboard':
+      return ConnectDashboardScreen(session: session);
+    case '/whatsapp/conversations':
+      // The inbox is built for the Chats tab, which supplies the Scaffold (Material) around it.
+      return Scaffold(backgroundColor: AppColors.bg, body: ChatsInboxScreen(session: session, capabilities: capabilities));
+    case '/whatsapp/leads':
+      return LeadsScreen(session: session);
+    case '/whatsapp/pipeline':
+      return PipelineScreen(session: session);
+    case '/whatsapp/lead-sources':
+      return LeadSourcesScreen(session: session);
+    case '/whatsapp/campaigns':
+      return CampaignsScreen(session: session);
+    case '/whatsapp/contacts':
+      return ContactsScreen(session: session);
+    case '/whatsapp/contacts/groups':
+      return ContactGroupsScreen(session: session);
+    case '/whatsapp/unsubscribes':
+      return UnsubscribesScreen(session: session);
+    case '/whatsapp/send-message':
+      return SendMessageScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/who-to-message':
+      return WhoToMessageScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/flows':
+      return FlowsScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/saved-replies':
+      return SavedRepliesScreen(session: session);
+    case '/whatsapp/bot-rules':
+      return FlowsScreen(session: session, capabilities: capabilities, fromBotRules: true);
     case '/hr/dashboard':
       return HrDashboardScreen(session: session);
     case '/employees/manager':
@@ -187,6 +269,14 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return ExpenseCategoriesScreen(session: session);
     case '/tools':
       return ToolsHubScreen(session: session);
+    case '/suppliers/dashboard':
+      return SupplierDashboardScreen(session: session);
+    case '/suppliers/dashboard/analytics':
+      return SupplierAnalyticsScreen(session: session);
+    case '/suppliers/dashboard/thresholds':
+      return SupplierThresholdsScreen(session: session);
+    case '/tools/todo':
+      return TodoScreen(session: session);
     case '/tools/hsn-finder':
       return HsnFinderScreen(session: session);
     case '/tools/google-lead-extractor':

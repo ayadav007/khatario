@@ -164,10 +164,20 @@ export async function loadItcGate(
           AND ($3::uuid[] IS NULL OR p.branch_id = ANY($3::uuid[]))`,
       [businessId, period, branchIds]
     ),
-    db.query(`SELECT EXISTS (SELECT 1 FROM gstr2b_reconciliation WHERE business_id = $1 AND filing_period = $2) AS ran`, [
-      businessId,
-      period,
-    ]),
+    // Reconciled for this GSTIN: a 2B issued to the scope's registration was imported for the period
+    // (another GSTIN's 2B says nothing about this one's ITC).
+    db.query(
+      `SELECT EXISTS (SELECT 1 FROM gstr2b_reconciliation WHERE business_id = $1 AND filing_period = $2)
+          AND ($3::uuid[] IS NULL OR EXISTS (
+            SELECT 1
+              FROM gstr2b_imports gi
+              JOIN branches br ON br.id = ($3::uuid[])[1] AND br.business_id = gi.business_id
+              JOIN businesses b ON b.id = br.business_id
+             WHERE gi.business_id = $1 AND gi.filing_period = $2
+               AND UPPER(TRIM(gi.recipient_gstin)) = COALESCE(NULLIF(UPPER(TRIM(br.gstin)), ''), UPPER(TRIM(b.gstin)))
+          )) AS ran`,
+      [businessId, period, branchIds]
+    ),
   ]);
   const n = (v: unknown) => Number(v) || 0;
   return buildItcGate(

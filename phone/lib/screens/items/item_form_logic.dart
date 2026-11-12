@@ -1,3 +1,48 @@
+/// GST slabs from `lib/gst/rates.ts`, most used first. 28% is kept only for cess goods,
+/// and the server refuses 12% as a new rate.
+const itemGstRates = [
+  ('0', '0%'),
+  ('5', '5%'),
+  ('18', '18%'),
+  ('40', '40%'),
+  ('28', '28% cess goods'),
+  ('3', '3%'),
+  ('1.5', '1.5%'),
+  ('0.25', '0.25%'),
+  ('0.1', '0.1%'),
+];
+
+/// `GST_UQC_CODES` from `lib/gst/uqc.ts`. Blank lets the server work it out from the unit and HSN.
+const itemUqcCodes = [
+  'BAG', 'BAL', 'BDL', 'BKL', 'BOU', 'BOX', 'BTL', 'BUN', 'CAN', 'CBM', 'CCM', 'CMS', 'CTN',
+  'DOZ', 'DRM', 'GGK', 'GMS', 'GRS', 'GYD', 'KGS', 'KLR', 'KME', 'LTR', 'MLT', 'MTR', 'MTS',
+  'NA', 'NOS', 'OTH', 'PAC', 'PCS', 'PRS', 'QTL', 'ROL', 'SET', 'SQF', 'SQM', 'SQY', 'TBS',
+  'TGM', 'THD', 'TON', 'TUB', 'UGS', 'UNT', 'YDS',
+];
+
+/// The country select on the website's Retail label section. Blank is "Other / Not specified".
+const itemCountries = [
+  ('IN', 'India (IN)'),
+  ('CN', 'China (CN)'),
+  ('US', 'United States (US)'),
+  ('GB', 'United Kingdom (GB)'),
+  ('JP', 'Japan (JP)'),
+  ('DE', 'Germany (DE)'),
+  ('FR', 'France (FR)'),
+  ('AE', 'UAE (AE)'),
+  ('SG', 'Singapore (SG)'),
+  ('BD', 'Bangladesh (BD)'),
+  ('LK', 'Sri Lanka (LK)'),
+  ('NP', 'Nepal (NP)'),
+  ('', 'Other / Not specified'),
+];
+
+/// Digits only, at most 5, as the items routes store a PLU code.
+String normalizePluCode(String code) {
+  final digits = code.replaceAll(RegExp(r'\D'), '');
+  return digits.length > 5 ? digits.substring(0, 5) : digits;
+}
+
 /// Simple goods/service create body for `app/(app)/items/new/page.tsx`.
 /// Variants, bundles, and images stay on the website. Identity fields are omitted.
 Map<String, dynamic> itemCreateBody({
@@ -23,6 +68,14 @@ Map<String, dynamic> itemCreateBody({
   String packSize = '',
   String packUnit = '',
   String imageUrl = '',
+  bool gstIncluded = false,
+  String uqc = '',
+  String fssai = '',
+  String netQuantity = '',
+  String countryOfOrigin = 'IN',
+  bool isWeighed = false,
+  String pluCode = '',
+  String weightBarcodeMode = 'weight',
 }) {
   final service = itemType == 'service';
   final selling = num.tryParse(sellingPrice);
@@ -41,11 +94,11 @@ Map<String, dynamic> itemCreateBody({
     'has_variants': false,
     'variants': const [],
     'allow_sale_when_out_of_stock': null,
-    'gst_included': false,
+    'gst_included': gstIncluded,
     'show_in_store': showInStore,
     'featured_in_store': featuredInStore,
     'store_returnable': storeReturnable,
-    'country_of_origin': 'IN',
+    'country_of_origin': countryOfOrigin.trim().isEmpty ? null : countryOfOrigin.trim(),
   };
   // The new fields go in only when set.
   final cleanBarcode = normalizeItemBarcode(barcode);
@@ -61,6 +114,16 @@ Map<String, dynamic> itemCreateBody({
     body['pack_unit'] = packUnit.trim().toUpperCase();
   }
   if (imageUrl.isNotEmpty) body['image_url'] = imageUrl;
+  // Blank UQC lets the server work it out from the unit and HSN.
+  if (uqc.trim().isNotEmpty) body['uqc'] = uqc.trim();
+  if (fssai.trim().isNotEmpty) body['fssai_licence_no'] = fssai.trim();
+  if (netQuantity.trim().isNotEmpty) body['net_quantity'] = netQuantity.trim();
+  if (!service && isWeighed) {
+    body['is_weighed'] = true;
+    final plu = normalizePluCode(pluCode);
+    if (plu.isNotEmpty) body['plu_code'] = plu;
+    body['weight_barcode_mode'] = weightBarcodeMode == 'price' ? 'price' : 'weight';
+  }
   return body;
 }
 
@@ -158,6 +221,14 @@ Map<String, dynamic> itemUpdateBody({
   String? packSize,
   String? packUnit,
   String? imageUrl,
+  bool? gstIncluded,
+  String? uqc,
+  String? fssai,
+  String? netQuantity,
+  String? countryOfOrigin,
+  bool? isWeighed,
+  String? pluCode,
+  String? weightBarcodeMode,
 }) {
   final body = itemCreateBody(
     name: name,
@@ -241,6 +312,42 @@ Map<String, dynamic> itemUpdateBody({
     }
   }
   if (imageUrl != null) body['image_url'] = imageUrl;
+
+  // Tax and retail label fields; null means the form did not offer that field, so the value
+  // copied from [existing] above stays. PATCH writes all of these on every save.
+  if (gstIncluded != null) body['gst_included'] = gstIncluded;
+  // PATCH keeps the UQC when the key is missing, so it goes only when changed; blank asks the
+  // server to work it out again.
+  if (uqc != null && uqc.trim() != text('uqc')) body['uqc'] = uqc.trim().isEmpty ? null : uqc.trim();
+  void carry(String key, String? value) {
+    if (value == null) return;
+    if (value.trim().isEmpty) {
+      body.remove(key);
+    } else {
+      body[key] = value.trim();
+    }
+  }
+
+  carry('fssai_licence_no', fssai);
+  carry('net_quantity', netQuantity);
+  carry('country_of_origin', countryOfOrigin);
+  if (isWeighed != null) {
+    final weighed = itemType != 'service' && isWeighed;
+    if (weighed) {
+      body['is_weighed'] = true;
+    } else {
+      body.remove('is_weighed');
+    }
+    if (pluCode != null) {
+      final plu = normalizePluCode(pluCode);
+      if (weighed && plu.isNotEmpty) {
+        body['plu_code'] = plu;
+      } else {
+        body.remove('plu_code');
+      }
+    }
+    if (weightBarcodeMode != null) body['weight_barcode_mode'] = weightBarcodeMode == 'price' ? 'price' : 'weight';
+  }
   return body;
 }
 

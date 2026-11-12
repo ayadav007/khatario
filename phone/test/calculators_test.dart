@@ -513,7 +513,7 @@ void main() {
         expect(nativeScreenFor(session, href), isNotNull, reason: href);
       }
       expect(nativeScreenFor(session, '/tools'), isA<ToolsHubScreen>());
-      expect(nativeScreenFor(session, '/tools/todo'), isNull);
+      expect(nativeScreenFor(session, '/tools/todo'), isNotNull);
       expect(nativeScreenFor(session, '/tools/image-size-reducer'), isNull);
     });
   });

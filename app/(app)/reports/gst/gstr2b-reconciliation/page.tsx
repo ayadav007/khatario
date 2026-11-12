@@ -19,6 +19,7 @@ export const dynamic = 'force-dynamic';
 import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBranch } from '@/contexts/BranchContext';
 import { Upload, RefreshCw, AlertCircle, CheckCircle, XCircle, FileDown, AlertTriangle } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 
@@ -76,6 +77,7 @@ interface ReconciliationSummary {
 
 export default function GSTR2BReconciliationPage() {
   const { business, user } = useAuth();
+  const { currentBranchId } = useBranch();
   const toast = useToastContext();
   const [loading, setLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
@@ -150,6 +152,7 @@ export default function GSTR2BReconciliationPage() {
       formData.append('filing_period', filingPeriod);
       formData.append('file', selectedFile);
       formData.append('user_id', user.id);
+      if (currentBranchId) formData.append('branch_id', currentBranchId);
 
       const res = await fetch('/api/gst/gstr2b/import', {
         method: 'POST',

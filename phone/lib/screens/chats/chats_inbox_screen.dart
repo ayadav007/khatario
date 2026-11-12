@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../api.dart';
+import '../../capability.dart';
 import '../../session.dart';
-import 'chat_outreach_screens.dart';
+import 'campaigns_screen.dart';
+import 'flows_screen.dart';
 import 'chat_thread_logic.dart';
 import 'chat_thread_screen.dart';
 import 'pipeline_logic.dart';
@@ -18,9 +20,10 @@ const _waUnread = Color(0xFF25D366);
 
 /// Website conversation list: green header, search, and a WhatsApp row for each chat.
 class ChatsInboxScreen extends StatefulWidget {
-  const ChatsInboxScreen({super.key, required this.session});
+  const ChatsInboxScreen({super.key, required this.session, this.capabilities});
 
   final AppSession session;
+  final Capabilities? capabilities;
 
   @override
   State<ChatsInboxScreen> createState() => _ChatsInboxScreenState();
@@ -202,14 +205,14 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
                         final page = value == 'pipeline'
                             ? PipelineScreen(session: widget.session)
                             : value == 'broadcasts'
-                                ? BroadcastsScreen(session: widget.session)
-                                : BotRepliesScreen(session: widget.session);
+                                ? CampaignsScreen(session: widget.session)
+                                : FlowsScreen(session: widget.session, capabilities: widget.capabilities);
                         Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
                       },
                       itemBuilder: (context) => const [
                         PopupMenuItem(value: 'pipeline', child: Text('Pipeline')),
-                        PopupMenuItem(value: 'broadcasts', child: Text('Broadcasts')),
-                        PopupMenuItem(value: 'bot', child: Text('Bot replies')),
+                        PopupMenuItem(value: 'broadcasts', child: Text('Campaigns')),
+                        PopupMenuItem(value: 'flows', child: Text('Flows')),
                       ],
                     ),
                   ],

@@ -4,6 +4,7 @@
  */
 import crypto from 'crypto';
 import { getPool } from '@/lib/db';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { parseGstr2bJson, totalEligibleItc, type Gstr2bRow } from '@/lib/gst/gstr2b-portal-parser';
 import { parseGstr2bExcel, type Gstr2bRowError, type Gstr2bSheetReport } from '@/lib/gst/gstr2b-excel-parser';
@@ -45,19 +46,28 @@ function sectionsFromRows(rows: Gstr2bRow[]): Gstr2bSheetReport[] {
   return [...counts.entries()].map(([sheet, documents]) => ({ sheet, status: 'imported' as const, documents }));
 }
 
-async function assertRecipient(businessId: string, recipientGstin: string | null) {
-  if (!recipientGstin) return;
+/**
+ * The GSTIN this 2B belongs to: the one in the file (must be the business's or one of its
+ * branches'), else the registration of the branch it was uploaded for.
+ */
+async function resolveRecipient(businessId: string, fileGstin: string | null, branchId?: string | null): Promise<string | null> {
   const pool = getPool();
-  const biz = await pool.query(`SELECT gstin FROM businesses WHERE id = $1`, [businessId]);
-  const own = String(biz.rows[0]?.gstin || '').toUpperCase();
-  if (!own || recipientGstin === own) return;
-  const branch = await pool.query(
-    `SELECT 1 FROM branches WHERE business_id = $1 AND UPPER(gstin) = $2 LIMIT 1`,
-    [businessId, recipientGstin]
-  );
-  if (branch.rows.length === 0) {
-    throw new Gstr2bImportError(`This GSTR-2B belongs to GSTIN ${recipientGstin}`, 400, 'GSTIN_MISMATCH');
+  if (fileGstin) {
+    const gstin = fileGstin.trim().toUpperCase();
+    const known = await pool.query(
+      `SELECT 1 FROM businesses WHERE id = $1 AND UPPER(TRIM(gstin)) = $2
+       UNION ALL
+       SELECT 1 FROM branches WHERE business_id = $1 AND UPPER(TRIM(gstin)) = $2
+       LIMIT 1`,
+      [businessId, gstin]
+    );
+    if (known.rows.length === 0) {
+      throw new Gstr2bImportError(`This GSTR-2B belongs to GSTIN ${gstin}`, 400, 'GSTIN_MISMATCH');
+    }
+    return gstin;
   }
+  const reg = await resolveSupplierRegistration(pool, businessId, branchId ?? null);
+  return reg.gstin ? reg.gstin.toUpperCase() : null;
 }
 
 export async function persistGstr2bRows(input: {
@@ -69,6 +79,7 @@ export async function persistGstr2bRows(input: {
   importType: 'json' | 'excel';
   rows: Gstr2bRow[];
   duplicatesSkipped?: number;
+  recipientGstin?: string | null;
 }): Promise<{ importId: string; inserted: number; duplicatesSkipped: number; totalItc: number }> {
   const pool = getPool();
   const client = await pool.connect();
@@ -85,10 +96,13 @@ export async function persistGstr2bRows(input: {
     const totalItc = totalEligibleItc(input.rows);
     const created = await client.query(
       `INSERT INTO gstr2b_imports (
-         business_id, filing_period, import_type, file_name, file_hash, total_invoices, total_itc, imported_by
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         business_id, filing_period, import_type, file_name, file_hash, total_invoices, total_itc, imported_by, recipient_gstin
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
-      [input.businessId, input.filingPeriod, input.importType, input.fileName, input.fileHash, input.rows.length, totalItc, input.userId]
+      [
+        input.businessId, input.filingPeriod, input.importType, input.fileName, input.fileHash, input.rows.length,
+        totalItc, input.userId, input.recipientGstin ?? null,
+      ]
     );
     const importId = created.rows[0].id;
     let inserted = 0;
@@ -99,16 +113,16 @@ export async function persistGstr2bRows(input: {
            supplier_gstin, supplier_name, invoice_number, invoice_date, document_type,
            taxable_value, igst_amount, cgst_amount, sgst_amount, cess_amount,
            itc_eligibility, itc_reversal_type, place_of_supply, reverse_charge,
-           original_invoice_number, original_invoice_date
+           original_invoice_number, original_invoice_date, recipient_gstin
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          ON CONFLICT (import_id, supplier_gstin, invoice_number, invoice_date, document_type) DO NOTHING`,
         [
           importId, input.businessId, input.filingPeriod,
           row.supplier_gstin, row.supplier_name, row.invoice_number, row.invoice_date, row.document_type,
           row.taxable_value, row.igst_amount, row.cgst_amount, row.sgst_amount, row.cess_amount,
           row.itc_eligibility, row.itc_reversal_type, row.place_of_supply, row.reverse_charge,
-          row.original_invoice_number, row.original_invoice_date,
+          row.original_invoice_number, row.original_invoice_date, input.recipientGstin ?? null,
         ]
       );
       inserted += res.rowCount || 0;
@@ -139,6 +153,8 @@ export async function importGstr2bFile(input: {
   filingPeriod: string;
   fileName: string;
   bytes: Buffer;
+  /** Branch the 2B was uploaded for; its GSTIN is used when the file does not name one. */
+  branchId?: string | null;
 }): Promise<Gstr2bImportSuccess> {
   if (!/^\d{4}-\d{2}$/.test(input.filingPeriod)) {
     throw new Gstr2bImportError('filing_period must be in YYYY-MM format', 400, 'BAD_PERIOD');
@@ -200,7 +216,7 @@ export async function importGstr2bFile(input: {
       { sections }
     );
   }
-  await assertRecipient(input.businessId, recipientGstin);
+  const recipient = await resolveRecipient(input.businessId, recipientGstin, input.branchId);
 
   const fileHash = crypto.createHash('sha256').update(input.bytes).digest('hex');
   const saved = await persistGstr2bRows({
@@ -212,6 +228,7 @@ export async function importGstr2bFile(input: {
     importType: isExcel ? 'excel' : 'json',
     rows,
     duplicatesSkipped,
+    recipientGstin: recipient,
   });
   return {
     success: true,

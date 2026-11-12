@@ -55,7 +55,8 @@ export async function issueTransferChallan(
 
   const lines = (
     await client.query(
-      `SELECT sti.item_id, COALESCE(NULLIF(sti.quantity_dispatched, 0), sti.quantity_requested, sti.qty) AS qty,
+      // Issued at dispatch, after quantity_dispatched is set: only what actually left the godown.
+      `SELECT sti.item_id, COALESCE(sti.quantity_dispatched, 0) AS qty,
               sti.cost_snapshot, i.unit, i.name, i.hsn_sac, i.purchase_price
          FROM stock_transfer_items sti JOIN items i ON i.id = sti.item_id
         WHERE sti.transfer_id = $1 ORDER BY i.name`,

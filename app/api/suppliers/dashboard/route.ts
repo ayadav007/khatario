@@ -14,16 +14,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const supplierBusinessId = searchParams.get('supplier_business_id');
+    // Optional: the session business is always used; a different id is refused.
+    const requested = searchParams.get('supplier_business_id');
+    const supplierBusinessId = auth.businessId;
 
-    if (!supplierBusinessId) {
-      return NextResponse.json(
-        { error: 'supplier_business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (supplierBusinessId !== auth.businessId) {
+    if (requested && requested !== auth.businessId) {
       return NextResponse.json(
         { error: 'You can only view your own supplier dashboard', code: 'TENANT_MISMATCH' },
         { status: 403 }

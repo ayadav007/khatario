@@ -1,4 +1,5 @@
 import { getPool } from '@/lib/db';
+import { registrationBranchIds, resolveSupplierRegistration } from '@/lib/gst/registration';
 import { GSTR1Generator } from './gstr1';
 import { GSTR3BGenerator, TaxBreakdown } from './gstr3b';
 import { getGstCashPaidByHead } from './gst-settlement';
@@ -7,6 +8,8 @@ import { toGstUqc } from './uqc';
 
 export interface GSTR9Filters {
   business_id: string;
+  /** GSTR-9 is filed per GSTIN: with a branch, covers every branch filing under its GSTIN. */
+  branch_id?: string | null;
   financial_year: number; // e.g., 2024 for FY 2024-25
 }
 
@@ -241,11 +244,12 @@ export class GSTR9Generator {
 
   async generate(filters: GSTR9Filters, overrides: any = {}): Promise<GSTR9Data> {
     const { business_id, financial_year } = filters;
+    const branch_id = filters.branch_id ?? undefined;
     const client = await this.pool.connect();
     
     try {
-      const businessRes = await client.query('SELECT gstin FROM businesses WHERE id = $1', [business_id]);
-      const businessGstin = businessRes.rows[0]?.gstin || '';
+      const gstinBranchIds = branch_id ? await registrationBranchIds(client, business_id, branch_id) : null;
+      const businessGstin = (await resolveSupplierRegistration(client, business_id, branch_id ?? null)).gstin || '';
 
       const data: GSTR9Data = {
         financial_year: `${financial_year}-${(financial_year + 1).toString().slice(-2)}`,
@@ -334,12 +338,12 @@ export class GSTR9Generator {
         FROM invoices i
         JOIN invoice_items ii ON ii.invoice_id = i.id
         LEFT JOIN customers c ON i.customer_id = c.id
-        WHERE i.business_id = $1 AND i.invoice_date >= $2 AND i.invoice_date <= $3
+        WHERE i.business_id = $1 AND i.invoice_date >= $2 AND i.invoice_date <= $3 AND ($4::uuid[] IS NULL OR i.branch_id = ANY($4::uuid[]))
         AND i.status = 'final'
         AND i.deleted_at IS NULL
         AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
       `;
-      const salesRes = await client.query(salesQuery, [business_id, fyFrom, fyTo]);
+      const salesRes = await client.query(salesQuery, [business_id, fyFrom, fyTo, gstinBranchIds]);
       
       salesRes.rows.forEach(line => {
         const tb = { 
@@ -373,14 +377,14 @@ export class GSTR9Generator {
       const notesRes = await client.query(
         `SELECT 'credit' AS kind, subtotal, igst_total, cgst_total, sgst_total
            FROM credit_notes
-          WHERE business_id = $1 AND credit_note_date BETWEEN $2 AND $3
+          WHERE business_id = $1 AND credit_note_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR branch_id = ANY($4::uuid[]))
             AND status = 'active'
          UNION ALL
          SELECT 'debit' AS kind, subtotal, igst_total, cgst_total, sgst_total
            FROM debit_notes
-          WHERE business_id = $1 AND debit_note_date BETWEEN $2 AND $3
+          WHERE business_id = $1 AND debit_note_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR branch_id = ANY($4::uuid[]))
             AND status = 'active'`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       notesRes.rows.forEach((n) => {
         const tb = {
@@ -403,15 +407,15 @@ export class GSTR9Generator {
            FROM (
              SELECT subtotal AS taxable, igst_total AS igst, cgst_total AS cgst, sgst_total AS sgst
                FROM purchases
-              WHERE business_id = $1 AND bill_date BETWEEN $2 AND $3
+              WHERE business_id = $1 AND bill_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR branch_id = ANY($4::uuid[]))
                 AND status = 'final' AND deleted_at IS NULL AND is_reverse_charge = true
              UNION ALL
              SELECT amount, COALESCE(igst_amount, 0), COALESCE(cgst_amount, 0), COALESCE(sgst_amount, 0)
                FROM expenses
-              WHERE business_id = $1 AND expense_date BETWEEN $2 AND $3
+              WHERE business_id = $1 AND expense_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR branch_id = ANY($4::uuid[]))
                 AND deleted_at IS NULL AND COALESCE(is_reverse_charge, false)
            ) rcm`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       const rcm = rcmRes.rows[0] || {};
       addTaxBreakdown(data.table_4.G, {
@@ -431,7 +435,7 @@ export class GSTR9Generator {
         FROM purchase_items pi
         JOIN purchases p ON pi.purchase_id = p.id AND p.deleted_at IS NULL
         LEFT JOIN items i ON pi.item_id = i.id
-        WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3
+        WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3 AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))
           AND p.status = 'final'
           AND NOT EXISTS (
             SELECT 1 FROM gstr2b_reconciliation gr
@@ -440,7 +444,7 @@ export class GSTR9Generator {
               AND rd.decision IN ('ITC_DEFERRED_TO_FUTURE', 'ITC_NOT_ELIGIBLE', 'PENDING_SUPPLIER_CORRECTION', 'IGNORE')
           )
       `;
-      const purchasesRes = await client.query(purchasesQuery, [business_id, fyFrom, fyTo]);
+      const purchasesRes = await client.query(purchasesQuery, [business_id, fyFrom, fyTo, gstinBranchIds]);
 
       purchasesRes.rows.forEach(row => {
         const type = classifyItcType(row);
@@ -537,7 +541,7 @@ export class GSTR9Generator {
                 p.supplier_gstin, p.is_reverse_charge, p.document_type, p.itc_eligible
            FROM purchase_charges pc
            JOIN purchases p ON p.id = pc.purchase_id AND p.deleted_at IS NULL
-          WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3
+          WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3 AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))
             AND p.status = 'final'
             AND p.document_type IS DISTINCT FROM 'supplier_credit_note'
             AND NOT EXISTS (
@@ -546,7 +550,7 @@ export class GSTR9Generator {
               WHERE gr.purchase_id = p.id
                 AND rd.decision IN ('ITC_DEFERRED_TO_FUTURE', 'ITC_NOT_ELIGIBLE', 'PENDING_SUPPLIER_CORRECTION', 'IGNORE')
             )`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       chargesRes.rows.forEach((row) => {
         if (row.itc_eligible === false) return;
@@ -603,10 +607,10 @@ export class GSTR9Generator {
                FROM purchase_return_items
               WHERE return_id = pr.id
            ) items ON true
-          WHERE pr.business_id = $1 AND pr.return_date BETWEEN $2 AND $3
+          WHERE pr.business_id = $1 AND pr.return_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR pr.branch_id = ANY($4::uuid[]))
             AND COALESCE(pr.status, 'final') <> 'cancelled'
             AND COALESCE(p.itc_eligible, true)`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       returnsRes.rows.forEach((r) => {
         const itemNeg = {
@@ -647,12 +651,12 @@ export class GSTR9Generator {
         `SELECT e.amount, e.cgst_amount, e.sgst_amount, e.igst_amount, e.is_reverse_charge, s.gstin AS supplier_gstin
            FROM expenses e
            LEFT JOIN suppliers s ON s.id = e.supplier_id
-          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3
+          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))
             AND e.deleted_at IS NULL
             AND COALESCE(e.itc_eligible, true)
             AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0
             AND NOT EXISTS (SELECT 1 FROM expense_lines el WHERE el.expense_id = e.id)`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       const placeExpenseItc = (
         e: { is_reverse_charge?: boolean; supplier_gstin?: string | null },
@@ -689,12 +693,12 @@ export class GSTR9Generator {
            FROM expenses e
            JOIN expense_lines el ON el.expense_id = e.id AND el.business_id = e.business_id
            LEFT JOIN suppliers s ON s.id = e.supplier_id
-          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3
+          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3 AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))
             AND e.deleted_at IS NULL
             AND COALESCE(e.itc_eligible, true)
             AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0
           GROUP BY e.id, e.is_reverse_charge, s.gstin, el.item_type`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       expenseLineItcRes.rows.forEach((e) => {
         placeExpenseItc(e, e.item_type === 'goods' ? 'inputs' : 'input_services', {
@@ -713,7 +717,7 @@ export class GSTR9Generator {
 
         // GSTR-1 (Returns Comparison)
         try {
-          const gstr1 = await this.gstr1Generator.generate({ business_id, month: actualMonth, year: actualYear });
+          const gstr1 = await this.gstr1Generator.generate({ business_id, branch_id, month: actualMonth, year: actualYear });
           
           // Calculate tax breakdown from HSN data (which has all tax details)
           let totalIgst = 0, totalCgst = 0, totalSgst = 0, totalCess = 0;
@@ -767,7 +771,7 @@ export class GSTR9Generator {
 
         // GSTR-3B (Returns Primary for 6A and 9)
         try {
-          const gstr3b = await this.gstr3bGenerator.generate({ business_id, month: actualMonth, year: actualYear });
+          const gstr3b = await this.gstr3bGenerator.generate({ business_id, branch_id, month: actualMonth, year: actualYear });
           addTaxBreakdown(data.table_6.A, gstr3b.itc_details.net_itc);
           
           // Table 9 - Tax Paid (Sourced from 3B)
@@ -791,7 +795,12 @@ export class GSTR9Generator {
         }
       }
 
-      const table8A = await computeTable8A(client, business_id, financial_year);
+      const table8A = await computeTable8A(
+        client,
+        business_id,
+        financial_year,
+        gstinBranchIds ? { recipientGstin: businessGstin || null, branchIds: gstinBranchIds } : null
+      );
       data.table_8.A = table8A.A;
       data.validation.warnings.push(...table8A.warnings);
 
@@ -799,6 +808,7 @@ export class GSTR9Generator {
         businessId: business_id,
         fromDate: fyFrom,
         toDate: fyTo,
+        branchId: branch_id ?? null,
       });
       data.table_9.igst.cash = cashPaid.igst;
       data.table_9.cgst.cash = cashPaid.cgst;
@@ -811,11 +821,11 @@ export class GSTR9Generator {
         `SELECT a.account_code, COALESCE(SUM(l.debit - l.credit), 0)::text AS paid
            FROM ledger_entry_lines l
            JOIN accounts a ON a.id = l.account_id
-          WHERE l.business_id = $1 AND l.voucher_type = 'gst_setoff'
+          WHERE l.business_id = $1 AND l.voucher_type = 'gst_setoff' AND ($4::uuid[] IS NULL OR l.branch_id = ANY($4::uuid[]))
             AND l.entry_date BETWEEN $2 AND $3
             AND a.account_code IN ('2150', '2151', '2152', '2153')
           GROUP BY a.account_code`,
-        [business_id, fyFrom, fyTo]
+        [business_id, fyFrom, fyTo, gstinBranchIds]
       );
       const creditByCode = new Map(setoffRes.rows.map((r) => [r.account_code, parseFloat(r.paid) || 0]));
       data.table_9.cgst.credit = creditByCode.get('2150') ?? 0;

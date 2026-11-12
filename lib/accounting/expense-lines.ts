@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
 import { ExpenseValidationError, type ExpensePostingIdentity } from '@/lib/accounting/expense-posting';
 import { gstRateError } from '@/lib/gst/rates';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -204,17 +205,18 @@ export function computeExpenseLineBill(input: {
   };
 }
 
+/**
+ * States that decide CGST+SGST vs IGST on an expense. The recipient is the registration the
+ * expense is booked under: a branch with its own GSTIN is a distinct person in its own state.
+ */
 export async function loadExpenseSupplyStates(
   businessId: string,
   supplierId: string | null,
-  supplierGstin: string | null
+  supplierGstin: string | null,
+  branchId?: string | null
 ): Promise<{ businessState: string | null; supplierState: string | null }> {
   const pool = getPool();
-  const business = await pool.query<{ state_code: string | null; gstin: string | null }>(
-    `SELECT state_code, gstin FROM businesses WHERE id = $1`,
-    [businessId]
-  );
-  const businessRow = business.rows[0];
+  const registration = await resolveSupplierRegistration(pool, businessId, branchId ?? null);
   let supplierState: string | null = null;
   if (supplierId && UUID_RE.test(supplierId)) {
     const supplier = await pool.query<{ state_code: string | null; gstin: string | null }>(
@@ -226,7 +228,7 @@ export async function loadExpenseSupplyStates(
     supplierState = stateCode(row.state_code) || gstinState(row.gstin);
   }
   return {
-    businessState: stateCode(businessRow?.state_code) || gstinState(businessRow?.gstin),
+    businessState: stateCode(registration.stateCode) || gstinState(registration.gstin),
     supplierState: supplierState || gstinState(supplierGstin),
   };
 }

@@ -60,6 +60,15 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   final _mrp = TextEditingController();
   final _packSize = TextEditingController();
   final _packUnit = TextEditingController();
+  final _netQuantity = TextEditingController();
+  final _fssai = TextEditingController();
+  final _plu = TextEditingController();
+  bool _gstIncluded = false;
+  String _uqc = '';
+  String _country = 'IN';
+  bool _weighed = false;
+  String _weightMode = 'weight';
+  bool _label = false;
   List<(String, String)> _categories = const [];
   String _categoryId = '';
   String _supplierId = '';
@@ -122,6 +131,16 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
       _categoryId = row['category_id']?.toString() ?? '';
       _supplierId = row['default_supplier_id']?.toString() ?? '';
       _image = row['image_url']?.toString() ?? '';
+      _gstIncluded = row['gst_included'] == true;
+      _uqc = row['uqc']?.toString() ?? '';
+      _netQuantity.text = row['net_quantity']?.toString() ?? '';
+      _fssai.text = row['fssai_licence_no']?.toString() ?? '';
+      // An item saved without a country keeps none; a new item starts at India like the website.
+      _country = row['country_of_origin']?.toString() ?? '';
+      _weighed = row['is_weighed'] == true;
+      _plu.text = row['plu_code']?.toString() ?? '';
+      _weightMode = row['weight_barcode_mode'] == 'price' ? 'price' : 'weight';
+      _label = _netQuantity.text.isNotEmpty || _fssai.text.isNotEmpty || (_country.isNotEmpty && _country != 'IN') || _weighed;
       _complex = _set(row['has_variants']) || _set(row['is_bundle']);
       _more = _code.text.isNotEmpty || _purchase.text.isNotEmpty || _hsn.text.isNotEmpty || _description.text.isNotEmpty || _store || _featured || !_returnable;
     } catch (_) {
@@ -170,7 +189,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _code, _selling, _purchase, _tax, _hsn, _opening, _min, _description, _barcode, _brand, _mrp, _packSize, _packUnit]) {
+    for (final c in [_name, _code, _selling, _purchase, _tax, _hsn, _opening, _min, _description, _barcode, _brand, _mrp, _packSize, _packUnit, _netQuantity, _fssai, _plu]) {
       c.dispose();
     }
     super.dispose();
@@ -227,6 +246,14 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           packSize: _packSize.text,
           packUnit: _packUnit.text,
           imageUrl: _image,
+          gstIncluded: _gstIncluded,
+          uqc: _uqc,
+          fssai: _fssai.text,
+          netQuantity: _netQuantity.text,
+          countryOfOrigin: _country,
+          isWeighed: _weighed,
+          pluCode: _plu.text,
+          weightBarcodeMode: _weightMode,
         ));
       } else {
         await widget.session.api.postJson('/api/items', itemCreateBody(
@@ -252,6 +279,14 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           packSize: _packSize.text,
           packUnit: _packUnit.text,
           imageUrl: _image,
+          gstIncluded: _gstIncluded,
+          uqc: _uqc,
+          fssai: _fssai.text,
+          netQuantity: _netQuantity.text,
+          countryOfOrigin: _country,
+          isWeighed: _weighed,
+          pluCode: _plu.text,
+          weightBarcodeMode: _weightMode,
         ));
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -414,7 +449,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   @override
   Widget build(BuildContext context) {
     const units = [('PCS', 'PCS'), ('KG', 'KG'), ('LTR', 'LTR'), ('MTR', 'MTR'), ('BOX', 'BOX')];
-    const rates = [('0', '0%'), ('5', '5%'), ('12', '12%'), ('18', '18%'), ('28', '28%')];
+    const rates = itemGstRates;
     final unitOptions = units.any((u) => u.$1 == _unit) ? units : [(_unit, _unit), ...units];
     final taxValue = _tax.text.isEmpty ? '0' : _tax.text;
     final rateOptions = rates.any((r) => r.$1 == taxValue) ? rates : [(taxValue, '$taxValue%'), ...rates];
@@ -460,6 +495,13 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                         _f(_name, 'Name *'),
                         const SizedBox(height: AppSpace.md),
                         _f(_selling, 'Selling price', number: true),
+                        const SizedBox(height: AppSpace.md),
+                        KToggleField(
+                          label: 'Selling price includes GST',
+                          help: 'GST is worked out backwards from the price instead of added on top.',
+                          value: _gstIncluded,
+                          onChanged: (v) => setState(() => _gstIncluded = v),
+                        ),
                         const SizedBox(height: AppSpace.md),
                         Text('GST rate', style: AppText.label),
                         const SizedBox(height: AppSpace.sm),
@@ -513,6 +555,18 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                                 const SizedBox(height: AppSpace.md),
                                 _f(_hsn, 'HSN/SAC'),
                                 const SizedBox(height: AppSpace.md),
+                                KPickField<String>(
+                                  label: 'GST UQC',
+                                  value: _uqc,
+                                  searchable: true,
+                                  options: [
+                                    ('', 'Work out from unit'),
+                                    for (final u in itemUqcCodes) (u, u),
+                                    if (_uqc.isNotEmpty && !itemUqcCodes.contains(_uqc)) (_uqc, _uqc),
+                                  ],
+                                  onChanged: (v) => setState(() => _uqc = v),
+                                ),
+                                const SizedBox(height: AppSpace.md),
                                 _f(_description, 'Description', lines: 3),
                                 SwitchListTile.adaptive(
                                   contentPadding: EdgeInsets.zero,
@@ -541,6 +595,60 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                       ],
                     ),
                   ),
+                  if (_type == 'goods') ...[
+                    const SizedBox(height: AppSpace.md),
+                    KCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          KListRow(
+                            onTap: () => setState(() => _label = !_label),
+                            title: 'Retail label',
+                            subtitle: 'Net quantity, FSSAI, origin, sold by weight',
+                            trailing: Icon(_label ? LucideIcons.chevronUp : LucideIcons.chevronDown, size: 18, color: AppColors.ink3),
+                          ),
+                          if (_label)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  KTextField(label: 'Net quantity', controller: _netQuantity, hint: 'e.g. 100 g, 1 L, 12 x 50 g'),
+                                  const SizedBox(height: AppSpace.md),
+                                  KTextField(label: 'FSSAI licence no.', controller: _fssai, hint: '14-digit FSSAI number', maxLength: 20),
+                                  const SizedBox(height: AppSpace.md),
+                                  KPickField<String>(
+                                    label: 'Country of origin',
+                                    value: _country,
+                                    options: itemCountries.any((c) => c.$1 == _country) ? itemCountries : [(_country, _country), ...itemCountries],
+                                    onChanged: (v) => setState(() => _country = v),
+                                  ),
+                                  const SizedBox(height: AppSpace.md),
+                                  KToggleField(
+                                    label: 'Sold by weight or variable price',
+                                    help: 'For items a weighing scale prices at the counter, like loose rice.',
+                                    value: _weighed,
+                                    onChanged: (v) => setState(() => _weighed = v),
+                                  ),
+                                  if (_weighed) ...[
+                                    const SizedBox(height: AppSpace.md),
+                                    KTextField(label: 'PLU code', controller: _plu, hint: 'e.g. 01234', keyboard: TextInputType.number, maxLength: 5),
+                                    const SizedBox(height: AppSpace.md),
+                                    Text('Scale barcode carries', style: AppText.label),
+                                    const SizedBox(height: AppSpace.sm),
+                                    KSegmented<String>(
+                                      value: _weightMode,
+                                      options: const [('weight', 'Weight in grams'), ('price', 'Price in paise')],
+                                      onChanged: (v) => setState(() => _weightMode = v),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

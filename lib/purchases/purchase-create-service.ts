@@ -69,6 +69,8 @@ export interface CreatePurchaseInput {
   supplier_state_code?: string | null;
   invoice_number?: string | null;
   supplier_gstin?: string | null;
+  /** GSTIN the supplier billed (Bill To on the invoice), when known. Must be this branch's GSTIN. */
+  bill_to_gstin?: string | null;
   original_bill_number?: string | null;
   original_bill_date?: string | null;
   extraction_job_id?: string | null;
@@ -306,6 +308,17 @@ export async function createPurchaseInTransaction(
   const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
   const businessStateCode =
     registration.stateCode || business.state_code || getStateCode(business.state || '');
+  // ITC belongs to the GSTIN the supplier billed (s.16(2)(a)): a bill addressed to another of the
+  // business's GSTINs must be booked in a branch on that GSTIN.
+  const billTo = typeof body.bill_to_gstin === 'string' ? body.bill_to_gstin.replace(/\s/g, '').toUpperCase() : '';
+  if (billTo.length === 15 && registration.gstin && billTo !== registration.gstin.toUpperCase()) {
+    throw new PurchaseCreateServiceError(
+      `This bill is addressed to GSTIN ${billTo}, but this branch files under ${registration.gstin}. ` +
+        'Book it in the branch with that GSTIN so the input tax credit goes to the right registration.',
+      400,
+      'BILL_TO_GSTIN_MISMATCH',
+    );
+  }
   const finalPlaceOfSupply = body.place_of_supply_state_code || businessStateCode;
   for (const item of items) {
     const rateError = gstRateError(Number(item.tax_rate) || 0, body.bill_date ? String(body.bill_date).slice(0, 10) : null);

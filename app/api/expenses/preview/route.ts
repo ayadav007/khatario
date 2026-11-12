@@ -52,7 +52,12 @@ export async function POST(request: NextRequest) {
         const supplierId = body.supplier_id && String(body.supplier_id).trim() ? String(body.supplier_id).trim() : null;
         let supplierGstin: string | null = null;
         if (typeof body.supplier_gstin === 'string' && body.supplier_gstin.trim()) supplierGstin = body.supplier_gstin.trim();
-        const supply = await loadExpenseSupplyStates(session.businessId, supplierId, supplierGstin);
+        const { resolveBranchId } = await import('@/lib/branch-helpers');
+        const branchId = await resolveBranchId({
+          businessId: session.businessId,
+          branchId: typeof body.branch_id === 'string' && body.branch_id ? body.branch_id : undefined,
+        }).catch(() => null);
+        const supply = await loadExpenseSupplyStates(session.businessId, supplierId, supplierGstin, branchId);
         lineBill = await buildExpenseBillFromLines({
           businessId: session.businessId,
           lines: body.lines,

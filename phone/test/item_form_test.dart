@@ -26,6 +26,125 @@ class _Api extends KhatarioApi {
 }
 
 void main() {
+  group('tax and retail label fields', () {
+    test('only current GST slabs are offered', () {
+      final rates = [for (final r in itemGstRates) r.$1];
+      expect(rates, isNot(contains('12')));
+      expect(rates.take(4), ['0', '5', '18', '40']);
+    });
+
+    test('create sends them only when set, and a blank country is none', () {
+      final plain = itemCreateBody(name: 'Rice');
+      expect(plain['gst_included'], isFalse);
+      expect(plain['country_of_origin'], 'IN');
+      for (final key in ['uqc', 'fssai_licence_no', 'net_quantity', 'is_weighed', 'plu_code', 'weight_barcode_mode']) {
+        expect(plain.containsKey(key), isFalse, reason: key);
+      }
+
+      final full = itemCreateBody(
+        name: 'Loose rice',
+        gstIncluded: true,
+        uqc: ' KGS ',
+        fssai: ' 12345678901234 ',
+        netQuantity: '1 kg',
+        countryOfOrigin: '',
+        isWeighed: true,
+        pluCode: 'PLU 0123456',
+        weightBarcodeMode: 'price',
+      );
+      expect(full['gst_included'], isTrue);
+      expect(full['uqc'], 'KGS');
+      expect(full['fssai_licence_no'], '12345678901234');
+      expect(full['net_quantity'], '1 kg');
+      expect(full['country_of_origin'], isNull);
+      expect(full['is_weighed'], isTrue);
+      expect(full['plu_code'], '01234');
+      expect(full['weight_barcode_mode'], 'price');
+    });
+
+    test('a service is never sold by weight', () {
+      final body = itemCreateBody(name: 'Repair', itemType: 'service', isWeighed: true, pluCode: '12');
+      expect(body.containsKey('is_weighed'), isFalse);
+      expect(body.containsKey('plu_code'), isFalse);
+    });
+
+    final existing = <String, dynamic>{
+      'name': 'Loose rice',
+      'gst_included': true,
+      'uqc': 'KGS',
+      'fssai_licence_no': '12345678901234',
+      'net_quantity': '1 kg',
+      'country_of_origin': 'CN',
+      'is_weighed': true,
+      'plu_code': '01234',
+      'weight_barcode_mode': 'price',
+    };
+
+    test('an edit that does not offer the fields keeps them', () {
+      final body = itemUpdateBody(existing: existing, name: 'Loose rice');
+      expect(body['gst_included'], isTrue);
+      expect(body.containsKey('uqc'), isFalse);
+      expect(body['fssai_licence_no'], '12345678901234');
+      expect(body['net_quantity'], '1 kg');
+      expect(body['country_of_origin'], 'CN');
+      expect(body['is_weighed'], isTrue);
+      expect(body['plu_code'], '01234');
+      expect(body['weight_barcode_mode'], 'price');
+    });
+
+    test('an untouched edit that offers the fields sends the same values', () {
+      final body = itemUpdateBody(
+        existing: existing,
+        name: 'Loose rice',
+        gstIncluded: true,
+        uqc: 'KGS',
+        fssai: '12345678901234',
+        netQuantity: '1 kg',
+        countryOfOrigin: 'CN',
+        isWeighed: true,
+        pluCode: '01234',
+        weightBarcodeMode: 'price',
+      );
+      expect(body['gst_included'], isTrue);
+      expect(body.containsKey('uqc'), isFalse);
+      expect(body['fssai_licence_no'], '12345678901234');
+      expect(body['net_quantity'], '1 kg');
+      expect(body['country_of_origin'], 'CN');
+      expect(body['is_weighed'], isTrue);
+      expect(body['plu_code'], '01234');
+      expect(body['weight_barcode_mode'], 'price');
+    });
+
+    test('changed values are sent and cleared values clear', () {
+      final body = itemUpdateBody(
+        existing: existing,
+        name: 'Loose rice',
+        gstIncluded: false,
+        uqc: '',
+        fssai: '',
+        netQuantity: '2 kg',
+        countryOfOrigin: '',
+        isWeighed: false,
+        pluCode: '01234',
+        weightBarcodeMode: 'weight',
+      );
+      expect(body['gst_included'], isFalse);
+      expect(body.containsKey('uqc'), isTrue);
+      expect(body['uqc'], isNull);
+      expect(body.containsKey('fssai_licence_no'), isFalse);
+      expect(body['net_quantity'], '2 kg');
+      expect(body.containsKey('country_of_origin'), isFalse);
+      expect(body.containsKey('is_weighed'), isFalse);
+      expect(body.containsKey('plu_code'), isFalse);
+      expect(body['weight_barcode_mode'], 'weight');
+    });
+
+    test('an item saved without a country is not given India on edit', () {
+      final body = itemUpdateBody(existing: const {'name': 'Rice'}, name: 'Rice', countryOfOrigin: '');
+      expect(body.containsKey('country_of_origin'), isFalse);
+    });
+  });
+
   test('a goods item omits identity and zeros nothing the shop typed', () {
     final body = itemCreateBody(name: ' Rice ', sellingPrice: '12.5', openingStock: '4', taxRate: '5', hsn: '1006');
     expect(body['name'], 'Rice');

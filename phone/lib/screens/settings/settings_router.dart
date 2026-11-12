@@ -461,7 +461,6 @@ class _BranchesScreenState extends State<_BranchesScreen> {
     if (!ok || name.text.trim().isEmpty) return;
     try {
       await widget.session.api.postJson('/api/branches', {
-        'business_id': widget.session.businessId,
         'name': name.text.trim(),
         'city': city.text.trim(),
         'phone': phone.text.trim(),
@@ -527,7 +526,6 @@ class _WarehousesScreenState extends State<_WarehousesScreen> {
     if (!ok || name.text.trim().isEmpty) return;
     try {
       await widget.session.api.postJson('/api/warehouses', {
-        'business_id': widget.session.businessId,
         'name': name.text.trim(),
         'city': city.text.trim(),
       });
@@ -1045,7 +1043,6 @@ class _ShiftsScreenState extends State<_ShiftsScreen> {
     if (!ok || name.text.trim().isEmpty) return;
     try {
       await widget.session.api.postJson('/api/shifts', {
-        'business_id': widget.session.businessId,
         'shift_name': name.text.trim(),
         'start_time': start.text.trim(),
         'end_time': end.text.trim(),
@@ -1330,7 +1327,6 @@ class _CommissionScreenState extends State<_CommissionScreen> {
     if (ok != true) return;
     try {
       await widget.session.api.postJson('/api/commission-rules', {
-        'business_id': widget.session.businessId,
         'role_id': roleId,
         'commission_type': 'percentage',
         'commission_value': num.tryParse(value.text.trim()) ?? 0,
@@ -1471,7 +1467,7 @@ class _CategoriesScreenState extends State<_CategoriesScreen> {
     final ok = await askTextSheet(context, title: 'Add a category', fields: [('Name', name, null)]);
     if (!ok || name.text.trim().isEmpty) return;
     try {
-      await widget.session.api.postJson('/api/categories', {'business_id': widget.session.businessId, 'name': name.text.trim()});
+      await widget.session.api.postJson('/api/categories', {'name': name.text.trim()});
       await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -1531,7 +1527,6 @@ class _LabelsScreenState extends State<_LabelsScreen> {
     if (!ok || name.text.trim().isEmpty) return;
     try {
       await widget.session.api.postJson('/api/label-templates', {
-        'business_id': widget.session.businessId,
         'name': name.text.trim(),
         'format': 'ROLL',
         'width_mm': 50,
@@ -1691,7 +1686,6 @@ class _BanksScreenState extends State<_BanksScreen> {
     if (!ok || bank.text.trim().isEmpty || number.text.trim().isEmpty) return;
     try {
       await widget.session.api.postJson('/api/bank-accounts', {
-        'business_id': widget.session.businessId,
         'bank_name': bank.text.trim(),
         'account_name': name.text.trim().isEmpty ? bank.text.trim() : name.text.trim(),
         'account_number': number.text.trim(),
@@ -2019,7 +2013,6 @@ class _LeaveImportScreenState extends State<_LeaveImportScreen> {
   Future<void> _save() async {
     try {
       await widget.session.api.postJson('/api/employees/leave-balances', {
-        'business_id': widget.session.businessId,
         'employee_id': _employee.text.trim(),
         'leave_type_id': _type.text.trim(),
         'year': int.tryParse(_year.text.trim()) ?? DateTime.now().year,

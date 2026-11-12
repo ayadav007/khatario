@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -13,8 +11,10 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../theme.dart';
 import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
+import '../../ui/authed_image.dart';
 import '../../ui/toast.dart';
 import 'deal_sheet.dart';
+import 'saved_replies_screen.dart';
 
 /// One WhatsApp conversation: read the messages and send a text reply.
 class ChatThreadScreen extends StatefulWidget {
@@ -145,30 +145,52 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   Future<void> _openReplies() async {
     await _ensureReplies();
     if (!mounted) return;
-    final picked = await showKSheet<Map<String, dynamic>>(
+    final picked = await showKSheet<Object>(
       context,
-      title: _replies.isEmpty ? null : 'Saved replies',
+      title: 'Saved replies',
       builder: (context) {
-        if (_replies.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text('No saved replies yet. Add them from the website inbox, then they show up here.'),
-          );
-        }
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            for (final reply in _replies)
-              KListRow(
-                title: reply['title']?.toString() ?? 'Reply',
-                subtitle: reply['shortcut']?.toString().isNotEmpty == true ? '/${reply['shortcut']}' : (reply['message']?.toString() ?? ''),
-                onTap: () => Navigator.pop(context, reply),
-              ),
-          ],
+        final manage = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.xs),
+          child: Align(alignment: Alignment.centerLeft, child: KTextButton(label: 'Manage', onTap: () => Navigator.pop(context, 'manage'))),
         );
+        if (_replies.isEmpty) {
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpace.xl),
+              child: Text('No saved replies yet. Add some under Saved replies, then they show up here.', style: AppText.body),
+            ),
+            manage,
+          ]);
+        }
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final reply in _replies)
+                  KListRow(
+                    title: reply['title']?.toString() ?? 'Reply',
+                    subtitle: reply['shortcut']?.toString().isNotEmpty == true ? '/${reply['shortcut']}' : (reply['message']?.toString() ?? ''),
+                    onTap: () => Navigator.pop(context, reply),
+                  ),
+              ],
+            ),
+          ),
+          manage,
+        ]);
       },
     );
-    if (picked != null) _applyReply(picked);
+    if (!mounted) return;
+    if (picked == 'manage') {
+      await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => SavedRepliesScreen(session: widget.session)));
+      // Replies may have been added or changed there.
+      if (mounted) {
+        _repliesLoaded = false;
+        await _ensureReplies();
+      }
+      return;
+    }
+    if (picked is Map<String, dynamic>) _applyReply(picked);
   }
 
   Future<void> _transfer() async {
@@ -617,7 +639,12 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         padding: const EdgeInsets.only(bottom: 4),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(6),
-          child: _AuthedImage(api: widget.session.api, url: url),
+          child: AuthedImage(
+            api: widget.session.api,
+            url: url,
+            width: 220,
+            failed: const Text('Photo', style: TextStyle(fontSize: 13, color: Color(0xFF667781))),
+          ),
         ),
       );
     }
@@ -697,52 +724,5 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         );
       },
     );
-  }
-}
-
-class _AuthedImage extends StatefulWidget {
-  const _AuthedImage({required this.api, required this.url});
-
-  final KhatarioApi api;
-  final String url;
-
-  @override
-  State<_AuthedImage> createState() => _AuthedImageState();
-}
-
-class _AuthedImageState extends State<_AuthedImage> {
-  Uint8List? _bytes;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final url = widget.url;
-      if (url.startsWith('data:')) {
-        final comma = url.indexOf(',');
-        if (comma < 0) throw StateError('bad data url');
-        if (!mounted) return;
-        setState(() => _bytes = base64Decode(url.substring(comma + 1)));
-        return;
-      }
-      final response = await widget.api.dio.get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
-      final data = response.data;
-      if (!mounted || data == null) return;
-      setState(() => _bytes = Uint8List.fromList(data));
-    } catch (_) {
-      if (mounted) setState(() => _failed = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) return const Text('Photo', style: TextStyle(fontSize: 13, color: Color(0xFF667781)));
-    if (_bytes == null) return const SizedBox(width: 160, height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
-    return Image.memory(_bytes!, width: 220, fit: BoxFit.cover);
   }
 }

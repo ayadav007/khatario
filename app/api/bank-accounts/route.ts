@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     const {
-      business_id,
+      business_id: claimedBusinessId,
       account_name,
       account_number,
       bank_name,
@@ -118,10 +118,14 @@ export async function POST(request: NextRequest) {
     } = body;
     const createdByUserId = resolveCreatedByUserId(request, body);
 
-    if (!business_id || !account_name || !account_number || !bank_name) {
-      console.error('[Bank Accounts API] Missing required fields:', { business_id: !!business_id, account_name: !!account_name, account_number: !!account_number, bank_name: !!bank_name });
+    // The business is the session business; a body business_id may only repeat it.
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+
+    if (!account_name || !account_number || !bank_name) {
       return NextResponse.json(
-        { error: 'business_id, account_name, account_number, and bank_name are required' },
+        { error: 'account_name, account_number, and bank_name are required' },
         { status: 400 }
       );
     }
@@ -132,8 +136,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const tenant = requireTenantBusinessId(request, business_id);
-    if (!tenant.ok) return tenant.response;
     const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
     if (planDenied) return planDenied;
 
@@ -264,7 +266,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const {
       id,
-      business_id,
+      business_id: claimedBusinessId,
       account_name,
       account_number,
       bank_name,
@@ -278,11 +280,13 @@ export async function PUT(request: NextRequest) {
     } = body;
     const updated_by_user_id = actingUserId(request, bodyUpdatedBy);
 
-    if (!id || !business_id) {
-      return NextResponse.json(
-        { error: 'id and business_id are required' },
-        { status: 400 }
-      );
+    // The business is the session business; a body business_id may only repeat it.
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 });
     }
 
     if (!updated_by_user_id) {
@@ -291,8 +295,6 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    const tenant = requireTenantBusinessId(request, business_id);
-    if (!tenant.ok) return tenant.response;
     const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
     if (planDenied) return planDenied;
 
