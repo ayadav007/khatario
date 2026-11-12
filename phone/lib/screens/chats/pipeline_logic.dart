@@ -2,6 +2,8 @@
 library;
 
 import '../../format.dart';
+import 'leads_logic.dart' show formatLeadPhone, stagesPath;
+export 'leads_logic.dart' show stagesPath;
 
 const sourceLabels = <String, String>{
   'ctwa_ad': 'WhatsApp ad',
@@ -46,6 +48,19 @@ class PipelineStage {
   final num totalValue;
   final List<DealCard> cards;
 
+  /// Cards still to load; never below zero (a card moved away leaves the count under what is shown).
+  int get remaining => count > cards.length ? count - cards.length : 0;
+
+  /// This stage with the next page of cards added (a card already shown is not added twice).
+  PipelineStage withMoreCards(List<DealCard> more) => PipelineStage(
+        id: id,
+        name: name,
+        kind: kind,
+        count: count,
+        totalValue: totalValue,
+        cards: [...cards, ...more.where((m) => !cards.any((c) => c.id == m.id))],
+      );
+
   factory PipelineStage.fromJson(Map<String, dynamic> j) => PipelineStage(
         id: j['id']?.toString() ?? '',
         name: j['name']?.toString() ?? 'Stage',
@@ -71,6 +86,9 @@ class DealCard {
     this.ownerName,
     this.source,
     this.nextFollowupAt,
+    this.phone,
+    this.isCustomer = false,
+    this.temperature,
   });
 
   final String id;
@@ -82,6 +100,11 @@ class DealCard {
   final String? ownerName;
   final String? source;
   final DateTime? nextFollowupAt;
+  final String? phone;
+  final bool isCustomer;
+
+  /// hot, warm or cold, from the chat's AI profile.
+  final String? temperature;
 
   factory DealCard.fromJson(Map<String, dynamic> j) => DealCard(
         id: j['id']?.toString() ?? '',
@@ -93,7 +116,17 @@ class DealCard {
         ownerName: j['owner_name']?.toString(),
         source: j['source']?.toString(),
         nextFollowupAt: DateTime.tryParse(j['next_followup_at']?.toString() ?? '')?.toLocal(),
+        phone: (j['phone']?.toString() ?? '').isEmpty ? null : j['phone'].toString(),
+        isCustomer: j['is_customer'] == true,
+        temperature: (j['temperature']?.toString() ?? '').isEmpty ? null : j['temperature'].toString(),
       );
+
+  /// "+91 98765 10004 · Existing customer · Hot".
+  String get contactLine => [
+        if (phone != null) formatLeadPhone(phone),
+        if (isCustomer) 'Existing customer',
+        if (temperature != null) '${temperature![0].toUpperCase()}${temperature!.substring(1)}',
+      ].join(' · ');
 
   /// Second line on the card: value, owner and follow-up.
   String meta(DateTime now) {
@@ -106,6 +139,78 @@ class DealCard {
     return parts.join(' · ');
   }
 }
+
+/// What the board is filtered by; the same keys as the website board's query.
+class PipelineFilters {
+  const PipelineFilters({this.search = '', this.owner = '', this.labelId = '', this.source = '', this.closedDays = 90});
+
+  final String search, owner, labelId, source;
+
+  /// Won and lost columns show deals closed in this many days.
+  final int closedDays;
+
+  PipelineFilters copyWith({String? search, String? owner, String? labelId, String? source, int? closedDays}) => PipelineFilters(
+        search: search ?? this.search,
+        owner: owner ?? this.owner,
+        labelId: labelId ?? this.labelId,
+        source: source ?? this.source,
+        closedDays: closedDays ?? this.closedDays,
+      );
+
+  bool get any => search.trim().isNotEmpty || owner.isNotEmpty || labelId.isNotEmpty || source.isNotEmpty;
+}
+
+String _q(String v) => Uri.encodeQueryComponent(v);
+
+String _boardQuery(PipelineFilters f, [Map<String, String> extra = const {}]) => [
+      if (f.search.trim().isNotEmpty) 'search=${_q(f.search.trim())}',
+      if (f.owner.isNotEmpty) 'owner=${_q(f.owner)}',
+      if (f.labelId.isNotEmpty) 'label_id=${_q(f.labelId)}',
+      if (f.source.isNotEmpty) 'source=${_q(f.source)}',
+      'closed_days=${f.closedDays}',
+      for (final e in extra.entries) '${e.key}=${_q(e.value)}',
+    ].join('&');
+
+String pipelinePath(PipelineFilters f) => '/api/whatsapp/pipeline?${_boardQuery(f)}';
+
+/// The next page of one stage's cards (the board answers with just that stage).
+String pipelineMorePath(String stageId, int offset, [PipelineFilters f = const PipelineFilters()]) =>
+    '/api/whatsapp/pipeline?${_boardQuery(f, {'stage_id': stageId, 'offset': '$offset'})}';
+
+// ---------------------------------------------------------------- stage manager
+
+String stagePath(String id) => '$stagesPath/${Uri.encodeComponent(id)}';
+
+/// Delete a stage; its chats move to [moveTo], or come off the board when that is empty.
+String stageDeletePath(String id, String moveTo) => moveTo.isEmpty ? stagePath(id) : '${stagePath(id)}?move_to=${_q(moveTo)}';
+
+Map<String, dynamic> stageCreateBody(String name, String kind) => {'name': name.trim(), 'kind': kind};
+Map<String, dynamic> stageOrderBody(List<String> ids) => {'order': ids};
+
+const stageColors = <(String, String)>[
+  ('slate', 'Grey'),
+  ('blue', 'Blue'),
+  ('teal', 'Teal'),
+  ('green', 'Green'),
+  ('amber', 'Amber'),
+  ('orange', 'Orange'),
+  ('red', 'Red'),
+  ('pink', 'Pink'),
+  ('violet', 'Violet'),
+];
+
+const stageKinds = <(String, String)>[('open', 'Open'), ('won', 'Won'), ('lost', 'Lost')];
+
+class StageDef {
+  const StageDef({required this.id, required this.name, required this.color, required this.kind});
+
+  final String id, name, color, kind;
+}
+
+List<StageDef> stageDefs(Map<String, dynamic> body) => [
+      for (final s in (body['stages'] is List ? body['stages'] as List : const []).whereType<Map>())
+        StageDef(id: s['id']?.toString() ?? '', name: s['name']?.toString() ?? 'Stage', color: s['color']?.toString() ?? 'slate', kind: s['kind']?.toString() ?? 'open'),
+    ];
 
 List<PipelineStage> parseBoard(Map<String, dynamic> body) =>
     (body['columns'] is List ? body['columns'] as List : const [])

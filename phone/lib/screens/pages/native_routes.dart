@@ -91,6 +91,15 @@ import '../tools/lookup_tools_screens.dart';
 import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
+import '../chats/chat_outreach_screens.dart';
+import '../chats/chat_thread_screen.dart';
+import '../chats/chats_inbox_screen.dart';
+import '../chats/connect_dashboard_screen.dart';
+import '../chats/lead_profile_screen.dart';
+import '../chats/lead_sources_screen.dart';
+import '../chats/leads_screen.dart';
+import '../chats/pipeline_screen.dart';
+import '../../theme.dart';
 import 'page_catalog.dart';
 import 'record_page.dart';
 import 'website_page_screen.dart';
@@ -120,7 +129,34 @@ const _tabHrefs = {'/items', '/invoices', '/customers', '/suppliers', '/search',
 /// Query strings matter: `/supply-orders?role=vendor` is matched before the query is stripped.
 /// [capabilities] is for screens that hide actions the role cannot use; none of today's do.
 Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabilities}) {
+  final query = Uri.tryParse(href);
+  if (query != null && query.queryParameters.isNotEmpty) {
+    // Links that name one lead or one chat open it directly.
+    final lead = query.queryParameters['lead'];
+    if (query.path == '/whatsapp/leads' && lead != null && lead.isNotEmpty) return LeadProfileScreen(session: session, leadId: lead);
+    final chat = query.queryParameters['c'];
+    if (query.path == '/whatsapp/conversations' && chat != null && chat.isNotEmpty) {
+      return ChatThreadScreen(session: session, conversationId: chat, title: 'Chat');
+    }
+    // Any other filter on a Connect page (`?status=open`) opens the same screen.
+    if (query.path.startsWith('/whatsapp/')) return nativeScreenFor(session, query.path, capabilities: capabilities);
+  }
   switch (href) {
+    case '/whatsapp/dashboard':
+      return ConnectDashboardScreen(session: session);
+    case '/whatsapp/conversations':
+      // The inbox is built for the Chats tab, which supplies the Scaffold (Material) around it.
+      return Scaffold(backgroundColor: AppColors.bg, body: ChatsInboxScreen(session: session));
+    case '/whatsapp/leads':
+      return LeadsScreen(session: session);
+    case '/whatsapp/pipeline':
+      return PipelineScreen(session: session);
+    case '/whatsapp/lead-sources':
+      return LeadSourcesScreen(session: session);
+    case '/whatsapp/campaigns':
+      return BroadcastsScreen(session: session);
+    case '/whatsapp/bot-rules':
+      return BotRepliesScreen(session: session);
     case '/hr/dashboard':
       return HrDashboardScreen(session: session);
     case '/employees/manager':
