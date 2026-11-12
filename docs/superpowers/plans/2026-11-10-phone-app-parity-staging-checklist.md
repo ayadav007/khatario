@@ -248,6 +248,37 @@ Deploy these to staging first: they change server routes for adding employees, s
 167. Tasks → add one assigned to an employee, mark it done, delete another.
 168. Performance → the summary loads.
 
+## Stage 7: WhatsApp (commits 0c6cf6d3 to 51721411)
+
+No server change in this stage; the APK alone is enough.
+
+### Dashboard, leads, lead sources, pipeline (Task 40)
+169. More › WhatsApp › Dashboard → "WhatsApp CRM dashboard" with status, bot vs human, agents, campaigns and pipeline tiles.
+170. Conversations, Campaigns and Pipeline in the More menu open their phone screens, not a plain list.
+171. Leads → filter by stage and source → add a lead → open it → add a comment, change its stage and owner.
+172. Convert a lead whose phone matches a customer → it links to that customer and the customer opens. Convert one with a new phone → the customer is added and linked.
+173. New enquiry on a closed lead → a fresh open lead.
+174. Lead sources → switch new numbers on and off, add a tracked link, IndiaMART sync, pause then resume IndiaMART (asks first), add a webhook → its URL shows once.
+175. Pipeline → search, filter by source and label, change the won/lost window → each card shows phone, temperature and "Existing customer" where true.
+176. Pipeline → tap Move on a card → pick a stage → the card moves and the counts update; tap a card → the lead opens.
+177. Pipeline → Show more on a long stage → more cards; Stages → add, rename, recolour, reorder and delete one (moving its leads).
+
+### Contacts, sending, campaigns (Task 41a)
+178. The Contacts tab → the new contacts list → search, filter by group → add, edit, delete a contact → open its chat.
+179. Contact groups → add a group → add three contacts → remove one.
+180. Unsubscribes → add a number → resubscribe it (asks first).
+181. Send message › Single → Text to one number → asks naming the number → sent.
+182. Send message › Single → Image → pick a photo from the phone → caption → sent; the picture arrives on WhatsApp.
+183. Send message › Bulk campaign → pick a group → Buttons with a picture from the media library → schedule for tomorrow → asks with the count and message → the campaign shows Scheduled.
+184. Who to message → tick people in a list → pick a saved reply → continue → the campaign tab is filled in.
+185. Campaigns → search and status filter → start, pause and resume (each ask quotes the message) → delete a finished one → View report: overview, recipients, analytics.
+
+### Flows, saved replies, orders (Task 41b)
+186. Flows → New flow › Shop starter → the editor opens on the website inside the app → back → the flow is listed; publish, unpublish, delete (each asks).
+187. Bot rules in the More menu → opens Flows with the import note → Import old rules.
+188. More › Settings › Messaging › Saved replies → add, edit, delete; in a chat, the saved-replies sheet lists them and its Manage link opens this screen.
+189. Order verification → a WhatsApp order with a payment screenshot → the screenshot shows and opens full size → Verify & Create Invoice; reject another with a reason. No "Open on website" button.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
@@ -268,3 +299,6 @@ Deploy these to staging first: they change server routes for adding employees, s
 - Starting a termination is not limited to HR on the server.
 - The task routes have no permission check: any signed-in user of the business can create, edit or delete tasks.
 - Owner-side poll voting and closing, template delete, onboarding tasks, candidate document checks and portal invites are website-only.
+- Campaign button clicks always show 0: the server never records which button a customer tapped (`whatsapp_campaign_recipients.button_clicked_id`), and the website page reads a field the API never sends.
+- Approving a WhatsApp order by id accepts any not-yet-invoiced order of the business, not only a draft WhatsApp order (the phone only offers WhatsApp drafts).
+- A lead opened from a link shows Delete only on your own comments, because no reply says who is a supervisor (the server still lets supervisors delete).
