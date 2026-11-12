@@ -9,6 +9,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../../ui/web_ui.dart';
+import '../../ui/form_kit.dart';
 import '../parties/customer_form_logic.dart';
 import '../parties/customer_form_screen.dart';
 import 'bill_saved_screen.dart';
@@ -20,7 +21,7 @@ import 'invoice_scan.dart';
 /// `app/(app)/invoices/new/page.tsx`): customer, dates, items, notes, totals, settlement.
 /// The server recalculates GST, stock and the ledger; this screen sends lines only.
 class InvoiceFormScreen extends StatefulWidget {
-  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice', this.supplyOrderId});
+  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice', this.supplyOrderId, this.now});
 
   final AppSession session;
   final String? invoiceId;
@@ -30,6 +31,9 @@ class InvoiceFormScreen extends StatefulWidget {
   /// Bill a confirmed Supplier Hub order: customer and lines come from the order, and saving
   /// links the invoice back to it.
   final String? supplyOrderId;
+
+  /// Today's date for a new bill. Tests pass a fixed one so a picture does not change with the calendar.
+  final DateTime Function()? now;
 
   @override
   State<InvoiceFormScreen> createState() => _InvoiceFormScreenState();
@@ -72,7 +76,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   bool _breakupOpen = false;
   bool _loading = false;
   bool _saving = false;
-  DateTime _date = DateTime.now();
+  late DateTime _date = (widget.now ?? DateTime.now)();
   DateTime? _dueDate;
   String? _number;
   String? _locked;
@@ -594,13 +598,14 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(controller: purpose, onChanged: (_) => set(() {}), decoration: const InputDecoration(labelText: 'What for')),
+              KTextField(label: 'What for', controller: purpose, onChanged: (_) => set(() {})),
               const SizedBox(height: 12),
-              TextField(
+              KTextField(
+                label: 'Amount',
                 controller: amount,
                 autofocus: existing == null,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Amount', prefixText: '$rupeeSign '),
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
+                prefixText: '$rupeeSign ',
               ),
               const SizedBox(height: 6),
               Text('Added to the total after GST, as on the website.', style: AppText.caption),

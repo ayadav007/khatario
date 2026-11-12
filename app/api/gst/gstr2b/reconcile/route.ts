@@ -33,9 +33,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { business_id, filing_period } = body;
     
-    if (!business_id || !filing_period) {
+    if (!filing_period) {
       return NextResponse.json(
-        { error: 'business_id and filing_period are required' },
+        { error: 'filing_period is required' },
         { status: 400 }
       );
     }
@@ -90,9 +90,9 @@ export async function GET(request: NextRequest) {
     const filing_period = searchParams.get('filing_period');
     const match_status = searchParams.get('match_status'); // Optional filter
     
-    if (!business_id || !filing_period) {
+    if (!filing_period) {
       return NextResponse.json(
-        { error: 'business_id and filing_period are required' },
+        { error: 'filing_period is required' },
         { status: 400 }
       );
     }

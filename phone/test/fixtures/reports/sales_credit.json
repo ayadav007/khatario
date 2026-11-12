@@ -1,0 +1,40 @@
+{
+  "creditSales": [
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a1",
+      "invoice_number": "INV-2026-0036",
+      "invoice_date": "2026-10-20T00:00:00.000Z",
+      "due_date": "2026-11-04T00:00:00.000Z",
+      "customer_name": "Sharma Traders",
+      "phone": "9876500001",
+      "gstin": "27ABCDE1234F1Z5",
+      "grand_total": "11800.00",
+      "paid_amount": "5000.00",
+      "balance_amount": "6800.00",
+      "payment_status": "partial",
+      "status_category": "overdue"
+    },
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a2",
+      "invoice_number": "INV-2026-0044",
+      "invoice_date": "2026-11-09T00:00:00.000Z",
+      "due_date": "2026-11-30T00:00:00.000Z",
+      "customer_name": "Gupta Stores",
+      "phone": null,
+      "gstin": null,
+      "grand_total": "4200.00",
+      "paid_amount": "0.00",
+      "balance_amount": "4200.00",
+      "payment_status": "unpaid",
+      "status_category": "pending"
+    }
+  ],
+  "totals": {
+    "total_invoices": 2,
+    "total_sales": 16000,
+    "total_collected": 5000,
+    "total_outstanding": 11000,
+    "total_overdue": 6800,
+    "overdue_invoices": 1
+  }
+}

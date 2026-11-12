@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
@@ -129,6 +130,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     let result: Awaited<ReturnType<typeof executePaymentReversal>>;
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: actorId, action: 'payment_reversed' });
       const claim = await claimReversalIdempotencyKey(client, {
         ...replayCtx,
         userId: actorId,

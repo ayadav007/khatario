@@ -1068,7 +1068,16 @@ export async function GET(request: NextRequest) {
            FROM ledger_entry_lines lel
            JOIN accounts a ON a.id = lel.account_id
           WHERE lel.voucher_type = 'invoice'
-            AND a.account_code = '1103'
+            -- 1103 or any account under it: customers can post to a category account.
+            AND a.id IN (
+              WITH RECURSIVE receivable AS (
+                SELECT id FROM accounts WHERE business_id = $1 AND account_code = '1103'
+                UNION
+                SELECT c.id FROM accounts c JOIN receivable r ON c.parent_account_id = r.id
+                 WHERE c.business_id = $1
+              )
+              SELECT id FROM receivable
+            )
             AND lel.business_id = $1
        )
        SELECT

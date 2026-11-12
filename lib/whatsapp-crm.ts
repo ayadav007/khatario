@@ -4,8 +4,10 @@
  */
 
 import * as db from '@/lib/db';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { sendWhatsAppMessage } from './whatsapp';
 import { queryRows, queryOne, query } from '@/lib/db';
+import { keepInboxMediaCopy } from '@/lib/whatsapp/media-ref-server';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
 import { scheduleLeadSummary } from './whatsapp/lead-summary';
 import { leadForInboundMessage, touchLeadForChat } from './leads/inbound';
@@ -1230,6 +1232,7 @@ async function createCashSaleInvoice(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
     const defaultBranchRes = await client.query(
       `SELECT id FROM branches WHERE business_id = $1 AND is_default = true LIMIT 1`,
       [businessId]
@@ -1294,6 +1297,7 @@ export async function createSalesOrderFromWhatsApp(
 
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
 
     // Get business settings for order number
     const business = await queryOne<{ next_sales_order_number: number; invoice_prefix: string }>(
@@ -1430,6 +1434,7 @@ async function updateDraftSalesOrderFromWhatsApp(params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'WhatsApp order' });
 
     const order = await client.query(
       `SELECT order_number
@@ -3675,6 +3680,18 @@ export async function processIncomingMessage(
         );
 
         if (latestOrder) {
+          // A payment screenshot is a business record: keep a server copy (WhatsApp deletes its own
+          // after a while) and give OCR the image itself, not a link only a signed-in user can open.
+          const keptScreenshot = await keepInboxMediaCopy(businessId, mediaUrl);
+          const screenshotUrl = keptScreenshot?.url ?? mediaUrl;
+          const ocrImageUrl = keptScreenshot?.dataUrl ?? mediaUrl;
+          if (keptScreenshot && keptScreenshot.url !== mediaUrl) {
+            await query(
+              `UPDATE whatsapp_conversation_messages SET media_url = $1 WHERE business_id = $2 AND message_id = $3`,
+              [keptScreenshot.url, businessId, messageId]
+            );
+          }
+
           /** Integrated PSP session — OCR must not run; wait for webhook. */
           const expectPspWebhook = await hasPendingGatewayPaymentTransaction(
             businessId,
@@ -3711,7 +3728,7 @@ export async function processIncomingMessage(
              WHERE id = $3
                AND (payment_status IS NULL OR payment_status IS DISTINCT FROM 'paid')
              RETURNING id`,
-            [mediaUrl, messageRecord?.id || null, latestOrder.id, expectPspWebhook]
+            [screenshotUrl, messageRecord?.id || null, latestOrder.id, expectPspWebhook]
           );
 
           if (!attached) {
@@ -3777,7 +3794,7 @@ export async function processIncomingMessage(
 
           if (stillPending && graceExceeded && !expectPspWebhook) {
             const expectedAmount = parseFloat(latestOrder.grand_total);
-            verifyPaymentScreenshot(businessId, mediaUrl, expectedAmount)
+            verifyPaymentScreenshot(businessId, ocrImageUrl, expectedAmount)
               .then(async (ocrResult) => {
                 console.log('[CRM] 🤖 AI OCR Verification Result:', ocrResult);
 

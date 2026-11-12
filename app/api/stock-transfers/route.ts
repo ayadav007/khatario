@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import * as db from '@/lib/db';
 import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
@@ -215,6 +216,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: created_by, action: 'created' });
 
       // Check if this is an inter-branch transfer
       const transferInfo = await isInterBranchTransfer(from_location_id, to_location_id);

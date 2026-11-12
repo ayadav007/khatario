@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildApiUrl } from '@/lib/api-helpers';
+import { ReceivableAccountFilter } from '@/components/customers/ReceivableAccountPicker';
 
 type OpenItem = {
   transaction_id: string | null;
@@ -32,9 +33,23 @@ type AgingEntry = {
   bucket_90_plus: number;
   on_account: number;
   transactions: OpenItem[];
+  /** Receivables only: the ledger account this customer is recorded in today. */
+  receivable_account_id?: string | null;
+  receivable_account_name?: string | null;
 };
 
-type Totals = Omit<AgingEntry, 'party_id' | 'party_name' | 'transactions'>;
+type AccountSubtotal = {
+  account_id: string | null;
+  account_code: string | null;
+  account_name: string | null;
+  total_outstanding: number;
+  overdue: number;
+};
+
+type Totals = Omit<
+  AgingEntry,
+  'party_id' | 'party_name' | 'transactions' | 'receivable_account_id' | 'receivable_account_name'
+>;
 
 const COLUMNS: Array<{ key: keyof Totals; label: string; className?: string }> = [
   { key: 'bucket_not_due', label: 'Not due' },
@@ -68,6 +83,9 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
   const [rows, setRows] = useState<AgingEntry[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [glBalance, setGlBalance] = useState<number | null>(null);
+  // Receivables can be split over accounts under Accounts Receivable (Domestic, Foreign, ...).
+  const [accountFilter, setAccountFilter] = useState('');
+  const [byAccount, setByAccount] = useState<AccountSubtotal[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; code?: string } | null>(null);
@@ -84,7 +102,12 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
       setError(null);
       try {
         const res = await fetch(
-          buildApiUrl(`/api/reports/aging/${kind}`, { business_id: business.id, user_id: user?.id || '', as_on_date: asOnDate })
+          buildApiUrl(`/api/reports/aging/${kind}`, {
+            business_id: business.id,
+            user_id: user?.id || '',
+            as_on_date: asOnDate,
+            ...(kind === 'receivables' && accountFilter ? { receivable_account_id: accountFilter } : {}),
+          })
         );
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
@@ -95,10 +118,12 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
           });
           setRows([]);
           setTotals(null);
+          setByAccount([]);
           return;
         }
         setRows(body.aging || []);
         setTotals(body.totals || null);
+        setByAccount(Array.isArray(body.by_account) ? body.by_account : []);
         setGlBalance(typeof body.gl_balance === 'number' ? body.gl_balance : null);
       } catch {
         if (!cancelled) setError({ message: `Failed to fetch ${kind} aging report`, code: 'NETWORK_ERROR' });
@@ -109,7 +134,10 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
     return () => {
       cancelled = true;
     };
-  }, [business?.id, user?.id, asOnDate, kind]);
+  }, [business?.id, user?.id, asOnDate, kind, accountFilter]);
+
+  // Account names are shown only when customers are spread over more than one account.
+  const showAccounts = isAr && (byAccount.length > 1 || accountFilter !== '');
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -136,13 +164,16 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
       </div>
 
       <Card>
-        <Input
-          type="date"
-          label="As On Date"
-          value={asOnDate}
-          onChange={(e) => setAsOnDate(e.target.value)}
-          className="max-w-xs"
-        />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+          <Input
+            type="date"
+            label="As On Date"
+            value={asOnDate}
+            onChange={(e) => setAsOnDate(e.target.value)}
+            className="max-w-xs"
+          />
+          {isAr && <ReceivableAccountFilter value={accountFilter} onChange={setAccountFilter} />}
+        </div>
       </Card>
 
       <Card>
@@ -188,6 +219,11 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
                             {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                             {row.party_name}
                           </span>
+                          {showAccounts && row.receivable_account_name && (
+                            <span className="block pl-5 text-xs font-normal text-text-secondary">
+                              {row.receivable_account_name}
+                            </span>
+                          )}
                         </td>
                         {COLUMNS.map((c) => (
                           <td key={c.key} className={`py-3 px-4 text-right whitespace-nowrap ${cellClass(c, row[c.key] as number)}`}>
@@ -242,9 +278,32 @@ export function AgingReport({ kind }: { kind: 'receivables' | 'payables' }) {
                 )}
               </tbody>
             </table>
+            {showAccounts && byAccount.length > 1 && (
+              <table className="mt-4 w-full max-w-xl text-sm" data-testid="aging-by-account">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 px-4 font-semibold text-text-primary">Receivable account</th>
+                    <th className="text-right py-2 px-4 font-semibold text-text-primary">Outstanding</th>
+                    <th className="text-right py-2 px-4 font-semibold text-text-primary">Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byAccount.map((a) => (
+                    <tr key={a.account_id ?? 'none'} className="border-b border-border">
+                      <td className="py-2 px-4">
+                        {[a.account_code, a.account_name].filter(Boolean).join(' ') || 'Accounts Receivable'}
+                      </td>
+                      <td className="py-2 px-4 text-right whitespace-nowrap">{money(a.total_outstanding)}</td>
+                      <td className="py-2 px-4 text-right whitespace-nowrap">{money(a.overdue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             {glBalance !== null && (
               <p className="text-xs text-text-secondary mt-3 px-4">
-                {isAr ? 'Accounts Receivable' : 'Accounts Payable'} ledger balance on {fmtDate(asOnDate)}: {money(glBalance)}
+                {isAr ? 'Accounts Receivable' : 'Accounts Payable'} ledger balance on {fmtDate(asOnDate)}
+                {isAr && accountFilter ? ' (all receivable accounts)' : ''}: {money(glBalance)}
               </p>
             )}
           </div>

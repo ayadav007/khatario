@@ -1,0 +1,38 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "taxWise": [
+    {
+      "tax_rate": 18,
+      "hsn_sac": "3923",
+      "total_quantity": 10,
+      "total_taxable_value": 8000,
+      "total_cgst": 720,
+      "total_sgst": 720,
+      "total_igst": 0,
+      "total_cess": 0,
+      "total_tax": 1440
+    },
+    {
+      "tax_rate": 5,
+      "hsn_sac": "1006",
+      "total_quantity": 48,
+      "total_taxable_value": 19680,
+      "total_cgst": 492,
+      "total_sgst": 492,
+      "total_igst": 0,
+      "total_cess": 0,
+      "total_tax": 984
+    }
+  ],
+  "totals": {
+    "total_quantity": 58,
+    "total_taxable_value": 27680,
+    "total_cgst": 1212,
+    "total_sgst": 1212,
+    "total_igst": 0,
+    "total_cess": 0,
+    "total_tax": 2424
+  }
+}

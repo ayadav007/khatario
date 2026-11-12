@@ -3,6 +3,7 @@ import { getPool, queryOne, queryRows } from '@/lib/db';
 import { parentCreatesCycle, parentTypeError } from '@/lib/accounting/account-hierarchy';
 import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import {
+  getDefaultAccounts,
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
 } from '@/lib/ledger-utils';
@@ -217,3 +218,114 @@ export async function setAccountOpeningBalance(params: {
     client.release();
   }
 }
+
+/**
+ * Makes the ledger agree with a customer's or supplier's opening balance after it was edited.
+ * (Creation posts it with postOpeningBalanceLedgerEntry; an edit is only allowed while the party
+ * has no invoices, bills or payments.) The voucher is the party's id, type `opening_balance`:
+ * Dr party account for a debit balance, Cr for a credit balance, against 3100 Opening Balance
+ * Adjustment. It keeps the date it was first posted on, else the start of the financial year.
+ *
+ * Normally the voucher is replaced. A customer who has been moved to another receivable account
+ * is different: the old opening line was settled by the move's transfer, so it is left in place
+ * and only the difference is posted, on the account the customer posts to now.
+ */
+export async function setPartyOpeningBalance(p: {
+  businessId: string;
+  entityType: 'customer' | 'supplier';
+  entityId: string;
+  entityName: string;
+  amount: number;
+  type: 'debit' | 'credit';
+}): Promise<void> {
+  const amount = Math.round(Math.abs(Number(p.amount) || 0) * 100) / 100;
+  const signed = p.type === 'debit' ? amount : -amount;
+
+  const accounts = await getDefaultAccounts(p.businessId, {
+    customerId: p.entityType === 'customer' ? p.entityId : null,
+  });
+  const party = p.entityType === 'customer' ? accounts.accountsReceivable : accounts.accountsPayable;
+  if (!party) {
+    throw new AccountRuleError(
+      p.entityType === 'customer'
+        ? 'Accounts Receivable account not found. Please set up the chart of accounts.'
+        : 'Accounts Payable account not found. Please set up the chart of accounts.',
+      'PARTY_ACCOUNT_MISSING',
+    );
+  }
+  const contra = await getOrCreateOpeningBalanceAdjustmentAccount(p.businessId);
+  const fyStart = await getFinancialYearStartDate(p.businessId);
+
+  let movedCustomer = false;
+  let receivableIds: string[] = [];
+  if (p.entityType === 'customer') {
+    const { hasCustomerReceivableAccounts } = await import('@/lib/accounting/receivable-accounts-schema');
+    if (await hasCustomerReceivableAccounts()) {
+      const moved = await queryOne<{ ok: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM customer_receivable_account_moves
+            WHERE business_id = $1 AND customer_id = $2 AND kind = 'move'
+         ) AS ok`,
+        [p.businessId, p.entityId],
+      );
+      movedCustomer = !!moved?.ok;
+      if (movedCustomer) {
+        const { receivableAccountIds } = await import('@/lib/accounting/receivable-accounts');
+        receivableIds = await receivableAccountIds(p.businessId);
+      }
+    }
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const first = await client.query<{ d: Date | string | null }>(
+      `SELECT MIN(entry_date) AS d FROM ledger_entry_lines
+        WHERE business_id = $1 AND voucher_type = 'opening_balance' AND voucher_id = $2`,
+      [p.businessId, p.entityId],
+    );
+    const entryDate = first.rows[0]?.d ?? fyStart;
+
+    if (movedCustomer) {
+      const posted = await client.query<{ net: string }>(
+        `SELECT COALESCE(SUM(debit - credit), 0)::text AS net FROM ledger_entry_lines
+          WHERE business_id = $1 AND voucher_type = 'opening_balance' AND voucher_id = $2
+            AND account_id = ANY($3::uuid[])`,
+        [p.businessId, p.entityId, receivableIds],
+      );
+      const delta = Math.round((signed - (Number(posted.rows[0]?.net) || 0)) * 100) / 100;
+      if (Math.abs(delta) >= 0.005) {
+        const dr = delta > 0 ? delta : 0;
+        const cr = delta < 0 ? -delta : 0;
+        const insert = `INSERT INTO ledger_entry_lines
+          (business_id, voucher_id, voucher_type, account_id, entry_date, debit, credit, narration, reference_number, branch_id)
+          VALUES ($1, $2, 'opening_balance', $3, $4, $5, $6, $7, $8, NULL)`;
+        await client.query(insert, [
+          p.businessId, p.entityId, party.id, entryDate, dr, cr,
+          `Opening balance - ${p.entityName}`, p.entityName,
+        ]);
+        await client.query(insert, [
+          p.businessId, p.entityId, contra.id, entryDate, cr, dr,
+          `Opening balance adjustment - ${p.entityName}`, p.entityName,
+        ]);
+      }
+    } else {
+      await replaceOpeningVoucher(client, {
+        businessId: p.businessId,
+        voucherId: p.entityId,
+        accountId: party.id,
+        contraAccountId: contra.id,
+        signedAmount: signed,
+        entryDate,
+        label: p.entityName,
+      });
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+

@@ -6,6 +6,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateCreditMetrics } from '@/lib/credit-utils';
 import { buildAgeing, type AgeingPartySummary } from '@/lib/reports/ageing';
 import { fetchPartyLedgerDocs, type PartyType } from '@/lib/reports/party-ledger-docs';
+import { customerReceivableAccountMap, receivableAccountFilter } from '@/lib/accounting/receivable-accounts';
+import { parseReceivableAccountId, receivableAccountErrorResponse } from '@/lib/customers/receivable-account-request';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -106,9 +108,91 @@ export async function handleAgingReport(request: NextRequest, partyType: PartyTy
       for (const r of rows) limits.set(r.id, Number(r.credit_limit) || 0);
     }
 
-    const aging = summary
+    let aging: Array<ReturnType<typeof agingEntry> & Record<string, unknown>> = summary
       .map((s) => agingEntry(partyType, s, s.party_id ? limits.get(s.party_id) ?? 0 : null))
       .sort((a, b) => b.total_outstanding - a.total_outstanding);
+
+    let reportTotals = {
+      total_outstanding: totals.total,
+      bucket_not_due: totals.not_due,
+      bucket_0_30: totals.age_0_30,
+      bucket_31_60: totals.age_30_60,
+      bucket_61_90: totals.age_60_90,
+      bucket_90_plus: totals.age_90_plus,
+      on_account: totals.on_account,
+      overdue: r2(totals.age_0_30 + totals.age_30_60 + totals.age_60_90 + totals.age_90_plus),
+    };
+
+    // Receivables can be split over accounts under Accounts Receivable (Domestic Debtors,
+    // Foreign Debtors, ...). Each customer is shown under the account they post to today.
+    let byAccount: Array<{
+      account_id: string | null;
+      account_code: string | null;
+      account_name: string | null;
+      total_outstanding: number;
+      overdue: number;
+    }> = [];
+    if (partyType === 'customer') {
+      const accounts = await customerReceivableAccountMap(businessId, partyIds);
+      aging = aging.map((row) => {
+        const accountId = (row.party_id && accounts.byCustomer.get(row.party_id as string)) || accounts.controlAccountId;
+        const account = accountId ? accounts.accounts.get(accountId) : undefined;
+        return {
+          ...row,
+          receivable_account_id: accountId ?? null,
+          receivable_account_code: account?.account_code ?? null,
+          receivable_account_name: account?.account_name ?? null,
+        };
+      });
+
+      const accountFilter = searchParams.get('receivable_account_id');
+      if (accountFilter) {
+        try {
+          const accountId = parseReceivableAccountId(accountFilter);
+          if (accountId) {
+            const keep = await receivableAccountFilter(businessId, accountId);
+            aging = aging.filter((row) =>
+              keep.includesUnassigned
+                ? row.receivable_account_id === accounts.controlAccountId
+                : keep.accountIds.includes(row.receivable_account_id as string)
+            );
+            const sumOf = (key: keyof typeof reportTotals) => r2(aging.reduce((s, row) => s + (Number(row[key]) || 0), 0));
+            reportTotals = {
+              total_outstanding: sumOf('total_outstanding'),
+              bucket_not_due: sumOf('bucket_not_due'),
+              bucket_0_30: sumOf('bucket_0_30'),
+              bucket_31_60: sumOf('bucket_31_60'),
+              bucket_61_90: sumOf('bucket_61_90'),
+              bucket_90_plus: sumOf('bucket_90_plus'),
+              on_account: sumOf('on_account'),
+              overdue: sumOf('overdue'),
+            };
+          }
+        } catch (error) {
+          const refused = receivableAccountErrorResponse(error);
+          if (refused) return refused;
+          throw error;
+        }
+      }
+
+      const groups = new Map<string, (typeof byAccount)[number]>();
+      for (const row of aging) {
+        const key = (row.receivable_account_id as string | null) ?? '';
+        const group = groups.get(key) ?? {
+          account_id: (row.receivable_account_id as string | null) ?? null,
+          account_code: (row.receivable_account_code as string | null) ?? null,
+          account_name: (row.receivable_account_name as string | null) ?? null,
+          total_outstanding: 0,
+          overdue: 0,
+        };
+        group.total_outstanding = r2(group.total_outstanding + row.total_outstanding);
+        group.overdue = r2(group.overdue + row.overdue);
+        groups.set(key, group);
+      }
+      byAccount = [...groups.values()].sort((a, b) =>
+        String(a.account_code ?? '').localeCompare(String(b.account_code ?? ''), undefined, { numeric: true })
+      );
+    }
 
     return NextResponse.json({
       party_type: partyType,
@@ -116,16 +200,9 @@ export async function handleAgingReport(request: NextRequest, partyType: PartyTy
       branch_id: branchFilter,
       aging_by: 'due_date',
       aging,
-      totals: {
-        total_outstanding: totals.total,
-        bucket_not_due: totals.not_due,
-        bucket_0_30: totals.age_0_30,
-        bucket_31_60: totals.age_30_60,
-        bucket_61_90: totals.age_60_90,
-        bucket_90_plus: totals.age_90_plus,
-        on_account: totals.on_account,
-        overdue: r2(totals.age_0_30 + totals.age_30_60 + totals.age_60_90 + totals.age_90_plus),
-      },
+      totals: reportTotals,
+      ...(partyType === 'customer' ? { by_account: byAccount } : {}),
+      // The whole receivable (or payable) ledger, whatever account filter is applied.
       gl_balance: r2(docs.reduce((s, d) => s + d.amount, 0)),
     });
   } catch (error: any) {

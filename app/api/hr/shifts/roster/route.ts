@@ -9,6 +9,7 @@ import {
   saveShiftRosterSettings,
   normalizeWeekStart,
 } from '@/lib/hr/shift-overtime/shift-roster';
+import { ownsEmployeesAndShifts } from '@/lib/hr/shift-overtime/shift-assignment';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +70,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ filled: count });
     }
 
-    const entries = body.entries ?? [];
+    const entries = Array.isArray(body.entries) ? body.entries : [];
+    // Every employee and shift must be this business's own: refuse before anything is written.
+    const owned = await ownsEmployeesAndShifts(
+      businessId,
+      entries.map((e: { employee_id?: unknown }) => e?.employee_id),
+      entries.map((e: { shift_id?: unknown }) => e?.shift_id).filter((id: unknown) => id != null && id !== ''),
+    );
+    if (!owned) return NextResponse.json({ error: 'Employee or shift not found' }, { status: 404 });
     const saved = await upsertRosterEntries(businessId, entries, userId);
     return NextResponse.json({ saved });
   } catch (error) {

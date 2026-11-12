@@ -133,12 +133,15 @@ class _SettingsEditorState extends State<SettingsEditor> {
                 value: value,
                 onChanged: _saving ? null : (next) => setState(() => values[entry.key] = next),
               )
-            : TextFormField(
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(padding: const EdgeInsets.only(bottom: 6, left: 2), child: Text(label, style: AppText.label)),
+                  TextFormField(
                 initialValue: value is List ? value.join(', ') : value?.toString() ?? '',
                 enabled: !_saving,
                 keyboardType: value is num ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
                 style: AppText.body,
-                decoration: InputDecoration(labelText: label),
                 onChanged: (text) {
                   if (value is num) {
                     values[entry.key] = num.tryParse(text) ?? value;
@@ -148,6 +151,8 @@ class _SettingsEditorState extends State<SettingsEditor> {
                     values[entry.key] = text;
                   }
                 },
+              ),
+                ],
               ),
       ));
     }

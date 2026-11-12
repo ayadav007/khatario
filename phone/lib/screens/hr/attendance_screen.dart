@@ -7,10 +7,15 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../pages/website_page_screen.dart';
+import 'attendance_history_screen.dart';
+import 'attendance_leave_logic.dart';
+import 'attendance_reviews_screen.dart';
+import 'employee_form_screen.dart';
 import 'roll_call_logic.dart';
 
 /// Website `/employees/attendance` roll call: one row per employee for the chosen day,
-/// with Present / Absent / Half day / Off. Saves each tap straight away.
+/// with Present / Absent / Half day / Off. Saves each tap straight away. The month history and the
+/// check-in reviews open from the bar. What stays on the website is one row at the foot of the list.
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key, required this.session});
 
@@ -29,12 +34,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _noTeam = false;
   final Set<String> _saving = {};
   bool _markingAll = false;
+  HrAccess _access = HrAccess.open;
 
   @override
   void initState() {
     super.initState();
     _load();
+    loadHrAccess(widget.session).then((a) {
+      if (mounted) setState(() => _access = a);
+    });
   }
+
+  void _open(Widget screen) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 
   Future<void> _load() async {
     setState(() {
@@ -138,11 +149,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           children: [
             KBackBar(
               'Attendance',
-              trailing: KIconButton(
-                icon: LucideIcons.globe,
-                tooltip: 'History and reviews on the website',
-                onTap: () => openWebsiteInApp(context, widget.session, '/employees/attendance', 'Attendance'),
-              ),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                KIconButton(icon: LucideIcons.calendarDays, tooltip: 'Attendance history', onTap: () => _open(AttendanceHistoryScreen(session: widget.session))),
+                // Check-ins need the staff app plan; regularization asks need the leave plan.
+                if (_access.has('hr_staff_app') || _access.has('hr_leaves'))
+                  KIconButton(icon: LucideIcons.shieldAlert, tooltip: 'Check-in reviews', onTap: () => _open(AttendanceReviewsScreen(session: widget.session))),
+              ]),
             ),
             _dayBar(),
             Expanded(child: _body()),
@@ -189,7 +201,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           action: KButton(
             label: 'Add employee',
             expand: false,
-            onPressed: () => openWebsiteInApp(context, widget.session, '/employees/new', 'Add Employee'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EmployeeFormScreen(session: widget.session))).then((_) {
+              if (mounted) _load();
+            }),
           ),
         ),
       ]);
@@ -228,6 +242,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ],
           const SizedBox(height: AppSpace.sm),
           KCard(child: KDivided(indent: 0, children: [for (final row in _rows) _row(row)])),
+          const SizedBox(height: AppSpace.lg),
+          // Only these two stay on the website: the date-range list with check-in and check-out
+          // times and hours, and the advanced marking page.
+          KCard(
+            child: KListRow(
+              title: 'Open on website',
+              subtitle: 'Date-range list with times, and advanced marking',
+              leading: const Icon(LucideIcons.globe, size: 22, color: AppColors.ink2),
+              onTap: () => openWebsiteInApp(context, widget.session, '/employees/attendance', 'Attendance'),
+            ),
+          ),
         ],
       ),
     );

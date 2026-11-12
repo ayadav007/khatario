@@ -50,7 +50,7 @@ import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 import { createInvoiceLedgerEntries, createPaymentLedgerEntries, createPurchaseLedgerEntries } from '@/lib/ledger-utils';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { cancelFinalPurchase } from '@/lib/purchases/cancel-purchase';
-import { listRule37Exposure, syncRule37ForBill, RULE37_REVERSAL } from '@/lib/gst/rule37';
+import { listRule37Exposure, syncRule37ForBill, RULE37_REAVAIL, RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { GSTR2BGenerator } from '@/lib/gst/gstr2b';
 import { GSTR3BGenerator } from '@/lib/gst/gstr3b';
 import { GSTR9Generator } from '@/lib/gst/gstr9';
@@ -672,7 +672,8 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
     const r37Before = await lines(RULE37_REVERSAL, r37[0]);
     expect(net(r37Before)).toEqual({ '1110': -450, '1111': -450, '1114': 900 });
     const sepWithR37 = (await gen3b.generate({ business_id: B, month: 9, year: 2026 })).itc_details;
-    expect(r2(sepWithR37.itc_reversed.cgst - sepBefore.itc_reversed.cgst)).toBe(450);
+    expect(r2(sepWithR37.itc_reversed_others.cgst - sepBefore.itc_reversed_others.cgst)).toBe(450);
+    expect(sepWithR37.itc_reversed_rules).toEqual(sepBefore.itc_reversed_rules);
 
     const out = await cancel(p.id);
     expect(out.status).toBe(200);
@@ -700,6 +701,7 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
     });
     const sepAfter = (await gen3b.generate({ business_id: B, month: 9, year: 2026 })).itc_details;
     expect(sepAfter.itc_reversed).toEqual(sepBefore.itc_reversed);
+    expect(sepAfter.itc_reversed_others).toEqual(sepBefore.itc_reversed_others);
     expect(sepAfter.net_itc).toEqual(sepBefore.net_itc);
     const jan2b = await new GSTR2BGenerator().generate({ business_id: B, month: 1, year: 2026 });
     expect(jan2b.summary.total_itc_available ?? 0).toBe(0);
@@ -845,5 +847,51 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
       expect(authorizeMock).not.toHaveBeenCalled();
       expect((await pool.query(`SELECT status FROM invoices WHERE id = $1`, [id])).rows[0].status).toBe('final');
     });
+  });
+
+  test('GSTR-3B: a Rule 37 reversal is in 4B(2); its re-claim on payment is in 4A(5) and 4D(1)', async () => {
+    const gen3b = new GSTR3BGenerator();
+    const t4 = async (month: number) => (await gen3b.generate({ business_id: B, month, year: 2026 })).itc_details;
+    // November has its own credit, so the reversal does not take the input ledger below zero.
+    await makeFinalPurchase({ taxable: 10000, date: '2026-11-03', itcAvailed: true });
+    const novBefore = await t4(11);
+    const decBefore = await t4(12);
+
+    const p = await makeFinalPurchase({ taxable: 5000, date: '2026-04-15', itcAvailed: true });
+    const sync = (asOn: string) =>
+      tx(async (c) => {
+        const rows = await listRule37Exposure(c, { businessId: B, asOn });
+        const row = rows.find((x) => x.purchase_id === p.id)!;
+        return syncRule37ForBill(c, { businessId: B, row, entryDate: asOn });
+      });
+    expect((await sync('2026-11-10')).reversed).toBe(900);
+
+    const nov = await t4(11);
+    expect(r2(nov.itc_reversed_others.cgst - novBefore.itc_reversed_others.cgst)).toBe(450);
+    expect(r2(nov.itc_reversed_others.sgst - novBefore.itc_reversed_others.sgst)).toBe(450);
+    expect(nov.itc_reversed_rules).toEqual(novBefore.itc_reversed_rules);
+    expect(r2(nov.itc_reversed.cgst - novBefore.itc_reversed.cgst)).toBe(450);
+    expect(nov.itc_reclaimed).toEqual(novBefore.itc_reclaimed);
+    // 4A(5) shows the credit gross; 4C nets the reversal off.
+    expect(nov.other_itc).toEqual(novBefore.other_itc);
+    expect(r2(nov.net_itc.cgst - novBefore.net_itc.cgst)).toBe(-450);
+
+    expect((await pay(p.id, p.grand, '2026-12-05')).status).toBe(201);
+    expect((await sync('2026-12-05')).reavailed).toBe(900);
+    const reavail = await pool.query(
+      `SELECT DISTINCT voucher_id FROM ledger_entry_lines WHERE business_id = $1 AND voucher_type = $2 AND reference_number = $3`,
+      [B, RULE37_REAVAIL, `RULE37|${p.id}`]
+    );
+    expect(reavail.rows).toHaveLength(1);
+
+    const dec = await t4(12);
+    expect(r2(dec.itc_reclaimed.cgst - decBefore.itc_reclaimed.cgst)).toBe(450);
+    expect(r2(dec.itc_reclaimed.sgst - decBefore.itc_reclaimed.sgst)).toBe(450);
+    expect(r2(dec.other_itc.cgst - decBefore.other_itc.cgst)).toBe(450);
+    expect(r2(dec.net_itc.cgst - decBefore.net_itc.cgst)).toBe(450);
+    expect(dec.itc_reversed_others).toEqual(decBefore.itc_reversed_others);
+    // The November return is unchanged by the December re-claim.
+    expect(await t4(11)).toEqual(nov);
+    await expectSupplierMatchesGl();
   });
 });

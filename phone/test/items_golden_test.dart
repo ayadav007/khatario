@@ -10,6 +10,7 @@ import 'package:khatario_phone/screens/items/item_csv.dart';
 import 'package:khatario_phone/screens/items/item_detail_screen.dart';
 import 'package:khatario_phone/screens/items/items_screen.dart';
 import 'package:khatario_phone/screens/more/more_screen.dart';
+import 'package:khatario_phone/screens/stock/adjustment_form_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/shell/app_shell.dart';
 import 'package:khatario_phone/theme.dart';
@@ -26,6 +27,46 @@ const _branch = 'd579383f-871d-4b91-a1d4-2bf6273c6666';
 
 Map<String, dynamic> _read(String dir, String name) =>
     jsonDecode(File('$dir\\$name.json').readAsStringSync()) as Map<String, dynamic>;
+
+/// The More menu the server returns for this user (GET /api/navigation/more), in the order the phone shows it.
+const _moreMenu = <String, List<String>>{
+    'Sales': ['Customers', 'All Invoices', 'Orders & Delivery', 'Quotations', 'Sales Orders', 'Delivery Challans',
+        'Work Orders', 'Credit Notes', 'Debit Notes'],
+    'Purchases': ['Suppliers', 'Suppliers Hub', 'All Purchases', 'Requests', 'Purchase Orders', 'Purchase Returns',
+        'Expenses'],
+    'Inventory': ['Items', 'Party Pricing', 'Adjustments', 'Stock Summary', 'Closing Stock'],
+    'Accounting': ['Chart of Accounts', 'Journal Entries', 'Ledger', 'Payments In', 'Payments Out', 'Provisions',
+        'TDS/TCS'],
+    'Reports': ['Overview', 'Custom Report Builder', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Trial Balance',
+        'Receivables Aging', 'Payables Aging', 'GST Returns (GSTR-1)', 'GST Cash Ledger', 'Sales — Summary',
+        'Purchase — Summary'],
+    'Staff': ['All Employees', 'Add Employee', 'Attendance', 'Salary Payments', 'Salary Advances', 'Employee Expenses',
+        'Commissions'],
+    'Connect': ['Dashboard', 'Conversations', 'Payment Reminders', 'Order Verification', 'Flows', 'Send Message',
+        'Campaigns', 'Contacts', 'Contact Groups', 'Group Extractor', 'Unsubscribes', 'WhatsApp Settings'],
+    'Tools': ['Search', 'All Tools', 'To Do List', 'HSN/SAC Finder', 'GST Calculator', 'Lead Extractor'],
+    'Settings & data': ['Settings'],
+    'Support': ['Documentation', 'Contact Support', 'Privacy Policy'],
+  };
+
+const _moreLocked = {'Delivery Challans', 'Work Orders'};
+
+Map<String, dynamic> _moreNavigationReply() => {
+      'sections': [
+        for (final e in _moreMenu.entries)
+          {
+            'title': e.key,
+            'items': [
+              for (final label in e.value)
+                {
+                  'href': label == 'Items' ? '/items' : '/${label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}',
+                  'label': label,
+                  'locked': _moreLocked.contains(label),
+                },
+            ],
+          },
+      ],
+    };
 
 class _FakeApi extends KhatarioApi {
   _FakeApi() : super(Dio());
@@ -63,6 +104,7 @@ class _FakeApi extends KhatarioApi {
       '/api/notifications' => _read(_themeDir, 'notifications'),
       '/api/features/enabled' => _read(_themeDir, 'features'),
       '/api/promotions/active' => _read(_themeDir, path.contains('type=modal') ? 'promo_modal' : 'promo_banner'),
+      '/api/navigation/more' => _moreNavigationReply(),
       '/api/subscriptions/current' => _read(_themeDir, 'subscription'),
       '/api/subscriptions/check-limit' => _read(_themeDir, 'limit_${uri.queryParameters['limit_type']}'),
       _ => throw ApiException('not faked: $path'),
@@ -244,7 +286,7 @@ void main() {
   });
 
   testWidgets('More menu matches staging, collapses, opens Items and returns on Back', (tester) async {
-    tester.view.physicalSize = const Size(390, 4445);
+    tester.view.physicalSize = const Size(390, 5000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     debugDisableShadows = false;
@@ -254,27 +296,10 @@ void main() {
     await _settle(tester);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/74-more-full.png'));
 
-    const expected = {
-      'Sales': ['Customers', 'All Invoices', 'Orders & Delivery', 'Quotations', 'Sales Orders', 'Delivery Challans',
-          'Work Orders', 'Credit Notes', 'Debit Notes'],
-      'Purchases': ['Suppliers', 'Suppliers Hub', 'All Purchases', 'Requests', 'Purchase Orders', 'Purchase Returns',
-          'Expenses'],
-      'Inventory': ['Items', 'Party Pricing', 'Adjustments', 'Stock Summary', 'Closing Stock'],
-      'Accounting': ['Chart of Accounts', 'Journal Entries', 'Ledger', 'Payments In', 'Payments Out', 'Provisions',
-          'TDS/TCS'],
-      'Reports': ['Overview', 'Custom Report Builder', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Trial Balance',
-          'Receivables Aging', 'Payables Aging', 'GST Returns (GSTR-1)', 'GST Cash Ledger', 'Sales — Summary',
-          'Purchase — Summary'],
-      'Staff': ['All Employees', 'Add Employee', 'Attendance', 'Salary Payments', 'Salary Advances', 'Employee Expenses',
-          'Commissions'],
-      'Connect': ['Dashboard', 'Conversations', 'Payment Reminders', 'Order Verification', 'Flows', 'Send Message',
-          'Campaigns', 'Contacts', 'Contact Groups', 'Group Extractor', 'Unsubscribes', 'WhatsApp Settings'],
-      'Tools': ['Search', 'All Tools', 'To Do List', 'HSN/SAC Finder', 'GST Calculator', 'Lead Extractor'],
-      'Settings & data': ['Settings'],
-      'Support': ['Documentation', 'Contact Support', 'Privacy Policy'],
-    };
+    const expected = _moreMenu;
     final rows = tester.widgetList<MobileListRow>(find.byType(MobileListRow)).toList();
-    expect(rows.map((r) => r.label).toList(), expected.values.expand((l) => l).toList());
+    // "Navigation bar" (choose the bottom tabs) sits above the server's menu.
+    expect(rows.map((r) => r.label).toList(), ['Navigation bar', ...expected.values.expand((l) => l)]);
     expect(rows.where((r) => r.locked).map((r) => r.label), ['Delivery Challans', 'Work Orders']);
     for (final title in expected.keys) {
       expect(find.text(title), findsOneWidget);
@@ -295,14 +320,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Customers'), findsOneWidget);
 
-    // Rows without a phone screen yet say so.
+    // A row opens its own page; Back returns to More.
     await tester.ensureVisible(find.text('Quotations'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Quotations'));
     await tester.pumpAndSettle();
-    expect(find.text('Quotations is not copied to the phone app yet.'), findsOneWidget);
+    expect(find.byType(MoreScreen), findsNothing, reason: 'Quotations opens its own page');
+    await tester.binding.handlePopRoute();
+    await _settle(tester);
+    expect(find.byType(MoreScreen), findsOneWidget);
 
-    // Items opens from More and Back returns to More.
+    // Items opens from More; Back goes to Home.
     await tester.scrollUntilVisible(find.text('Items'), 300, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Items'));
@@ -311,7 +339,10 @@ void main() {
     await tester.binding.handlePopRoute();
     await _settle(tester);
     expect(find.byType(ItemsScreen), findsNothing);
-    expect(find.text('Inventory'), findsOneWidget, reason: 'More keeps its scroll position');
+    // Back from a tab other than Home goes to Home (see back_home_test); More is one tap away.
+    expect(find.text('Namaste, Shalini'), findsOneWidget);
+    await tester.tap(find.text('More').last);
+    await _settle(tester);
 
     await tester.scrollUntilVisible(find.text('Log out'), 400, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
@@ -406,11 +437,12 @@ void main() {
     expect(api.patches.single.$1, startsWith('/api/items/9f29782e'));
     expect(api.patches.single.$2, {'show_in_store': true});
 
-    // Bundle -> the inventory adjustments page.
+    // Bundle -> the phone's multi-item adjustment form (not the website).
     await tester.tap(find.byIcon(LucideIcons.arrowUpDown).first);
     await tester.pumpAndSettle();
-    expect(find.text('Adjustments'), findsWidgets);
-    Navigator.of(tester.element(find.text('Adjustments').first)).pop();
+    expect(find.text('New inventory adjustment'), findsWidgets);
+    expect(find.byType(AdjustmentFormScreen), findsOneWidget);
+    Navigator.of(tester.element(find.text('New inventory adjustment').first)).pop();
     await tester.pumpAndSettle();
 
     // Adjust stock on DAL CHANA (-5.434 KGS).

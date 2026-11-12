@@ -709,6 +709,8 @@ export interface Customer {
   credit_limit: number;
   /** Net days from invoice date used to suggest due date (null = no automatic default) */
   credit_days?: number | null;
+  /** Ledger account under Accounts Receivable this customer posts to (null = the control account) */
+  receivable_account_id?: string | null;
   current_balance?: number; // Running balance: opening + invoices - payments
   tags?: string[];
   notes?: string;
@@ -1277,4 +1279,25 @@ export interface TCSTransaction {
   notes?: string;
   created_at: Date;
   created_by?: string;
+}
+
+/** One invoice as stored in invoice_revisions.snapshot (migration 469). */
+export interface InvoiceSnapshot {
+  header: Record<string, unknown>;
+  lines: Record<string, unknown>[];
+  charges: Record<string, unknown>[];
+}
+
+/** Append-only edit log row: the invoice after one committed change (migration 469). */
+export interface InvoiceRevision {
+  id: string;
+  business_id: string;
+  invoice_id: string;
+  revision_no: number;
+  action: string;
+  reason: string | null;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  snapshot: InvoiceSnapshot;
+  created_at: string;
 }

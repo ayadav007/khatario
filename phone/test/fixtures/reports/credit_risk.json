@@ -1,0 +1,45 @@
+{
+  "total_receivables": 18500,
+  "total_payables": 9200,
+  "over_limit_count": 1,
+  "customers_by_risk": [
+    {
+      "id": "7c0a0c10-0000-4000-8000-0000000000c1",
+      "name": "Sharma Traders",
+      "phone": "9876500001",
+      "email": null,
+      "credit_limit": 10000,
+      "current_balance": 12500,
+      "credit_used": 12500,
+      "available_credit": -2500,
+      "credit_utilization_percent": 125,
+      "credit_status": "OVER_LIMIT"
+    },
+    {
+      "id": "7c0a0c10-0000-4000-8000-0000000000c2",
+      "name": "Gupta Stores",
+      "phone": null,
+      "email": "gupta@example.com",
+      "credit_limit": 0,
+      "current_balance": 6000,
+      "credit_used": 6000,
+      "available_credit": null,
+      "credit_utilization_percent": null,
+      "credit_status": "UNLIMITED"
+    }
+  ],
+  "suppliers_by_risk": [
+    {
+      "id": "8e3f0c10-0000-4000-8000-0000000000e1",
+      "name": "Agro Wholesale Co",
+      "phone": "9876500055",
+      "email": null,
+      "credit_limit": 20000,
+      "current_balance": 9200,
+      "credit_used": 9200,
+      "available_credit": 10800,
+      "credit_utilization_percent": 46,
+      "credit_status": "HEALTHY"
+    }
+  ]
+}

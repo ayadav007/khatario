@@ -173,8 +173,11 @@ export async function PUT(
     }
 
     // Get supplier first to get business_id and linked_business_id
-    const existingSupplier = await db.queryOne<Pick<Supplier, 'business_id' | 'linked_business_id'>>(`
-      SELECT business_id, linked_business_id FROM suppliers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+    const existingSupplier = await db.queryOne<
+      Pick<Supplier, 'business_id' | 'linked_business_id' | 'name' | 'opening_balance' | 'opening_balance_type'>
+    >(`
+      SELECT business_id, linked_business_id, name, opening_balance, opening_balance_type
+        FROM suppliers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
     `, [supplierId, business_id]);
 
     if (!existingSupplier) {
@@ -265,6 +268,44 @@ export async function PUT(
         );
       }
       finalAllowLowStockAccess = existingSupplier.linked_business_id ? allow_low_stock_access : false;
+    }
+
+    // The ledger follows the opening balance. It is changed first, so a refusal (for example a
+    // locked period) leaves the supplier as it was.
+    const savedOpening = Number(existingSupplier.opening_balance) || 0;
+    const savedOpeningType = String(existingSupplier.opening_balance_type ?? 'credit') === 'debit' ? 'debit' : 'credit';
+    const nextOpening = opening_balance != null ? Number(opening_balance) : savedOpening;
+    const nextOpeningType =
+      opening_balance_type != null ? (String(opening_balance_type) === 'debit' ? 'debit' : 'credit') : savedOpeningType;
+    const openingChanged =
+      !Number.isFinite(nextOpening) || Math.abs(nextOpening - savedOpening) >= 0.005 || nextOpeningType !== savedOpeningType;
+    if (openingChanged) {
+      if (!Number.isFinite(nextOpening) || nextOpening < 0) {
+        return NextResponse.json(
+          { error: 'Opening balance must be zero or a positive amount.', code: 'INVALID_OPENING_BALANCE' },
+          { status: 400 }
+        );
+      }
+      try {
+        const { setPartyOpeningBalance } = await import('@/lib/accounting/account-rules');
+        await setPartyOpeningBalance({
+          businessId: existingSupplier.business_id,
+          entityType: 'supplier',
+          entityId: supplierId,
+          entityName: String(name ?? existingSupplier.name),
+          amount: nextOpening,
+          type: nextOpeningType,
+        });
+      } catch (ledgerError: any) {
+        console.error('Error re-posting opening balance for supplier:', ledgerError);
+        return NextResponse.json(
+          {
+            error: `The opening balance could not be updated in the books: ${ledgerError?.message || 'unknown error'}`,
+            code: 'OPENING_BALANCE_LEDGER_FAILED',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const supplier = await db.queryOne<Supplier>(`

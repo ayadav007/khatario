@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 
 /// Organization portal appearance. Same fields as the website settings page:
@@ -205,21 +206,11 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
+            KTextField(
+              label: 'Hex',
               controller: controller,
               enabled: !_saving,
               onChanged: (_) => setState(() => _error = null),
-              style: AppText.body,
-              cursorColor: AppColors.brand,
-              decoration: InputDecoration(
-                labelText: 'Hex',
-                labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-                filled: true,
-                fillColor: AppColors.bg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: AppColors.hairline)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: AppColors.brand, width: 2)),
-              ),
             ),
           ],
         ),

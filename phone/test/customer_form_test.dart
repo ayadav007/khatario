@@ -7,6 +7,7 @@ import 'package:khatario_phone/screens/parties/customer_form_logic.dart';
 import 'package:khatario_phone/screens/parties/customer_form_screen.dart';
 import 'package:khatario_phone/screens/parties/customer_statement_screen.dart';
 import 'package:khatario_phone/session.dart';
+import 'support/finders.dart';
 
 void main() {
   test('shipping address matches the website', () {
@@ -76,7 +77,7 @@ void main() {
     final api = _FakeApi();
     await tester.pumpWidget(MaterialApp(home: CustomerFormScreen(session: _session(api), capabilities: _admin())));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Customer name *'), 'Ravi');
+    await tester.enterText(textFieldLabelled('Customer name *'), 'Ravi');
     await tester.scrollUntilVisible(find.text('Save customer'), 300, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Save customer'));
     await tester.pumpAndSettle();
@@ -93,7 +94,7 @@ void main() {
       home: CustomerFormScreen(session: _session(api), capabilities: _admin(), customerId: 'c1'),
     ));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(TextField, 'Customer name *'), findsOneWidget);
+    expect(textFieldLabelled('Customer name *'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Update customer'), 300, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Update customer'));
     await tester.pumpAndSettle();

@@ -30,9 +30,9 @@ export async function POST(request: NextRequest) {
       deferred_to_period,
     } = body;
     
-    if (!business_id || !reconciliation_id || !decision) {
+    if (!reconciliation_id || !decision) {
       return NextResponse.json(
-        { error: 'business_id, reconciliation_id, and decision are required' },
+        { error: 'reconciliation_id and decision are required' },
         { status: 400 }
       );
     }
@@ -75,6 +75,15 @@ export async function POST(request: NextRequest) {
       decided_by_user_id: access.userId
     };
     
+    // The line must belong to the signed-in business before anything is written (recordDecision upserts by id alone).
+    const owned = await getPool().query(
+      `SELECT 1 FROM gstr2b_reconciliation WHERE id = $1 AND business_id = $2`,
+      [reconciliation_id, access.businessId]
+    );
+    if (owned.rows.length === 0) {
+      return NextResponse.json({ error: 'Reconciliation not found' }, { status: 404 });
+    }
+
     await reconciliationEngine.recordDecision(access.businessId, userDecision);
     const period = await getPool().query<{ filing_period: string; invoice_date: string }>(
       `SELECT filing_period, to_char(invoice_date, 'YYYY-MM-DD') AS invoice_date
@@ -113,9 +122,9 @@ export async function GET(request: NextRequest) {
     const business_id = searchParams.get('business_id');
     const filing_period = searchParams.get('filing_period');
     
-    if (!business_id || !filing_period) {
+    if (!filing_period) {
       return NextResponse.json(
-        { error: 'business_id and filing_period are required' },
+        { error: 'filing_period is required' },
         { status: 400 }
       );
     }

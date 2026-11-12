@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { resolveHubAuth } from '@/lib/fulfilment/hub-scope';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: auth.userId, action: 'credit_note_applied' });
     created = await createReturn(client, {
       businessId: auth.scope.businessId,
       invoiceId,

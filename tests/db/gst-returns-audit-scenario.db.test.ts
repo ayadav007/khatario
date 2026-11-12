@@ -452,7 +452,7 @@ d('GST returns audit scenario (real DB)', () => {
     check(A, '3.2 POS 27 unregistered: B2CL 1,00,000 + B2CS 50,000 − CN2 5,000', 'Table 3.2', 145000, mh?.taxable_value ?? 0);
     check(A, '4A(1) import of goods IGST', 'Table 4A(1)', 1800, all.itc_details.imports.igst);
     check(A, '4A(3) RCM ITC (CGST 900)', 'Table 4A(3)', 900, all.itc_details.inward_reverse_charge.cgst);
-    check(A, '4B(1) blocked credit reversed (s.17(5)): CGST 180', 'Table 4B(1)', 180, all.itc_details.itc_reversed.cgst);
+    check(A, '4B(1) blocked credit reversed (s.17(5)): CGST 180', 'Table 4B(1)', 180, all.itc_details.itc_reversed_rules.cgst);
     // Books CGST ITC: P01 540 + INV/003 75 + P04 270 + P08 540 + P09 54 = 1,479, plus blocked P06 180 shown in 4A and
     // reversed in 4B(1) = 1,659. Not in September's GSTR-2B: P04 (270, October 2B). INV/003 matches 2B's INV-003.
     check(A, '4A(5) CGST only what GSTR-2B supports (1,659 − 270)', 's.16(2)(aa), Rule 36(4)', 1389, all.itc_details.other_itc.cgst);

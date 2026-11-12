@@ -7,7 +7,11 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/toast.dart';
+import '../sales/doc_action_sheets.dart';
+import 'employee_form_screen.dart';
 import 'employee_logic.dart';
+import 'org_chart_screen.dart';
 
 /// Website `/employees`: everyone on the payroll, with search and an active / inactive filter.
 class EmployeesScreen extends StatefulWidget {
@@ -67,6 +71,13 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
     }
   }
 
+  Future<void> _add() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EmployeeFormScreen(session: widget.session)));
+    if (mounted) _load();
+  }
+
+  void _openOrgChart() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OrgChartScreen(session: widget.session)));
+
   void _setStatus(String status) {
     if (status == _status) return;
     setState(() => _status = status);
@@ -81,7 +92,10 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _TopBar(title: 'Employees'),
+            _TopBar(title: 'Employees', actions: [
+              KIconButton(icon: LucideIcons.network, tooltip: 'Org chart', onTap: _openOrgChart),
+              KIconButton(icon: LucideIcons.userPlus, tooltip: 'Add employee', onTap: _add),
+            ]),
             Padding(
               padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, 0),
               child: KSearchField(controller: _search, hint: 'Name, code, phone or role', onChanged: (_) => setState(() {})),
@@ -130,7 +144,8 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
             KEmptyState(
               icon: LucideIcons.users,
               title: _status == 'inactive' ? 'No inactive employees' : 'No employees yet',
-              body: _status == 'inactive' ? null : 'Add employees on the website to see them here.',
+              body: _status == 'inactive' ? null : 'Add your first employee to start attendance and salary.',
+              action: _status == 'inactive' ? null : KButton(label: 'Add employee', expand: false, onPressed: _add),
             )
           else if (visible.isEmpty)
             const KEmptyState(icon: LucideIcons.search, title: 'No matching employees')
@@ -185,12 +200,46 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   List<Map<String, dynamic>> _documents = const [];
   bool _loading = true;
   String? _error;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
     _employee = widget.initial;
     _load();
+  }
+
+  Future<void> _edit() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => EmployeeFormScreen(session: widget.session, employeeId: widget.employeeId),
+    ));
+    if (mounted) _load();
+  }
+
+  /// Website profile "Deactivate": `DELETE /api/employees/[id]` (employee and login inactive, role cleared).
+  Future<void> _deactivate(String name) async {
+    if (_busy) return;
+    final ok = await askSheet(
+      context,
+      title: 'Deactivate $name?',
+      text: '$name will lose access. Their records stay, but they are marked inactive and any sign-in role is removed.',
+      confirmLabel: 'Deactivate employee',
+      cancelLabel: 'Keep employee',
+    );
+    if (!ok || !mounted) return;
+    _busy = true;
+    try {
+      await widget.session.api.deleteJson('/api/employees/${widget.employeeId}');
+      if (!mounted) return;
+      showKToast(context, 'Employee deactivated', tone: KTone.positive);
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) showKToast(context, e.message, tone: KTone.negative);
+    } catch (_) {
+      if (mounted) showKToast(context, 'Could not deactivate. Try again.', tone: KTone.negative);
+    } finally {
+      _busy = false;
+    }
   }
 
   Future<void> _load() async {
@@ -217,12 +266,25 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _TopBar(title: e == null ? 'Employee' : employeeName(e)),
+            _TopBar(
+              title: e == null ? 'Employee' : employeeName(e),
+              actions: [if (e != null) KIconButton(icon: LucideIcons.pencil, tooltip: 'Edit', onTap: _edit)],
+            ),
             Expanded(
               child: e == null
                   ? (_loading
                       ? const KSpinner(padding: EdgeInsets.symmetric(vertical: 64))
-                      : ListView(children: [KEmptyState(icon: LucideIcons.cloudOff, title: 'Could not load this employee', body: _error)]))
+                      : ListView(children: [
+                        KEmptyState(
+                          icon: LucideIcons.cloudOff,
+                          title: 'Could not load this employee',
+                          body: _error,
+                          action: KButton.secondary(label: 'Try again', expand: false, onPressed: () {
+                            setState(() => _loading = true);
+                            _load();
+                          }),
+                        ),
+                      ]))
                   : _details(e),
             ),
           ],
@@ -296,6 +358,10 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             ('PF', e['pf_applicable'] == null ? null : (e['pf_applicable'] == true ? 'Applicable' : 'Not applicable')),
             ('ESI', e['esi_applicable'] == null ? null : (e['esi_applicable'] == true ? 'Applicable' : 'Not applicable')),
           ]),
+          if (active) ...[
+            const SizedBox(height: AppSpace.lg),
+            KButton.secondary(label: 'Deactivate', icon: LucideIcons.userX, onPressed: () => _deactivate(name)),
+          ],
           if (_documents.isNotEmpty) ...[
             const SizedBox(height: AppSpace.md),
             KSectionHeader('Documents'),
@@ -331,8 +397,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title});
+  const _TopBar({required this.title, this.actions = const []});
   final String title;
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +410,7 @@ class _TopBar extends StatelessWidget {
         KIconButton(icon: LucideIcons.arrowLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
         const SizedBox(width: 4),
         Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.heading.copyWith(fontSize: 18))),
+        ...actions,
         const SizedBox(width: AppSpace.gutter),
       ]),
     );

@@ -1,0 +1,54 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "suppliers": [
+    {
+      "supplier_id": "8e3f0c10-0000-4000-8000-0000000000e1",
+      "supplier_name": "Agro Wholesale Co",
+      "phone": "9876500055",
+      "gstin": "27AAACA1234A1Z9",
+      "bill_count": 2,
+      "return_count": 1,
+      "bill_purchases": 15000,
+      "bill_purchases_with_tax": 17700,
+      "return_purchases": 1000,
+      "return_purchases_with_tax": 1180,
+      "purchases": 14000,
+      "tax": 2520,
+      "purchases_with_tax": 16520,
+      "paid": 10000,
+      "balance_due": 6520
+    },
+    {
+      "supplier_id": null,
+      "supplier_name": "Cash Purchase (no supplier)",
+      "phone": null,
+      "gstin": null,
+      "bill_count": 1,
+      "return_count": 0,
+      "bill_purchases": 6000,
+      "bill_purchases_with_tax": 6300,
+      "return_purchases": 0,
+      "return_purchases_with_tax": 0,
+      "purchases": 6000,
+      "tax": 300,
+      "purchases_with_tax": 6300,
+      "paid": 6300,
+      "balance_due": 0
+    }
+  ],
+  "totals": {
+    "bill_count": 3,
+    "return_count": 1,
+    "bill_purchases": 21000,
+    "bill_purchases_with_tax": 24000,
+    "return_purchases": 1000,
+    "return_purchases_with_tax": 1180,
+    "purchases": 20000,
+    "tax": 2820,
+    "purchases_with_tax": 22820,
+    "paid": 16300,
+    "balance_due": 6520
+  }
+}

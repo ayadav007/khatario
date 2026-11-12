@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
@@ -106,6 +107,11 @@ export async function PATCH(
     let updated: any = null;
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, {
+        actorUserId: cancelled_by,
+        action: 'cancelled',
+        reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null,
+      });
 
       const locked = await client.query<{ status: string }>(
         `SELECT status FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,

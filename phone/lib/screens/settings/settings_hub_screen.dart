@@ -163,8 +163,14 @@ class _SettingsHubScreenState extends State<SettingsHubScreen> {
     final done = (_total - _todos.length).clamp(0, _total);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar('Settings'),
+            Expanded(
+              child: ListView(
         padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.sm, AppSpace.gutter, 40),
         children: [
           if (q.isEmpty && _todos.isNotEmpty) ...[
@@ -255,6 +261,10 @@ class _SettingsHubScreenState extends State<SettingsHubScreen> {
           if (q.isNotEmpty && settingsGroups.every((s) => s.$2.every((g) => !(g.title.toLowerCase().contains(q) || g.summary.toLowerCase().contains(q) || g.keywords.any((k) => k.contains(q) || q.contains(k))))))
             const KEmptyState(icon: LucideIcons.search, title: 'Nothing matches', body: 'Try “UPI”, “returns” or “GST”.'),
         ],
+      ),
+            ),
+          ],
+        ),
       ),
     );
   }

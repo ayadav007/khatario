@@ -1,0 +1,32 @@
+{
+  "outward_taxable_supplies": {"taxable_value": 100000, "igst": 3600, "cgst": 7200, "sgst": 7200, "cess": 0},
+  "outward_taxable_supplies_nature": {
+    "inter_state": {"taxable_value": 20000, "igst": 3600, "cgst": 0, "sgst": 0, "cess": 0},
+    "intra_state": {"taxable_value": 80000, "igst": 0, "cgst": 7200, "sgst": 7200, "cess": 0}
+  },
+  "outward_zero_rated": {"taxable_value": 5000, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+  "other_outward_supplies": {"taxable_value": 1500, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+  "inward_reverse_charge": {"taxable_value": 2000, "igst": 0, "cgst": 180, "sgst": 180, "cess": 0},
+  "non_gst_outward_supplies": {"taxable_value": 700, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+  "inter_state_supplies_unregistered": [
+    {"place_of_supply": "29-Karnataka", "taxable_value": 20000, "igst": 3600}
+  ],
+  "itc_details": {
+    "imports": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+    "import_services": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+    "inward_reverse_charge": {"taxable_value": 2000, "igst": 0, "cgst": 180, "sgst": 180, "cess": 0},
+    "other_itc": {"taxable_value": 30000, "igst": 900, "cgst": 2250, "sgst": 2250, "cess": 0},
+    "itc_reversed_rules": {"taxable_value": 0, "igst": 0, "cgst": 90, "sgst": 90, "cess": 0},
+    "itc_reversed_others": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+    "net_itc": {"taxable_value": 0, "igst": 900, "cgst": 2340, "sgst": 2340, "cess": 0},
+    "itc_reclaimed": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0}
+  },
+  "gross_output_tax": {"taxable_value": 100000, "igst": 3600, "cgst": 7200, "sgst": 7200, "cess": 0},
+  "tax_liability": {"taxable_value": 100000, "igst": 2700, "cgst": 4860, "sgst": 4860, "cess": 0},
+  "summary": {"total_tax_liability": 18000, "total_itc": 5580, "net_tax_payable": 12420},
+  "rcm_mode": "split",
+  "rcm": {},
+  "reconciliation": {"status": "mismatch", "difference": 250.5, "difference_percent": 1.39, "ledger_total": 18000, "gstr1_total": 17749.5},
+  "ledger_basis": {"rcm_itc_analysis": {"rcm_output_total": 360, "itc_claimed_total": 360, "possible_rcm_itc_mismatch": false}},
+  "warnings": ["Two purchase bills have no GSTR-2B match yet."]
+}

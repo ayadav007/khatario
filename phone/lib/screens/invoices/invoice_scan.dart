@@ -185,20 +185,18 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(_added.isEmpty ? 'Scan items' : '${_added.length} scanned'),
-        actions: [
-          IconButton(
-            tooltip: 'Torch',
-            icon: const Icon(LucideIcons.flashlight),
-            onPressed: () => _controller.toggleTorch(),
-          ),
-        ],
-      ),
       body: Column(
         children: [
+          ColoredBox(
+            color: AppColors.bg,
+            child: SafeArea(
+              bottom: false,
+              child: KBackBar(
+                _added.isEmpty ? 'Scan items' : '${_added.length} scanned',
+                trailing: KIconButton(icon: LucideIcons.flashlight, tooltip: 'Torch', onTap: () => _controller.toggleTorch()),
+              ),
+            ),
+          ),
           Expanded(
             child: Stack(
               fit: StackFit.expand,

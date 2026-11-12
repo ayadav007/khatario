@@ -130,3 +130,24 @@ describe('financialYearStartFor', () => {
     expect(financialYearStartFor('2026-04-01')).toBe('2026-04-01');
   });
 });
+
+describe('receivables across category accounts', () => {
+  const opts = { previousYearsProfit: 0, currentYearProfit: 0 };
+
+  it('sums every account flagged as receivable, whatever its code', () => {
+    const rows: BsAccountRow[] = [
+      { ...row('1103', 'asset', 'ca', 100, 0), is_receivable: true },
+      { ...row('DOM', 'asset', 'ca', 250, 0), is_receivable: true },
+      { ...row('FOR', 'asset', 'ca', 80, 30), is_receivable: true },
+      row('1101', 'asset', 'ca', 40, 0),
+    ];
+    const bs = assembleBalanceSheet(rows, groups, opts);
+    expect(bs.assets.current.receivables).toBe(400);
+    expect(bs.assets.current.accounts.map((a) => a.account_code)).toEqual(expect.arrayContaining(['1103', 'DOM', 'FOR']));
+  });
+
+  it('without flags the figure is the 1103 line, as before', () => {
+    const bs = assembleBalanceSheet([row('1103', 'asset', 'ca', 100, 0), row('DOM', 'asset', 'ca', 250, 0)], groups, opts);
+    expect(bs.assets.current.receivables).toBe(100);
+  });
+});

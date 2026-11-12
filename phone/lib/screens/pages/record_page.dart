@@ -14,20 +14,13 @@ import '../accounting/journal_form_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../purchases/bill_form_screen.dart';
 import '../invoices/invoice_form_screen.dart';
-import '../parties/customer_form_logic.dart';
 import '../parties/supplier_form_screen.dart';
-import '../hr/attendance_screen.dart';
-import '../hr/employees_screen.dart';
-import '../hr/leaves_screen.dart';
-import '../hr/salary_payments_screen.dart';
-import '../whatsapp/order_verification_screen.dart';
-import '../reports/cash_flow_screen.dart';
-import '../reports/financial_statements_screens.dart';
+import 'native_routes.dart';
 import 'page_catalog.dart';
 import 'record_format.dart';
 import 'website_page_screen.dart';
 
-/// List, report, or tool for a website route that does not have its own screen yet.
+/// List or report for a website route that does not have its own screen yet.
 class RecordPage extends StatefulWidget {
   const RecordPage({super.key, required this.session, required this.page, this.embedded = false});
 
@@ -46,20 +39,14 @@ class _RecordPageState extends State<RecordPage> {
   bool _loading = true;
   String? _error;
   bool _notInPlan = false;
-  final _hsn = TextEditingController();
-  final _keyword = TextEditingController();
-  final _location = TextEditingController();
-  final _gstAmount = TextEditingController();
-  final _gstRate = TextEditingController(text: '18');
   final _settingsQuery = TextEditingController();
   final _listQuery = TextEditingController();
-  bool _gstInclusive = false;
 
   @override
   void initState() {
     super.initState();
     final href = widget.page.href;
-    if (dedicatedPageScreen(widget.session, href) == null && widget.page.tool == null && href != '/settings' && href != '/settings/features' && href != '/tools' && href != '/suppliers/new' && href != '/expenses/new') {
+    if (dedicatedPageScreen(widget.session, href) == null && href != '/settings' && href != '/settings/features' && href != '/suppliers/new' && href != '/expenses/new') {
       _load();
     } else {
       _loading = false;
@@ -68,11 +55,6 @@ class _RecordPageState extends State<RecordPage> {
 
   @override
   void dispose() {
-    _hsn.dispose();
-    _keyword.dispose();
-    _location.dispose();
-    _gstAmount.dispose();
-    _gstRate.dispose();
     _settingsQuery.dispose();
     _listQuery.dispose();
     super.dispose();
@@ -81,10 +63,10 @@ class _RecordPageState extends State<RecordPage> {
   /// No phone API behind this page; it lives only on the website.
   bool get _webOnly => !widget.page.path.startsWith('/api');
 
-  /// Shown from the API as a read-only list or record (not a hub, tool or settings editor).
+  /// Shown from the API as a read-only list or record (not a hub or settings editor).
   bool get _isDataList {
     final page = widget.page;
-    return !_webOnly && page.tool == null && page.href != '/settings' && page.href != '/tools' && page.href != '/settings/features';
+    return !_webOnly && page.href != '/settings' && page.href != '/settings/features';
   }
 
   String get _path {
@@ -146,34 +128,6 @@ class _RecordPageState extends State<RecordPage> {
       }
     } catch (_) {
       if (mounted) setState(() { _error = _serverTrouble; _loading = false; });
-    }
-  }
-
-  Future<void> _searchHsn() async {
-    final q = _hsn.text.trim();
-    if (q.length < 2) return;
-    setState(() => _loading = true);
-    try {
-      final body = await widget.session.api.getData('/api/hsn/lookup?q=${Uri.encodeQueryComponent(q)}&limit=10');
-      if (mounted) setState(() { _body = body; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() { _error = _serverTrouble; _loading = false; });
-    }
-  }
-
-  Future<void> _searchLeads() async {
-    setState(() { _loading = true; _error = null; });
-    try {
-      final body = await widget.session.api.postJson('/api/tools/google-leads/search', {
-        'keyword': _keyword.text.trim(),
-        'location': _location.text.trim(),
-        'radius': 5000,
-        'maxResults': 10,
-        'useFreeAPI': true,
-      });
-      if (mounted) setState(() { _body = body; _loading = false; });
-    } on ApiException catch (e) {
-      if (mounted) setState(() { _error = e.message; _loading = false; });
     }
   }
 
@@ -255,19 +209,7 @@ class _RecordPageState extends State<RecordPage> {
           ? AppearanceEditor(session: widget.session)
           : page.href == '/settings'
           ? _settingsHub()
-          : page.href == '/tools'
-              ? _hub(toolLinks)
-              : page.tool == 'gst'
-                          ? _gstCalculator()
-                          : page.tool == 'hsn'
-                              ? _hsnFinder()
-                              : page.tool == 'leads'
-                                  ? _leads()
-                                  : page.tool == 'gstin' || page.tool == 'pan'
-                                      ? _idCheck(page.tool!)
-                                      : page.tool != null
-                                          ? _simpleCalc(page.tool!)
-                                          : _loaded();
+          : _loaded();
   }
 
   Widget _settingsHub() {
@@ -323,20 +265,6 @@ class _RecordPageState extends State<RecordPage> {
         if (next == null) return;
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: next)));
       },
-    );
-  }
-
-  Widget _hub(List<(String, String)> links) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.xl),
-      children: [
-        KCard(
-          child: KDivided(
-            indent: 62,
-            children: [for (final (href, label) in links) _hubRow(href, label)],
-          ),
-        ),
-      ],
     );
   }
 
@@ -489,166 +417,7 @@ class _RecordPageState extends State<RecordPage> {
     );
   }
 
-  Widget _hsnFinder() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.md),
-          child: KSearchField(
-            controller: _hsn,
-            hint: 'Product name or HSN code',
-            trailing: KSquareButton(icon: LucideIcons.search, label: 'Search', onTap: _searchHsn),
-          ),
-        ),
-        Expanded(child: _loaded()),
-      ],
-    );
-  }
 
-  Widget _leads() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              _input(_keyword, 'Keyword'),
-              const SizedBox(height: AppSpace.md),
-              _input(_location, 'Location'),
-              const SizedBox(height: AppSpace.md),
-              KButton(label: 'Search', icon: LucideIcons.search, loading: _loading, onPressed: _searchLeads),
-            ],
-          ),
-        ),
-        Expanded(child: _loaded()),
-      ],
-    );
-  }
-
-  Widget _idCheck(String tool) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _input(_gstAmount, tool == 'pan' ? 'PAN' : 'GSTIN', caps: true),
-        const SizedBox(height: AppSpace.md),
-        _ResultCard(lines: [_checkLabel(tool, _gstAmount.text)], tone: _checkTone(tool, _gstAmount.text)),
-      ],
-    );
-  }
-
-  String _checkLabel(String tool, String raw) {
-    final value = raw.trim().toUpperCase();
-    if (value.isEmpty) return 'Enter a value';
-    if (tool == 'pan') {
-      final ok = RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$').hasMatch(value);
-      return ok ? '$value is a valid PAN shape' : '$value is not a valid PAN';
-    }
-    return isValidGstin(value) ? '$value is a valid GSTIN' : '$value is not a valid GSTIN';
-  }
-
-  Widget _simpleCalc(String tool) {
-    final a = double.tryParse(_gstAmount.text) ?? 0;
-    final b = double.tryParse(_gstRate.text) ?? 0;
-    final lines = switch (tool) {
-      'discount' => ['Discount ₹${enIn(a * b / 100, maxFraction: 2)}', 'Net ₹${enIn(a - a * b / 100, maxFraction: 2)}'],
-      'margin' => ['Margin ₹${enIn(b - a, maxFraction: 2)}', 'Margin % ${a == 0 ? '0' : enIn((b - a) / b * 100, maxFraction: 2)}'],
-      'tds' => ['TDS ₹${enIn(a * b / 100, maxFraction: 2)}', 'Net ₹${enIn(a - a * b / 100, maxFraction: 2)}'],
-      'interest' => ['Simple interest ₹${enIn(a * b / 100, maxFraction: 2)}'],
-      'emi' => () {
-        final months = b <= 0 ? 0.0 : b;
-        final monthly = (double.tryParse(_keyword.text) ?? 0) / 12 / 100;
-        if (months == 0 || monthly == 0) return ['Enter principal, annual % and months'];
-        final emi = a * monthly * _pow(1 + monthly, months) / (_pow(1 + monthly, months) - 1);
-        return ['EMI ₹${enIn(emi, maxFraction: 2)}'];
-      }(),
-      'currency' => ['Converted ${enIn(a * b, maxFraction: 2)}'],
-      _ => ['Next number preview: ${_location.text.trim().isEmpty ? 'INV' : _location.text.trim()}-${a.toInt()}'],
-    };
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _input(_gstAmount, tool == 'invoice-number' ? 'Sequence' : 'Amount', number: true),
-        const SizedBox(height: AppSpace.md),
-        _input(
-          _gstRate,
-          tool == 'emi' ? 'Months' : tool == 'currency' ? 'Rate' : tool == 'invoice-number' ? 'Unused' : 'Percent or second amount',
-          number: true,
-        ),
-        if (tool == 'emi') ...[const SizedBox(height: AppSpace.md), _input(_keyword, 'Annual interest %', number: true)],
-        if (tool == 'invoice-number') ...[const SizedBox(height: AppSpace.md), _input(_location, 'Prefix')],
-        const SizedBox(height: AppSpace.lg),
-        _ResultCard(lines: lines),
-      ],
-    );
-  }
-
-  KTone _checkTone(String tool, String raw) {
-    final value = raw.trim().toUpperCase();
-    if (value.isEmpty) return KTone.neutral;
-    final ok = tool == 'pan' ? RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$').hasMatch(value) : isValidGstin(value);
-    return ok ? KTone.positive : KTone.negative;
-  }
-
-  Widget _input(TextEditingController c, String label, {bool number = false, bool caps = false}) {
-    OutlineInputBorder border(Color color, [double w = 1.5]) =>
-        OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide(color: color, width: w));
-    return TextField(
-      controller: c,
-      keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-      textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.none,
-      onChanged: (_) => setState(() {}),
-      style: AppText.body,
-      cursorColor: AppColors.brand,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        enabledBorder: border(AppColors.hairline),
-        focusedBorder: border(AppColors.brand, 2),
-      ),
-    );
-  }
-
-  Widget _gstCalculator() {
-    final amount = double.tryParse(_gstAmount.text) ?? 0;
-    final rate = double.tryParse(_gstRate.text) ?? 0;
-    final gst = _gstInclusive ? amount - (amount * 100 / (100 + rate)) : amount * rate / 100;
-    final half = gst / 2;
-    final base = _gstInclusive ? amount - gst : amount;
-    final total = _gstInclusive ? amount : amount + gst;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _input(_gstAmount, 'Amount', number: true),
-        const SizedBox(height: AppSpace.md),
-        Text('GST rate', style: AppText.label),
-        const SizedBox(height: AppSpace.sm),
-        KChipBar<String>(
-          value: _gstRate.text,
-          padding: EdgeInsets.zero,
-          options: const [('0', '0%'), ('5', '5%'), ('12', '12%'), ('18', '18%'), ('28', '28%')],
-          onChanged: (v) => setState(() => _gstRate.text = v),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          activeTrackColor: AppColors.brand,
-          title: Text('Amount includes GST', style: AppText.body),
-          value: _gstInclusive,
-          onChanged: (v) => setState(() => _gstInclusive = v),
-        ),
-        _ResultCard(
-          lines: [
-            'Taxable ₹${enIn(base, maxFraction: 2)}',
-            'CGST ₹${enIn(half, maxFraction: 2)}',
-            'SGST ₹${enIn(half, maxFraction: 2)}',
-          ],
-          total: 'Total ₹${enIn(total, maxFraction: 2)}',
-        ),
-      ],
-    );
-  }
 }
 
 /// Shown instead of a raw network exception (a server 500, a timeout).
@@ -656,43 +425,6 @@ const _serverTrouble = 'The server could not load this right now. Pull down or t
 
 /// A plain text value; objects and lists (a status breakdown, say) are not a status.
 String? _scalarText(dynamic value) => value is String || value is num || value is bool ? value.toString() : null;
-
-/// Calculator / validator output.
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({required this.lines, this.total, this.tone = KTone.brand});
-
-  final List<String> lines;
-  final String? total;
-  final KTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: tone.bg, borderRadius: BorderRadius.circular(AppRadius.lg)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final line in lines)
-            Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Text(line, style: AppText.body.copyWith(color: AppColors.ink))),
-          if (total != null) ...[
-            const Divider(color: AppColors.hairline),
-            Text(total!, style: AppText.amount.copyWith(fontSize: 22, color: tone == KTone.brand ? AppColors.brand : tone.fg)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-double _pow(double base, double exp) {
-  var result = 1.0;
-  final times = exp.round();
-  for (var i = 0; i < times; i++) {
-    result *= base;
-  }
-  return result;
-}
 
 class _DetailPage extends StatelessWidget {
   const _DetailPage({required this.title, required this.row});
@@ -792,17 +524,6 @@ class RecordSections extends StatelessWidget {
   }
 }
 
-/// Routes in [appPages] that now have their own phone screen instead of the generic list.
-Widget? dedicatedPageScreen(AppSession session, String href) => switch (href) {
-      '/employees' => EmployeesScreen(session: session),
-      '/employees/attendance' => AttendanceScreen(session: session),
-      '/employees/leaves' => LeavesScreen(session: session),
-      '/employees/salary/payments' => SalaryPaymentsScreen(session: session),
-      '/whatsapp/orders' => OrderVerificationScreen(session: session),
-      '/reports/cash-flow' => CashFlowScreen(session: session),
-      '/reports/profit-loss' => ProfitLossScreen(session: session),
-      '/reports/balance-sheet' => BalanceSheetScreen(session: session),
-      '/reports/trial-balance' => TrialBalanceScreen(session: session),
-      _ => null,
-    };
+/// Kept for older callers; the table is [nativeScreenFor].
+Widget? dedicatedPageScreen(AppSession session, String href) => nativeScreenFor(session, href);
 

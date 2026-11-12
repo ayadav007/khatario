@@ -61,7 +61,6 @@ void main() {
       '/settings/online-store',
       '/settings/online-store/studio',
       '/pricing/party-item',
-      '/tools',
       '/whatsapp/send-message',
       '/hr/leaves/year-end',
       '/hr/leaves/import-balances',

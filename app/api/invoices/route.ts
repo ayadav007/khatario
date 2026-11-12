@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { parseChangeReason, setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { clientInvoiceChannel, isInvoiceChannel } from '@/lib/invoices/channel';
@@ -414,6 +415,10 @@ export async function POST(request: NextRequest) {
     } = body;
 
     const actorUserId = getUserIdFromRequest(request, body);
+    const changeReason = parseChangeReason((body as { change_reason?: unknown }).change_reason);
+    if (changeReason === 'too_long') {
+      return NextResponse.json({ error: 'Reason for change is too long.', code: 'REASON_TOO_LONG' }, { status: 400 });
+    }
     if (!actorUserId) {
       return NextResponse.json(
         { error: 'Authentication required for invoice actions' },
@@ -1171,6 +1176,18 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    {
+      const priorStatus = (existingInvoiceRow as { status?: string } | null)?.status;
+      const auditAction = !invoiceId
+        ? 'created'
+        : priorStatus === 'final'
+          ? 'amended'
+          : status === 'final'
+            ? 'finalized'
+            : 'draft_edited';
+      await setInvoiceAuditContext(client, { actorUserId, action: auditAction, reason: changeReason });
     }
 
     // Check subscription limits INSIDE transaction with advisory lock

@@ -7,22 +7,37 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import '../invoices/invoice_form_logic.dart';
 import '../parties/customer_form_logic.dart';
 import 'bill_camera.dart';
 import 'bill_scan_flow.dart';
 import 'bill_scan_logic.dart';
+import '../pages/website_page_screen.dart';
+import 'bill_form_numbers.dart';
+import '../sales/challan_logic.dart';
+import '../sales/sales_order_logic.dart';
+import '../sales/work_order_logic.dart';
 
 /// A supplier or customer bill whose tax is either calculated by the server
 /// (purchases, credit notes, debit notes) or by the same line-GST function the
 /// website uses (purchase orders and sales orders, which store the client totals).
-enum BillKind { purchase, purchaseOrder, creditNote, debitNote, salesOrder, deliveryChallan }
+enum BillKind { purchase, purchaseOrder, creditNote, debitNote, salesOrder, deliveryChallan, workOrder }
 
 class BillFormScreen extends StatefulWidget {
-  const BillFormScreen({super.key, required this.session, required this.kind, this.purchaseId});
+  const BillFormScreen({super.key, required this.session, required this.kind, this.purchaseId, this.salesOrderId, this.challanId, this.workOrderId});
 
   final AppSession session;
   final BillKind kind;
+
+  /// A saved sales order to edit (only with [BillKind.salesOrder]). Saving sends `PUT /api/sales-orders/[id]`.
+  final String? salesOrderId;
+
+  /// A saved delivery challan to edit (only with [BillKind.deliveryChallan]). Saving sends `PUT /api/delivery-challans/[id]`.
+  final String? challanId;
+
+  /// A saved work order to edit (only with [BillKind.workOrder]). Saving sends `PUT /api/work-orders/[id]`.
+  final String? workOrderId;
 
   /// A saved draft to load. Saving writes a new bill, then deletes this draft.
   final String? purchaseId;
@@ -50,6 +65,9 @@ class _BillLine {
   String name = '';
   String hsn = '';
   String unit = '';
+
+  /// From an order being edited: kept, because the form has no field for it and `PUT` replaces every line.
+  String description = '';
   String? taxMode;
   double? inclusiveTotal;
   double? printedRate;
@@ -106,9 +124,57 @@ class _BillFormScreenState extends State<BillFormScreen> {
   /// Payable printed on the scanned bill; the form total is checked against it.
   double? _scanPrintedTotal;
 
+  final _description = TextEditingController();
+  final _assigned = TextEditingController();
+  final _labor = TextEditingController();
+  final _other = TextEditingController();
+  String _priority = 'medium';
+
+  /// The number the server suggested for a new challan or work order. Left as it is, the server issues it.
+  String _suggestedNumber = '';
+
+  /// `charge_tax` of `next-number`: a business that charges no GST sends zero tax on a work order.
+  bool _chargeTax = true;
+
+  /// An order being edited: its status (kept on save) and the header fields the form has no input for
+  /// (`PUT` replaces them all, so they go back as loaded).
+  String _orderStatus = 'draft';
+  Map<String, dynamic> _orderKept = const {};
+
+  /// Why this order cannot be saved from the phone (see [salesOrderPhoneEditBlock]); null when it can.
+  String? _editBlock;
+
+  /// An order being edited was read from the server. Until then there is no form and no Save: `PUT`
+  /// replaces every line, so saving a blank form would empty the order.
+  bool _orderLoaded = false;
+
+  /// [_editBlock] is a phone limit (totals the form cannot show), so the website can still edit it.
+  bool _blockOnWebsite = false;
+
+  /// The saved document being edited: a sales order, delivery challan or work order.
+  String? get _editId => switch (widget.kind) {
+        BillKind.salesOrder => widget.salesOrderId,
+        BillKind.deliveryChallan => widget.challanId,
+        BillKind.workOrder => widget.workOrderId,
+        _ => null,
+      };
+
+  bool get _editingOrder => _editId != null;
+
+  bool get _isWorkOrder => widget.kind == BillKind.workOrder;
+
+  /// A challan held by a supplier has no customer; editing it must not force one.
+  bool _partyOptional = false;
+
+  String get _docNoun => switch (widget.kind) {
+        BillKind.deliveryChallan => 'delivery challan',
+        BillKind.workOrder => 'work order',
+        _ => 'sales order',
+      };
+
   bool get _supplier => widget.kind == BillKind.purchase || widget.kind == BillKind.purchaseOrder;
   bool get _serverTax =>
-      widget.kind == BillKind.purchase || widget.kind == BillKind.creditNote || widget.kind == BillKind.debitNote || widget.kind == BillKind.deliveryChallan;
+      widget.kind == BillKind.purchase || widget.kind == BillKind.creditNote || widget.kind == BillKind.debitNote || widget.kind == BillKind.deliveryChallan || widget.kind == BillKind.workOrder;
   bool get _needsNumber => widget.kind == BillKind.purchaseOrder || widget.kind == BillKind.creditNote || widget.kind == BillKind.salesOrder;
 
   String get _title => switch (widget.kind) {
@@ -116,8 +182,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
         BillKind.purchaseOrder => 'New purchase order',
         BillKind.creditNote => 'New credit note',
         BillKind.debitNote => 'New debit note',
-        BillKind.salesOrder => 'New sales order',
-        BillKind.deliveryChallan => 'New delivery challan',
+        BillKind.salesOrder => _editingOrder ? 'Edit sales order' : 'New sales order',
+        BillKind.deliveryChallan => _editingOrder ? 'Edit delivery challan' : 'New delivery challan',
+        BillKind.workOrder => _editingOrder ? 'Edit work order' : 'New work order',
       };
 
   @override
@@ -134,6 +201,10 @@ class _BillFormScreenState extends State<BillFormScreen> {
     _gstin.dispose();
     _port.dispose();
     _place.dispose();
+    _description.dispose();
+    _assigned.dispose();
+    _labor.dispose();
+    _other.dispose();
     for (final line in _lines) {
       line.dispose();
     }
@@ -141,6 +212,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
   }
 
   Future<void> _load() async {
+    if (_editingOrder && (_error != null || !_loading)) setState(() { _error = null; _loading = true; });
     try {
       final partyPath = _supplier ? '/api/suppliers' : '/api/customers';
       final parties = await widget.session.api.getData(partyPath);
@@ -152,6 +224,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
           warehouses = _rows(body, const ['warehouses']);
         } catch (_) {}
       }
+      // A new challan or work order starts from the server's next number, and learns whether GST is charged.
+      if (!_editingOrder && (widget.kind == BillKind.deliveryChallan || _isWorkOrder)) await _fillNumbering();
+      // Credit and debit notes and sales and purchase orders start from the next number (see bill_form_numbers.dart).
+      if (!_editingOrder && widget.purchaseId == null && _number.text.isEmpty) {
+        final next = await suggestedDocumentNumber(widget.session.api, widget.kind);
+        if (next != null && mounted && _number.text.isEmpty) _number.text = next;
+      }
       if (!mounted) return;
       setState(() {
         _parties = _rows(parties, _supplier ? const ['suppliers'] : const ['customers']);
@@ -159,11 +238,24 @@ class _BillFormScreenState extends State<BillFormScreen> {
         _warehouses = warehouses;
         final primary = warehouses.cast<Map<String, dynamic>?>().where((row) => row?['is_primary'] == true).firstOrNull;
         _warehouseId ??= primary?['id']?.toString() ?? warehouses.firstOrNull?['id']?.toString();
-        _loading = false;
+        // An order being edited keeps the spinner until its own lines are in.
+        _loading = _editingOrder;
       });
       if (widget.purchaseId != null) await _fillDraft(widget.purchaseId!);
+      if (_editingOrder) {
+        switch (widget.kind) {
+          case BillKind.deliveryChallan:
+            await _fillChallan(widget.challanId!);
+          case BillKind.workOrder:
+            await _fillWorkOrder(widget.workOrderId!);
+          default:
+            await _fillSalesOrder(widget.salesOrderId!);
+        }
+      }
     } on ApiException catch (e) {
       if (mounted) setState(() { _error = e.message; _loading = false; });
+    } catch (_) {
+      if (mounted && _editingOrder) setState(() { _error = 'Could not reach the server.'; _loading = false; });
     }
   }
 
@@ -205,6 +297,213 @@ class _BillFormScreenState extends State<BillFormScreen> {
     });
   }
 
+  /// `GET /api/sales-orders/[id]` replies `{ salesOrder }` with `items`.
+  Future<void> _fillSalesOrder(String id) async {
+    final body = await widget.session.api.getJson('/api/sales-orders/$id');
+    final doc = body['salesOrder'];
+    if (!mounted) return;
+    if (doc is! Map) {
+      setState(() { _error = 'Could not load this sales order.'; _loading = false; });
+      return;
+    }
+    final order = Map<String, dynamic>.from(doc);
+    final status = order['status']?.toString().toLowerCase() ?? '';
+    if (order['editable'] == false || (status != 'draft' && status != 'confirmed')) {
+      setState(() {
+        _editBlock = 'This sales order can no longer be edited.';
+        _loading = false;
+      });
+      return;
+    }
+    setState(() {
+      _editBlock = salesOrderPhoneEditBlock(order);
+      _blockOnWebsite = _editBlock != null;
+      _orderLoaded = _editBlock == null;
+      _loading = false;
+      _orderStatus = status;
+      _partyId = order['customer_id']?.toString();
+      _number.text = order['order_number']?.toString() ?? '';
+      _notes.text = order['notes']?.toString() ?? '';
+      final parsed = DateTime.tryParse(order['order_date']?.toString() ?? '')?.toLocal();
+      if (parsed != null) _date = parsed;
+      _orderKept = {
+        for (final key in const [
+          'expected_delivery_date',
+          'shipping_address',
+          'billing_address',
+          'place_of_supply_state_code',
+          'terms',
+        ])
+          key: order[key],
+      };
+      // A date goes back as the day the phone shows, whatever zone the server wrote it in.
+      final delivery = DateTime.tryParse(order['expected_delivery_date']?.toString() ?? '')?.toLocal();
+      _orderKept = {..._orderKept, 'expected_delivery_date': delivery == null ? null : _iso(delivery)};
+      for (final line in _lines) {
+        line.dispose();
+      }
+      _lines
+        ..clear()
+        ..addAll(_linesFrom(order['items']));
+      if (_lines.isEmpty) _lines.add(_BillLine());
+    });
+  }
+
+  /// `GET .../next-number`: the suggested number (not reserved) and `charge_tax`. A failure leaves the number blank
+  /// (the server then issues one) and tax on.
+  Future<void> _fillNumbering() async {
+    final challan = widget.kind == BillKind.deliveryChallan;
+    try {
+      final branch = widget.session.defaultBranchId;
+      final base = challan ? '/api/delivery-challans/next-number' : '/api/work-orders/next-number';
+      final data = await widget.session.api.getJson(branch == null ? base : '$base?branch_id=$branch');
+      final number = data[challan ? 'challan_number' : 'work_order_number']?.toString() ?? '';
+      if (!mounted) return;
+      _suggestedNumber = number;
+      if (_number.text.isEmpty) _number.text = number;
+      _chargeTax = data['charge_tax'] != false;
+    } catch (_) {}
+  }
+
+  /// A date the server stored, as the day the phone shows (so it goes back unchanged), or null.
+  String? _dayOrNull(dynamic value) {
+    final parsed = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    return parsed == null ? null : _iso(parsed);
+  }
+
+  String? _idOrNull(dynamic value) {
+    final text = value?.toString() ?? '';
+    return text.isEmpty ? null : text;
+  }
+
+  /// `GET /api/delivery-challans/[id]` replies `{ deliveryChallan, items }`. `PUT` replaces every header field, so
+  /// the ones the form has no input for go back as loaded.
+  Future<void> _fillChallan(String id) async {
+    final body = await widget.session.api.getJson('/api/delivery-challans/$id');
+    final doc = body['deliveryChallan'];
+    if (!mounted) return;
+    if (doc is! Map) {
+      setState(() { _error = 'Could not load this delivery challan.'; _loading = false; });
+      return;
+    }
+    final challan = Map<String, dynamic>.from(doc);
+    final block = challanEditBlock(challan);
+    if (block != null) {
+      setState(() {
+        _editBlock = block;
+        _loading = false;
+      });
+      return;
+    }
+    setState(() {
+      _editBlock = null;
+      _orderLoaded = true;
+      _loading = false;
+      _partyId = _idOrNull(challan['customer_id']);
+      _partyOptional = _partyId == null;
+      _number.text = challan['challan_number']?.toString() ?? '';
+      _notes.text = challan['notes']?.toString() ?? '';
+      final parsed = DateTime.tryParse(challan['challan_date']?.toString() ?? '')?.toLocal();
+      if (parsed != null) _date = parsed;
+      _orderKept = {
+        for (final key in const [
+          'challan_kind',
+          'purpose',
+          'supplier_id',
+          'warehouse_id',
+          'job_work_goods',
+          'invoice_id',
+          'sales_order_id',
+          'e_way_bill_number',
+          'vehicle_number',
+          'transporter_name',
+          'transporter_gstin',
+          'shipping_address',
+          'billing_address',
+          'place_of_delivery',
+          'place_of_supply_state_code',
+          'dispatch_from_address',
+          'reason_for_transportation',
+          'terms',
+          'branch_id',
+        ])
+          key: challan[key],
+        'delivery_date': _dayOrNull(challan['delivery_date']),
+        'expected_return_date': _dayOrNull(challan['expected_return_date']),
+      };
+      for (final line in _lines) {
+        line.dispose();
+      }
+      _lines
+        ..clear()
+        ..addAll(_linesFrom(body['items']));
+      if (_lines.isEmpty) _lines.add(_BillLine());
+    });
+  }
+
+  /// `GET /api/work-orders/[id]` replies `{ workOrder, items }`. `PUT` replaces every header field, so the ones the
+  /// form has no input for (schedule, site, hours, labour tax, place of supply, terms) go back as loaded.
+  Future<void> _fillWorkOrder(String id) async {
+    final body = await widget.session.api.getJson('/api/work-orders/$id');
+    final doc = body['workOrder'];
+    if (!mounted) return;
+    if (doc is! Map) {
+      setState(() { _error = 'Could not load this work order.'; _loading = false; });
+      return;
+    }
+    final order = Map<String, dynamic>.from(doc);
+    if (!canEditWorkOrder(order)) {
+      setState(() {
+        _editBlock = workOrderEditBlock(order);
+        _loading = false;
+      });
+      return;
+    }
+    String cost(dynamic v) {
+      final n = double.tryParse(v?.toString() ?? '') ?? 0;
+      return n == 0 ? '' : _plain(n);
+    }
+
+    setState(() {
+      _editBlock = null;
+      _orderLoaded = true;
+      _loading = false;
+      _partyId = _idOrNull(order['customer_id']);
+      _number.text = order['work_order_number']?.toString() ?? '';
+      _notes.text = order['notes']?.toString() ?? '';
+      _description.text = order['work_description']?.toString() ?? '';
+      _assigned.text = order['assigned_to']?.toString() ?? '';
+      final priority = order['priority']?.toString() ?? '';
+      _priority = kWorkOrderPriorities.any((p) => p.$1 == priority) ? priority : 'medium';
+      _labor.text = cost(order['labor_cost']);
+      _other.text = cost(order['other_cost']);
+      final parsed = DateTime.tryParse(order['work_order_date']?.toString() ?? '')?.toLocal();
+      if (parsed != null) _date = parsed;
+      _orderKept = {
+        for (final key in const [
+          'work_location',
+          'estimated_hours',
+          'actual_hours',
+          'labor_sac',
+          'labor_tax_rate',
+          'place_of_supply_state_code',
+          'terms',
+          'branch_id',
+        ])
+          key: order[key],
+        'scheduled_start_date': _dayOrNull(order['scheduled_start_date']),
+        'scheduled_end_date': _dayOrNull(order['scheduled_end_date']),
+      };
+      for (final line in _lines) {
+        line.dispose();
+      }
+      _lines
+        ..clear()
+        ..addAll(_linesFrom(body['items']));
+      if (_lines.isEmpty) _lines.add(_BillLine());
+    });
+  }
+
   List<_BillLine> _linesFrom(dynamic raw) {
     if (raw is! List) return [];
     return [
@@ -226,6 +525,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
           line.serials.text = serials is List ? serials.map((s) => s.toString()).join(', ') : (serials?.toString() ?? '');
           line.capitalGoods = entry['itc_type']?.toString() == 'capital_goods';
           line.taxRate = double.tryParse(entry['tax_rate']?.toString() ?? '') ?? 0;
+          if (_editingOrder) {
+            line.unit = entry['unit']?.toString() ?? '';
+            line.hsn = entry['hsn_sac']?.toString() ?? '';
+            line.description = entry['description']?.toString() ?? '';
+            // A challan or work order keeps the line's own name; the catalogue name may have changed since.
+            if (widget.kind != BillKind.salesOrder) line.name = entry['item_name']?.toString() ?? '';
+          }
           final location = entry['location_id']?.toString();
           if (location != null && location.isNotEmpty) _warehouseId = location;
           return line;
@@ -515,8 +821,15 @@ class _BillFormScreenState extends State<BillFormScreen> {
   }
 
   Future<void> _save({String purchaseStatus = 'final'}) async {
-    if (_partyId == null) {
+    if (_saving) return;
+    if (_editingOrder && (!_orderLoaded || _editBlock != null)) return;
+    // A work order may have no customer, and so may a supplier-held challan being edited.
+    if (_partyId == null && !_isWorkOrder && !_partyOptional) {
       setState(() => _error = _supplier ? 'Choose a supplier.' : 'Choose a customer.');
+      return;
+    }
+    if (_isWorkOrder && _description.text.trim().isEmpty) {
+      setState(() => _error = 'Describe the work to be done.');
       return;
     }
     if (_needsNumber && _number.text.trim().isEmpty) {
@@ -543,7 +856,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
       final scannedOnly = widget.kind == BillKind.purchase && item == null && line.name.trim().isNotEmpty;
       if ((item == null && !scannedOnly) || qty <= 0) {
         final blank = item == null && line.price.text.trim().isEmpty;
-        if (widget.kind == BillKind.purchase && blank) continue;
+        if ((widget.kind == BillKind.purchase || _isWorkOrder) && blank) continue;
         setState(() => _error = item == null ? 'Match every line to an item in your list.' : 'Each line needs an item and a quantity.');
         return;
       }
@@ -567,7 +880,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'qty': qty,
         'unit': line.unit.isNotEmpty ? line.unit : (item?['unit'] ?? 'PCS'),
         'unit_price': price,
-        'tax_rate': line.taxRate,
+        'tax_rate': _isWorkOrder && !_chargeTax ? 0 : line.taxRate,
+        if (_editingOrder && line.description.isNotEmpty) 'description': line.description,
         'discount_percent': widget.kind == BillKind.purchase && discountAmount > 0 ? 0 : (double.tryParse(line.discount.text) ?? 0),
         if (widget.kind == BillKind.purchase) ...{
           'discount_amount': discountAmount,
@@ -597,7 +911,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
       items.add(row);
       lineTotals.add(widget.kind == BillKind.purchase ? _purchaseLineGst(line, intra).total : gst.total);
     }
-    if (items.isEmpty) {
+    final labor = double.tryParse(_labor.text.trim()) ?? 0;
+    final other = double.tryParse(_other.text.trim()) ?? 0;
+    if (_isWorkOrder && items.isEmpty && labor <= 0 && other <= 0) {
+      setState(() => _error = 'Enter the labour cost or add materials.');
+      return;
+    }
+    if (items.isEmpty && !_isWorkOrder) {
       setState(() => _error = 'Add at least one item.');
       return;
     }
@@ -611,7 +931,6 @@ class _BillFormScreenState extends State<BillFormScreen> {
     }
     final date = '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}';
     final businessId = widget.session.businessId;
-    final userId = widget.session.user['id']?.toString();
     final body = switch (widget.kind) {
       BillKind.purchase => {
           'supplier_id': _partyId,
@@ -669,13 +988,12 @@ class _BillFormScreenState extends State<BillFormScreen> {
           'items': items,
         },
       BillKind.salesOrder => {
-          'business_id': businessId,
-          'created_by': userId,
+          // The session names the business and the user; `PUT` keeps the order's own branch.
           'customer_id': _partyId,
           'order_number': _number.text.trim(),
           'order_date': date,
-          'branch_id': widget.session.defaultBranchId,
-          'status': 'draft',
+          if (_editingOrder) ..._orderKept else 'branch_id': widget.session.defaultBranchId,
+          'status': _editingOrder ? _orderStatus : 'draft',
           'subtotal': invoiceRound2(subtotal),
           'tax_total': invoiceRound2(taxTotal),
           'grand_total': invoiceRound2(grand),
@@ -683,12 +1001,37 @@ class _BillFormScreenState extends State<BillFormScreen> {
           'items': items,
         },
       BillKind.deliveryChallan => {
+          // The session names the business and the user. `PUT` replaces every header field, so an edit sends
+          // back what it loaded; a new challan is a supply and the server numbers it unless the number was typed.
           'customer_id': _partyId,
           'challan_date': date,
           'challan_number': _number.text.trim().isEmpty ? null : _number.text.trim(),
-          'auto_number': _number.text.trim().isEmpty,
-          'branch_id': widget.session.defaultBranchId,
+          if (!_editingOrder) 'auto_number': _number.text.trim().isEmpty || _number.text.trim() == _suggestedNumber,
+          if (_editingOrder) ..._orderKept else ...{'branch_id': widget.session.defaultBranchId, 'reason_for_transportation': 'supply'},
           'notes': _notes.text.trim(),
+          'items': items,
+        },
+      BillKind.workOrder => {
+          // The session names the business and the user. Costs are the server's: only labour and other charges
+          // and the materials' qty, rate and GST go up.
+          'customer_id': _partyId,
+          'work_order_number': _number.text.trim().isEmpty ? null : _number.text.trim(),
+          'work_order_date': date,
+          'work_description': _description.text.trim(),
+          'assigned_to': _assigned.text.trim(),
+          'priority': _priority,
+          'labor_cost': labor,
+          'other_cost': other,
+          'notes': _notes.text.trim(),
+          if (_editingOrder)
+            ..._orderKept
+          else ...{
+            'status': 'draft',
+            'branch_id': widget.session.defaultBranchId,
+            'auto_number': _number.text.trim().isEmpty || _number.text.trim() == _suggestedNumber,
+            'labor_sac': kDefaultLaborSac,
+            'labor_tax_rate': _chargeTax ? kDefaultLaborTaxRate : 0,
+          },
           'items': items,
         },
     };
@@ -701,8 +1044,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
         BillKind.debitNote => '/api/debit-notes',
         BillKind.salesOrder => '/api/sales-orders',
         BillKind.deliveryChallan => '/api/delivery-challans',
+        BillKind.workOrder => '/api/work-orders',
       };
-      final saved = await widget.session.api.postJson(path, body);
+      final saved = _editingOrder
+          ? await widget.session.api.putJson('$path/$_editId', body)
+          : await widget.session.api.postJson(path, body);
       if (widget.kind == BillKind.purchase && _scanJobId != null) {
         final preview = _purchasePreview();
         final rows = [
@@ -910,9 +1256,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
                   child: ListView(
                     children: [
                       for (final row in shown)
-                        ListTile(
-                          title: Text(nameOf(row)),
-                          subtitle: detailOf(row).isEmpty ? null : Text(detailOf(row)),
+                        KListRow(
+                          title: nameOf(row),
+                          subtitle: detailOf(row).isEmpty ? null : detailOf(row),
                           onTap: () => Navigator.pop(ctx, row),
                         ),
                     ],
@@ -939,25 +1285,11 @@ class _BillFormScreenState extends State<BillFormScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: number, decoration: const InputDecoration(labelText: 'Bill number')),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Bill date'),
-                subtitle: Text(ddMMMyyyy(date)),
-                onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                  if (picked != null) setSheet(() => date = picked);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Due date'),
-                subtitle: Text(due == null ? 'None' : ddMMMyyyy(due!)),
-                onTap: () async {
-                  final picked = await showDatePicker(context: context, initialDate: due ?? date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                  if (picked != null) setSheet(() => due = picked);
-                },
-              ),
+              KTextField(label: 'Bill number', controller: number),
+              const SizedBox(height: 12),
+              KDateField(label: 'Bill date', value: date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setSheet(() => date = picked)),
+              const SizedBox(height: 12),
+              KDateField(label: 'Due date', value: due, initial: date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setSheet(() => due = picked)),
               const SizedBox(height: 8),
               KButton(
                 label: 'Done',
@@ -1030,17 +1362,27 @@ class _BillFormScreenState extends State<BillFormScreen> {
                     },
                   ),
                 ),
-              TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Rate')),
-              TextField(controller: discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount %')),
-              TextField(controller: discountAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount ₹ (overrides %)')),
-              TextField(controller: cess, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Cess ₹')),
+              KTextField(label: 'Quantity', controller: qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Rate', controller: price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Discount %', controller: discount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Discount ₹ (overrides %)', controller: discountAmount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Cess ₹', controller: cess, keyboard: const TextInputType.numberWithOptions(decimal: true)),
               if (trackBatch) ...[
-                TextField(controller: batch, decoration: const InputDecoration(labelText: 'Batch number')),
-                TextField(controller: manufactured, decoration: const InputDecoration(labelText: 'Manufactured (YYYY-MM-DD)')),
-                TextField(controller: expiry, decoration: const InputDecoration(labelText: 'Expiry (YYYY-MM-DD)')),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Batch number', controller: batch),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Manufactured (YYYY-MM-DD)', controller: manufactured),
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Expiry (YYYY-MM-DD)', controller: expiry),
               ],
-              if (trackSerial) TextField(controller: serials, maxLines: 2, decoration: const InputDecoration(labelText: 'Serial numbers')),
+              if (trackSerial) ...[
+                const SizedBox(height: AppSpace.md),
+                KTextField(label: 'Serial numbers', controller: serials, maxLines: 2),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Capital goods'),
@@ -1254,11 +1596,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
                   const SizedBox(height: 8),
                   KCard(
                     padding: const EdgeInsets.all(14),
-                    child: TextField(
-                      controller: _paid,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Amount paid now', border: InputBorder.none),
-                    ),
+                    child: KTextField(label: 'Amount paid now', controller: _paid, keyboard: const TextInputType.numberWithOptions(decimal: true)),
                   ),
                   const SizedBox(height: 8),
                   InkWell(
@@ -1450,7 +1788,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: TextField(controller: _gstin, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Supplier GSTIN')),
+            child: KTextField(label: 'Supplier GSTIN', controller: _gstin, caps: true),
           ),
           KListRow(
             title: 'Supplier state',
@@ -1491,15 +1829,57 @@ class _BillFormScreenState extends State<BillFormScreen> {
           if (_docType == 'bill_of_entry')
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: TextField(controller: _port, decoration: const InputDecoration(labelText: 'Port code')),
+              child: KTextField(label: 'Port code', controller: _port),
             ),
           SwitchListTile(title: const Text('GST credit (ITC) allowed'), value: _itc, onChanged: (v) => setState(() => _itc = v)),
           SwitchListTile(title: const Text('Reverse charge'), value: _reverseCharge, onChanged: (v) => setState(() => _reverseCharge = v)),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-            child: TextField(controller: _notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes')),
+            child: KTextField(label: 'Notes', controller: _notes, maxLines: 2),
           ),
         ],
+      ),
+    );
+  }
+
+  /// An order that did not load, or that the phone cannot save: the reason, and no form.
+  Widget _orderUnavailable() {
+    final blocked = _editBlock;
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            KBackBar(_title),
+            Expanded(
+              child: ListView(
+                children: [
+                  if (blocked != null)
+                    KEmptyState(
+                      icon: LucideIcons.lock,
+                      title: 'Cannot edit this $_docNoun here',
+                      body: blocked,
+                      action: _blockOnWebsite
+                          ? KButton.secondary(
+                              label: 'Open on website',
+                              expand: false,
+                              onPressed: () => openWebsiteInApp(context, widget.session, '/sales-orders/new?edit=${widget.salesOrderId}', 'Edit sales order'),
+                            )
+                          : null,
+                    )
+                  else
+                    KEmptyState(
+                      icon: LucideIcons.cloudOff,
+                      title: 'Could not load this $_docNoun',
+                      body: _error,
+                      action: KButton.secondary(label: 'Try again', expand: false, onPressed: _load),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1507,6 +1887,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Scaffold(body: KSpinner(padding: EdgeInsets.symmetric(vertical: 64)));
+    if (_editingOrder && !_orderLoaded) return _orderUnavailable();
     if (widget.kind == BillKind.purchase) return _purchaseScaffold();
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -1530,31 +1911,51 @@ class _BillFormScreenState extends State<BillFormScreen> {
             subtitle: _partyName ?? 'Choose',
             trailing: const Icon(LucideIcons.chevronRight, size: 18),
           ),
-          ListTile(
-            title: const Text('Date'),
-            subtitle: Text(ddMMMyyyy(_date)),
-            trailing: const Icon(LucideIcons.calendar, size: 18),
-            onTap: () async {
-              final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-              if (picked != null) setState(() => _date = picked);
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+            child: KDateField(label: 'Date', value: _date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setState(() => _date = picked)),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _number, decoration: InputDecoration(labelText: _needsNumber ? 'Number' : 'Bill number (optional)')),
-          ),
-          if (widget.kind == BillKind.purchase) ...[
-            ListTile(
-              title: const Text('Due date'),
-              subtitle: Text(_due == null ? 'None' : ddMMMyyyy(_due!)),
-              onTap: () async {
-                final picked = await showDatePicker(context: context, initialDate: _due ?? _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-                if (picked != null) setState(() => _due = picked);
+            child: KTextField(
+              label: switch (widget.kind) {
+                BillKind.deliveryChallan => 'Challan number',
+                BillKind.workOrder => 'Work order number',
+                _ => _needsNumber ? 'Number' : 'Bill number (optional)',
               },
+              controller: _number,
+            ),
+          ),
+          if (_isWorkOrder) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 0),
+              child: KTextField(label: 'Work description', controller: _description, hint: 'Describe the work to be done', maxLines: 4, minLines: 2),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 0),
+              child: KTextField(label: 'Assigned to', controller: _assigned, hint: 'Technician, team or contractor'),
+            ),
+            KListRow(
+              onTap: () => showKPicker<String>(
+                context,
+                title: 'Priority',
+                value: _priority,
+                options: kWorkOrderPriorities,
+                onChanged: (v) => setState(() => _priority = v),
+              ),
+              title: 'Priority',
+              subtitle: kWorkOrderPriorities.firstWhere((p) => p.$1 == _priority, orElse: () => kWorkOrderPriorities[1]).$2,
+              trailing: const Icon(LucideIcons.chevronRight, size: 18),
+            ),
+          ],
+          if (widget.kind == BillKind.purchase) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+              child: KDateField(label: 'Due date', value: _due, initial: _date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setState(() => _due = picked)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _paid, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount paid now')),
+              child: KTextField(label: 'Amount paid now', controller: _paid, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             ),
             KListRow(
               onTap: () => showKPicker<String>(
@@ -1584,31 +1985,41 @@ class _BillFormScreenState extends State<BillFormScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _gstin, decoration: const InputDecoration(labelText: 'Supplier GSTIN')),
+              child: KTextField(label: 'Supplier GSTIN', controller: _gstin),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _place, decoration: const InputDecoration(labelText: 'Place of supply (state code)')),
+              child: KTextField(label: 'Place of supply (state code)', controller: _place),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-              child: TextField(controller: _port, decoration: const InputDecoration(labelText: 'Port code')),
+              child: KTextField(label: 'Port code', controller: _port),
             ),
             SwitchListTile(title: const Text('GST credit (ITC) allowed'), value: _itc, onChanged: (v) => setState(() => _itc = v)),
             SwitchListTile(title: const Text('Reverse charge'), value: _reverseCharge, onChanged: (v) => setState(() => _reverseCharge = v)),
           ],
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xl, AppSpace.gutter, AppSpace.sm),
-            child: Text('ITEMS', style: AppText.overline),
+            child: Text(_isWorkOrder ? 'MATERIALS' : 'ITEMS', style: AppText.overline),
           ),
           for (var i = 0; i < _lines.length; i++) _lineCard(i),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
             child: KButton.secondary(label: 'Add item', onPressed: _saving ? null : () => setState(() => _lines.add(_BillLine()))),
           ),
+          if (_isWorkOrder) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
+              child: KTextField(label: 'Labour cost', controller: _labor, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.md, AppSpace.gutter, 0),
+              child: KTextField(label: 'Other charges', controller: _other, hint: 'Travel, disposal', keyboard: const TextInputType.numberWithOptions(decimal: true)),
+            ),
+          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
-            child: TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Notes'), maxLines: 2),
+            child: KTextField(label: 'Notes', controller: _notes, maxLines: 2),
           ),
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
           Padding(padding: const EdgeInsets.all(16), child: KButton(label: _saving ? 'Saving…' : 'Save', onPressed: _saving ? null : _save)),
@@ -1634,9 +2045,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
                 subtitle: 'Choose from your catalogue',
                 trailing: const Icon(LucideIcons.chevronRight, size: 18),
               ),
-              TextField(controller: line.qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-              TextField(controller: line.price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Unit price')),
-              TextField(controller: line.discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount %')),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Quantity', controller: line.qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Unit price', controller: line.price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              if (widget.kind != BillKind.deliveryChallan && widget.kind != BillKind.workOrder)
+                KTextField(label: 'Discount %', controller: line.discount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
               KListRow(
                 onTap: () => showKPicker<double>(
                   context,

@@ -15,6 +15,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { Loader2 } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { GST_RATE_SLABS } from '@/lib/gst/rates';
+import { InvoiceSearchSelect } from '@/components/invoices/InvoiceSearchSelect';
 
 interface Customer {
   id: string;
@@ -63,9 +64,6 @@ export default function NewDebitNotePage() {
     [invoices, customerId]
   );
 
-  useEffect(() => {
-    if (invoiceId && !customerInvoices.some((inv) => inv.id === invoiceId)) setInvoiceId('');
-  }, [customerInvoices, invoiceId]);
 
   const subtotal = useMemo(() => qty * unitPrice, [qty, unitPrice]);
   const taxAmount = useMemo(() => subtotal * (taxRate / 100), [subtotal, taxRate]);
@@ -199,7 +197,10 @@ export default function NewDebitNotePage() {
                   <select
                     className="input w-full mt-1"
                     value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerId(e.target.value);
+                      setInvoiceId('');
+                    }}
                   >
                     <option value="">Select customer</option>
                     {customers.map((c) => (
@@ -211,17 +212,17 @@ export default function NewDebitNotePage() {
                   <label className="text-xs font-semibold text-gray-600">
                     Original Invoice {isRegisteredCustomer ? '(required for GSTIN customer)' : '(optional)'}
                   </label>
-                  <select
-                    className="input w-full mt-1"
-                    value={invoiceId}
-                    onChange={(e) => setInvoiceId(e.target.value)}
-                    disabled={!customerId}
-                  >
-                    <option value="">{customerId ? 'None' : 'Select a customer first'}</option>
-                    {customerInvoices.map((inv) => (
-                      <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>
-                    ))}
-                  </select>
+                  <div className="mt-1">
+                    <InvoiceSearchSelect
+                      invoices={customerInvoices}
+                      customerId={customerId || null}
+                      value={invoiceId}
+                      onChange={setInvoiceId}
+                      disabled={!customerId}
+                      placeholder={customerId ? 'None' : 'Select a customer first'}
+                      ariaLabel="Original invoice"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-600">Debit Note Number</label>

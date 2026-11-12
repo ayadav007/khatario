@@ -1,0 +1,31 @@
+{
+  "discounts": [
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a1",
+      "invoice_number": "INV-2026-0042",
+      "invoice_date": "2026-11-08T00:00:00.000Z",
+      "customer_name": "Sharma Traders",
+      "subtotal": "12000.00",
+      "discount_total": "600.00",
+      "grand_total": "13452.00",
+      "discount_percent": "5.0000000000000000"
+    },
+    {
+      "id": "5a1d0c10-0000-4000-8000-0000000000a2",
+      "invoice_number": "INV-2026-0039",
+      "invoice_date": "2026-11-05T00:00:00.000Z",
+      "customer_name": "Cash Sale",
+      "subtotal": "800.00",
+      "discount_total": "40.00",
+      "grand_total": "896.80",
+      "discount_percent": "5.0000000000000000"
+    }
+  ],
+  "totals": {
+    "total_invoices": 2,
+    "total_subtotal": 12800,
+    "total_discount": 640,
+    "total_sales": 14348.8,
+    "avg_discount_percent": 5
+  }
+}

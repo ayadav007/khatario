@@ -8,6 +8,7 @@ import 'package:khatario_phone/screens/items/scan_add_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'support/finders.dart';
 
 /// Scan & Add on the phone, driven through its screens against a fake Khatario server.
 /// The camera plugin answers "permission denied", as on a phone where camera access was refused.
@@ -39,7 +40,7 @@ void main() {
   }
 
   Future<void> fill(WidgetTester tester, String label, String value) async {
-    final f = find.widgetWithText(TextField, label);
+    final f = textFieldLabelled(label);
     await tester.scrollUntilVisible(f, 200, scrollable: find.byType(Scrollable).first);
     await tester.enterText(f, value);
     await tester.pump();

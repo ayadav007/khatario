@@ -1,0 +1,14 @@
+{
+  "report": {
+    "as_on_date": "2026-11-11",
+    "valuation_method": "weighted_avg",
+    "stock_source": "business",
+    "location_id": null,
+    "items": [
+      {"item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001", "item_name": "Basmati Rice 5kg", "item_code": "RICE5", "unit": "BAG", "quantity": 42, "unit_cost": 410, "total_value": 17220, "valuation_method": "weighted_avg", "track_batch": false, "track_serial": false},
+      {"item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000002", "item_name": "Toor Dal 1kg", "item_code": "DAL1", "unit": "PKT", "quantity": 6, "unit_cost": 120, "total_value": 720, "valuation_method": "weighted_avg", "track_batch": false, "track_serial": false}
+    ],
+    "total_value": 17940,
+    "item_count": 2
+  }
+}

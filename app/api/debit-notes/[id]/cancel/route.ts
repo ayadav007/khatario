@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
@@ -46,6 +47,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'debit_note_cancelled' });
     const noteRes = await client.query(
       `SELECT * FROM debit_notes WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [params.id, businessId]

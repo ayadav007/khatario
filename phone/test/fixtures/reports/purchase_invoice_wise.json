@@ -1,0 +1,61 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "purchases": [
+    {
+      "id": "6b2e0c10-0000-4000-8000-0000000000b1",
+      "bill_number": "BILL-2026-0018",
+      "invoice_number": "SUP/2211",
+      "bill_date": "2026-11-09",
+      "due_date": "2026-11-24",
+      "status": "final",
+      "payment_status": "partial",
+      "supplier_id": "8e3f0c10-0000-4000-8000-0000000000e1",
+      "supplier_name": "Agro Wholesale Co",
+      "supplier_gstin": "27AAACA1234A1Z9",
+      "subtotal": 9000,
+      "tax_total": 1620,
+      "cess_total": 0,
+      "cgst_total": 810,
+      "sgst_total": 810,
+      "igst_total": 0,
+      "grand_total": 10620,
+      "paid_amount": 5000,
+      "balance_amount": 5620,
+      "is_reverse_charge": false
+    },
+    {
+      "id": "6b2e0c10-0000-4000-8000-0000000000b2",
+      "bill_number": "BILL-2026-0017",
+      "invoice_number": null,
+      "bill_date": "2026-11-03",
+      "due_date": null,
+      "status": "draft",
+      "payment_status": "unpaid",
+      "supplier_id": null,
+      "supplier_name": "Cash Purchase (no supplier)",
+      "supplier_gstin": null,
+      "subtotal": 600,
+      "tax_total": 30,
+      "cess_total": 0,
+      "cgst_total": 15,
+      "sgst_total": 15,
+      "igst_total": 0,
+      "grand_total": 630,
+      "paid_amount": 0,
+      "balance_amount": 630,
+      "is_reverse_charge": false
+    }
+  ],
+  "totals": {
+    "total_bills": 1,
+    "draft_count": 1,
+    "cancelled_count": 0,
+    "total_purchases": 9000,
+    "total_tax": 1620,
+    "total_purchases_with_tax": 10620,
+    "total_paid": 5000,
+    "total_pending": 5620
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "as_of": "2026-11-11",
+  "margins": {"stockMarginPct": 25, "debtorMarginPct": 25, "debtorAgeLimitDays": 90},
+  "stock": {
+    "total_value": 200000,
+    "by_class": [{"stock_class": "trading", "value": 200000}],
+    "by_age": [{"bucket": "0-90", "value": 150000}, {"bucket": "91-180", "value": 50000}],
+    "slow_moving_value": 12000,
+    "lines": [
+      {"item_id": "i1", "item_name": "Basmati Rice 5kg", "stock_class": "trading", "qty": 42, "unit_cost": 410, "value": 17220, "last_inward": "2026-10-20", "age_bucket": "0-90", "slow_moving": false}
+    ]
+  },
+  "debtors": {"not_due": 40000, "age_0_30": 10000, "age_30_60": 5000, "age_60_90": 0, "age_90_plus": 2000, "age_60_plus": 2000, "on_account": 0, "total": 57000},
+  "creditors": {"not_due": 30000, "age_0_30": 0, "age_30_60": 0, "age_60_90": 0, "age_90_plus": 0, "age_60_plus": 0, "on_account": 0, "total": 30000},
+  "eligible_debtors": 55000,
+  "paid_stock": 170000,
+  "drawing_power": 168750
+}

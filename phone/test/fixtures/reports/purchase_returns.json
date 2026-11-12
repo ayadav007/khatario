@@ -1,0 +1,28 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "returns": [
+    {
+      "id": "9d0e0c10-0000-4000-8000-0000000000f1",
+      "return_number": "PR-2026-0003",
+      "return_date": "2026-11-09",
+      "purchase_bill_number": "BILL-2026-0018",
+      "supplier_name": "Agro Wholesale Co",
+      "subtotal": 1000,
+      "tax_total": 180,
+      "grand_total": 1180,
+      "refund_amount": 0,
+      "refund_status": "pending",
+      "reason": "Short weight"
+    }
+  ],
+  "totals": {
+    "total_returns": 1,
+    "total_purchases": 1000,
+    "total_tax": 180,
+    "total_amount": 1180,
+    "total_refunded": 0,
+    "pending_count": 1
+  }
+}

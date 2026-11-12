@@ -1,0 +1,6 @@
+{
+  "filings": [
+    {"id": "f1111111-0000-4000-8000-000000000001", "gstin": "27AAAPL1234C1ZV", "filing_period": "2026-11", "filing_date": "2026-11-01", "status": "draft", "lock_date": null, "filed_by": null, "filed_by_name": null, "invoice_count": "8", "has_gstr1_snapshot": false},
+    {"id": "f1111111-0000-4000-8000-000000000000", "gstin": "27AAAPL1234C1ZV", "filing_period": "2026-10", "filing_date": "2026-11-10", "status": "filed", "lock_date": "2026-10-31", "filed_by": "u1", "filed_by_name": "Asha", "invoice_count": "11", "has_gstr1_snapshot": true}
+  ]
+}

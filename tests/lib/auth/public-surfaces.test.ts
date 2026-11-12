@@ -46,4 +46,9 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/preview/maglo-marketing', 'localhost:3000')).toBe(true);
     expect(isPublicMarketingSurface('/preview', 'khatario.com')).toBe(false);
   });
+
+  it('treats the About page as public', () => {
+    expect(isPublicMarketingSurface('/about', 'khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/aboutx', 'khatario.com')).toBe(false);
+  });
 });

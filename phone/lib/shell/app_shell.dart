@@ -6,13 +6,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api.dart';
 import '../capability.dart';
 import '../format.dart';
-import '../screens/hub/hub_home_screen.dart';
-import '../screens/purchases/order_list_screen.dart';
-import '../screens/hub/my_catalog_screen.dart';
-import '../screens/hub/hub_directory_screen.dart';
-import '../screens/hub/incoming_bills_screen.dart';
-import '../screens/hub/new_arrivals_screen.dart';
-import '../screens/hub/supply_orders_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
 import '../screens/items/item_form_screen.dart';
@@ -24,6 +17,7 @@ import '../screens/items/item_detail_screen.dart';
 import '../screens/more/more_screen.dart';
 import '../push/push_service.dart';
 import '../screens/notifications/notifications_screen.dart';
+import '../screens/pages/native_routes.dart';
 import '../screens/pages/page_catalog.dart';
 import '../screens/pages/website_page_screen.dart';
 import '../screens/chats/chats_inbox_screen.dart';
@@ -36,14 +30,11 @@ import '../screens/parties/customer_form_screen.dart';
 import '../screens/parties/parties_screen.dart';
 import '../screens/parties/party_logic.dart';
 import '../screens/orders/orders_screen.dart';
-import '../screens/settings/settings_hub_screen.dart';
-import '../screens/settings/settings_router.dart';
 import '../screens/parties/supplier_detail_screen.dart';
 import '../screens/parties/supplier_form_screen.dart';
 import '../screens/purchases/bill_form_screen.dart';
-import '../screens/purchases/purchase_section.dart';
-import '../screens/reports/aging_report_screen.dart';
 import '../screens/search/search_screen.dart';
+import '../screens/stock/adjustment_form_screen.dart';
 import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
@@ -163,81 +154,13 @@ class _AppShellState extends State<AppShell> {
       _openSearch();
       return;
     }
-    if (href == '/payments/in' || href == '/payments/out') {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PaymentInScreen(session: widget.session, payable: href == '/payments/out'),
-      ));
-      return;
-    }
-    if (href == '/suppliers/new') {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => SupplierFormScreen(session: widget.session)));
-      return;
-    }
-    if (href == '/expenses/new') {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => ExpenseFormScreen(session: widget.session)));
-      return;
-    }
-    if (href == '/reports/aging/receivables' || href == '/reports/aging/payables') {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => AgingReportScreen(session: widget.session, payables: href.endsWith('payables')),
-      ));
-      return;
-    }
     final tab = switch (href) {
       '/items' => AppTab.items,
       '/invoices' => AppTab.invoices,
       '/customers' || '/suppliers' => AppTab.parties,
       _ => null,
     };
-    if (openPhoneSetting(context, widget.session, href)) return;
-    if (href == '/orders') {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrdersScreen(session: widget.session)));
-      return;
-    }
-    // Supplier Hub screens.
-    final hubScreen = switch (href) {
-      '/purchases/incoming' => IncomingBillsScreen(session: widget.session),
-      '/supply-orders' => SupplyOrdersScreen(session: widget.session),
-      // Single-item stock requests were replaced by supplier orders (migration 430).
-      '/purchases/requests' => SupplyOrdersScreen(session: widget.session),
-      '/purchases/order-list' => OrderListScreen(session: widget.session),
-      '/supply-orders?role=vendor' => SupplyOrdersScreen(session: widget.session, selling: true),
-      '/purchases/new-arrivals' => NewArrivalsScreen(session: widget.session),
-      '/suppliers/hub' => HubHomeScreen(session: widget.session),
-      '/suppliers/hub/find' => HubDirectoryScreen(session: widget.session),
-      '/suppliers/catalog' => MyCatalogScreen(session: widget.session),
-      '/suppliers/requests' => ConnectionRequestsScreen(session: widget.session),
-      _ => null,
-    };
-    if (hubScreen != null) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => hubScreen));
-      return;
-    }
-    const purchaseHrefs = {
-      '/purchases': PurchaseKind.bills,
-      '/purchase-orders': PurchaseKind.orders,
-      '/purchase-returns': PurchaseKind.returns,
-    };
-    final purchaseKind = purchaseHrefs[href];
-    if (purchaseKind != null) {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PurchaseSectionScreen(session: widget.session, kind: purchaseKind),
-      ));
-      return;
-    }
-    // Settings: the hub, or the group that now holds this website settings link.
-    final settingsGroup = settingsGroupForHref(href);
-    if (settingsGroup != null) {
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => settingsGroup.isEmpty ? SettingsHubScreen(session: widget.session) : settingsGroupScreen(settingsGroup, widget.session),
-      ));
-      return;
-    }
-    final page = pageForHref(href)?.withTitle(label);
-    if (page != null) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: page)));
-      return;
-    }
+    if (openKnownScreen(context, widget.session, href, label)) return;
     // No phone screen for this link: open the website page inside the app, signed in.
     if (tab == null) return openWebsiteInApp(context, widget.session, href, label);
     _selectTab(tab);
@@ -605,7 +528,7 @@ class _AppShellState extends State<AppShell> {
       case 'Reports':
         return page('/reports');
       case 'New inventory adjustment':
-        return page('/inventory-adjustments');
+        return push(AdjustmentFormScreen(session: widget.session));
       case 'Scan & add items':
         _openScanAdd();
         return;

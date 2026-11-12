@@ -1,0 +1,27 @@
+{
+  "summary": {"total_outward_taxable_supplies": 125000, "total_tax_amount": 22500, "invoice_count": 8, "b2b_count": 3, "b2cl_count": 1, "b2cs_count": 2},
+  "b2b": [
+    {"invoice_id": "5a1d0c10-0000-4000-8000-000000000001", "gstin": "27AAAPL1234C1ZV", "receiver_name": "Sharma Traders", "invoice_number": "INV-2026-0042", "invoice_date": "03-11-2026", "invoice_value": 11800, "place_of_supply": "27-Maharashtra", "reverse_charge": "N", "invoice_type": "Regular", "ecommerce_gstin": null, "rate": 18, "taxable_value": 10000, "igst_amount": 0, "cgst_amount": 900, "sgst_amount": 900, "cess_amount": 0},
+    {"invoice_id": "5a1d0c10-0000-4000-8000-000000000002", "gstin": "29AABCU9603R1ZM", "receiver_name": "Bengaluru Mart", "invoice_number": "INV-2026-0043", "invoice_date": "05-11-2026", "invoice_value": 5600, "place_of_supply": "29-Karnataka", "reverse_charge": "N", "invoice_type": "Regular", "ecommerce_gstin": null, "rate": 12, "taxable_value": 5000, "igst_amount": 600, "cgst_amount": 0, "sgst_amount": 0, "cess_amount": 0}
+  ],
+  "b2cl": [
+    {"invoice_id": "5a1d0c10-0000-4000-8000-000000000003", "invoice_number": "INV-2026-0044", "invoice_date": "06-11-2026", "invoice_value": 236000, "place_of_supply": "29-Karnataka", "rate": 18, "taxable_value": 200000, "igst_amount": 36000, "cess_amount": 0, "ecommerce_gstin": null}
+  ],
+  "b2cs": [
+    {"type": "OE", "place_of_supply": "27-Maharashtra", "rate": 5, "taxable_value": 4000, "igst_amount": 0, "cgst_amount": 100, "sgst_amount": 100, "cess_amount": 0, "ecommerce_gstin": null},
+    {"type": "OE", "place_of_supply": "27-Maharashtra", "rate": 18, "taxable_value": 8000, "igst_amount": 0, "cgst_amount": 720, "sgst_amount": 720, "cess_amount": 0, "ecommerce_gstin": null}
+  ],
+  "hsn": [
+    {"hsn_sac": "1006", "description": "Basmati rice", "uqc": "KGS", "total_quantity": 320, "total_value": 14160, "taxable_value": 13440, "integrated_tax": 0, "central_tax": 336, "state_ut_tax": 336, "cess_amount": 0, "rate": 5}
+  ],
+  "nil": [
+    {"sply_ty": "INTRAB2B", "description": "Intra-State supplies to registered persons", "nil_supply": 1200, "exempt_supply": 300, "non_gst_supply": 0}
+  ],
+  "exports": [],
+  "sez": [],
+  "cdn": [
+    {"document_id": "9d0e0c10-0000-4000-8000-000000000007", "document_type": "credit_note", "gstin_uin_recipient": "27AAAPL1234C1ZV", "receiver_name": null, "note_number": "CN-2026-0007", "note_date": "08-11-2026", "note_type": "C", "place_of_supply": "27-Maharashtra", "invoice_value": 1416, "original_invoice_number": "INV-2026-0042", "original_invoice_date": "03-11-2026", "note_supply_type": "Regular", "reverse_charge": "N", "tax_rate": 18, "taxable_value": 1200, "igst_amount": 0, "cgst_amount": 108, "sgst_amount": 108, "cess_amount": 0}
+  ],
+  "filing_id": "f1111111-0000-4000-8000-000000000001",
+  "filing_period": "2026-11"
+}

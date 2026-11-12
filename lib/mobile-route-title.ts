@@ -55,6 +55,11 @@ export function getMobileRouteTitle(
     return 'Item';
   }
 
+  // —— Import (spreadsheet) ——
+  if (p === '/import/customers') return 'Import customers';
+  if (p === '/import/suppliers') return 'Import suppliers';
+  if (p === '/import/items') return 'Import items';
+
   // —— Customers (Parties) ——
   if (p === '/customers/new') return 'Create party';
   if (p.startsWith('/customers/')) {
@@ -154,6 +159,8 @@ export function getMobileRouteTitle(
   if (p === '/reports') return 'Reports';
   if (p === '/reports/profit-loss') return 'Profit & Loss';
   if (p === '/reports/profit-loss/validation') return 'P&L validation';
+  if (p === '/reports/profit-loss/schedule-iii') return 'P&L (Schedule III)';
+  if (p === '/reports/profit-loss/compare') return 'P&L (Compare)';
   if (p === '/reports/balance-sheet') return 'Balance sheet';
   if (p === '/reports/trial-balance') return 'Trial balance';
   if (p === '/reports/cash-flow') return 'Cash flow';

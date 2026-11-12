@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -734,6 +735,7 @@ export async function POST(request: NextRequest) {
     let idempotencyRowId: string | null = null;
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: created_by, action: 'payment_recorded' });
 
       if (scopedKey && fingerprint) {
         const claim = await claimPaymentIdempotencyKey(client, {

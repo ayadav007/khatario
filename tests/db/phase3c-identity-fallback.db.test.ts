@@ -77,6 +77,8 @@ import { GET as listEstimates } from '@/app/api/estimates/route';
 import { GET as listSalesOrders } from '@/app/api/sales-orders/route';
 import { GET as listJournals } from '@/app/api/journal-entries/route';
 import { GET as profitLoss } from '@/app/api/reports/profit-loss/route';
+import { GET as profitLossScheduleIII } from '@/app/api/reports/profit-loss/schedule-iii/route';
+import { GET as profitLossCompare } from '@/app/api/reports/profit-loss/compare/route';
 import { GET as salesSummary } from '@/app/api/reports/sales-summary/route';
 import { GET as listCustomers } from '@/app/api/customers/route';
 import { GET as listSuppliers } from '@/app/api/suppliers/route';
@@ -98,6 +100,8 @@ const reads = [
   ['sales-orders', listSalesOrders],
   ['journal-entries', listJournals],
   ['reports/profit-loss', profitLoss],
+  ['reports/profit-loss/schedule-iii', profitLossScheduleIII],
+  ['reports/profit-loss/compare', profitLossCompare],
   ['reports/sales-summary', salesSummary],
   ['customers', listCustomers],
   ['suppliers', listSuppliers],

@@ -29,6 +29,8 @@ function active(pathname: string, search = '', hash = '') {
 describe('pickActiveNavHref', () => {
   it('highlights the longer report, not Overview', () => {
     expect(active('/reports/profit-loss')).toBe('/reports/profit-loss');
+    expect(active('/reports/profit-loss/schedule-iii')).toBe('/reports/profit-loss');
+    expect(active('/reports/profit-loss/compare')).toBe('/reports/profit-loss');
     expect(active('/reports')).toBe('/reports');
     expect(active('/reports/sales/summary')).toBe('/reports/sales/summary');
   });

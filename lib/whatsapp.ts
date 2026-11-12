@@ -22,24 +22,14 @@ import {
   formatButtonMessage,
   sendButtonMessage
 } from '@/lib/baileys-hybrid';
-// Import media download utility from Baileys (v7+ uses downloadContentFromMessage)
-import { downloadContentFromMessage } from '@whiskeysockets/baileys/lib/Utils';
 // Import fs and path for store persistence
 import fs from 'fs';
 import path from 'path';
 import * as WACM from '@/lib/whatsapp-connection-manager';
 import { loadOutboundMedia } from '@/lib/http/outbound-media';
+import { waMediaRefUrlFromBaileys } from '@/lib/whatsapp/media-ref-server';
 
 // ─── Message extraction helpers ───────────────────────────────────────────────
-
-/** Convert a Baileys media stream to a Buffer */
-async function streamToBuffer(stream: AsyncIterable<any>): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
 
 export interface ExtractedMessage {
   type: string;
@@ -67,21 +57,15 @@ export async function extractMessageContent(msg: any): Promise<ExtractedMessage>
     return { type: 'reaction', text: m.reactionMessage.text || '', hasMedia: false, skip: true };
   }
 
-  // Helper: download a media field and return a base64 data-URI
+  // Media is not downloaded: store a signed link to WhatsApp's encrypted copy (see lib/whatsapp/media-ref.ts).
   const downloadMedia = async (
     field: any,
     mediaType: 'image' | 'video' | 'audio' | 'document' | 'sticker',
     defaultMime: string
   ): Promise<string | undefined> => {
-    try {
-      const stream = await downloadContentFromMessage(field, mediaType);
-      const buffer = await streamToBuffer(stream);
-      const mime = field.mimetype || defaultMime;
-      return `data:${mime};base64,${buffer.toString('base64')}`;
-    } catch (err) {
-      console.error(`[WA] Error downloading ${mediaType} media:`, err);
-      return undefined;
-    }
+    const url = waMediaRefUrlFromBaileys(field, mediaType, defaultMime);
+    if (!url) console.warn(`[WA] ${mediaType} message has no media key or path; nothing to link`);
+    return url;
   };
 
   // ── Text ───────────────────────────────────────────────────────────────────

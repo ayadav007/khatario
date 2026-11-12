@@ -1,5 +1,6 @@
 import * as db from '@/lib/db';
 import type { AgeingDoc } from '@/lib/reports/ageing';
+import { receivableAccountIds } from '@/lib/accounting/receivable-accounts';
 
 export type PartyType = 'customer' | 'supplier';
 
@@ -7,8 +8,7 @@ const CUSTOMER_SQL = `
   WITH v AS (
     SELECT lel.voucher_type, lel.voucher_id, SUM(lel.debit - lel.credit) AS net, MIN(lel.entry_date) AS first_date
       FROM ledger_entry_lines lel
-      JOIN accounts a ON a.id = lel.account_id
-     WHERE lel.business_id = $1 AND a.account_code LIKE '1103%'
+     WHERE lel.business_id = $1 AND lel.account_id = ANY($5::uuid[])
        AND lel.entry_date <= $2::date
        AND ($3::uuid IS NULL OR lel.branch_id = $3::uuid)
      GROUP BY lel.voucher_type, lel.voucher_id
@@ -112,7 +112,7 @@ type DocRow = {
 export type PartyLedgerDoc = AgeingDoc & { description: string };
 
 /**
- * Control-account (Receivables 1103 / Payables 2101) movements per voucher up to `asOfDate`,
+ * Receivable (1103 and every account under it) / Payables 2101 movements per voucher up to `asOfDate`,
  * attributed to the party via the source document. `amount` is positive when it increases what
  * the party owes (customer) or what we owe (supplier).
  */
@@ -123,12 +123,10 @@ export async function fetchPartyLedgerDocs(params: {
   branchId?: string | null;
   partyId?: string | null;
 }): Promise<PartyLedgerDoc[]> {
-  const rows = await db.queryRows<DocRow>(params.partyType === 'customer' ? CUSTOMER_SQL : SUPPLIER_SQL, [
-    params.businessId,
-    params.asOfDate,
-    params.branchId ?? null,
-    params.partyId ?? null,
-  ]);
+  const args: unknown[] = [params.businessId, params.asOfDate, params.branchId ?? null, params.partyId ?? null];
+  // Customers may be split over accounts under Accounts Receivable (Domestic, Foreign, ...).
+  if (params.partyType === 'customer') args.push(await receivableAccountIds(params.businessId));
+  const rows = await db.queryRows<DocRow>(params.partyType === 'customer' ? CUSTOMER_SQL : SUPPLIER_SQL, args);
   return rows.map((r) => ({
     voucherType: r.voucher_type,
     voucherId: r.voucher_id,

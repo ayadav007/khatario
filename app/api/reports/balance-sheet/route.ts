@@ -153,7 +153,14 @@ export async function GET(request: NextRequest) {
     });
 
     const groups = await loadGroupMap(businessId);
-    const accountRows: BsAccountRow[] = rows.map((r) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
+    const { receivableAccountIds } = await import('@/lib/accounting/receivable-accounts');
+    const receivableIds = new Set(await receivableAccountIds(businessId));
+    const accountRows: BsAccountRow[] = rows.map((r) => ({
+      ...r,
+      debit: Number(r.debit),
+      credit: Number(r.credit),
+      is_receivable: receivableIds.has(r.id),
+    }));
     const bs = assembleBalanceSheet(accountRows, groups, {
       previousYearsProfit: Number(previous?.profit || 0),
       currentYearProfit: pl.net_profit,

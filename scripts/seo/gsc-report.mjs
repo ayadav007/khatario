@@ -21,7 +21,7 @@ const arg = (name, fallback) => {
 const KEY_FILE = process.env.GSC_KEY_FILE;
 const DAYS = Number(arg('days', '28'));
 const OUT_DIR = path.resolve('docs/seo/reports');
-const KEY_URLS = ['/', '/solution/accounting', '/solution/inventory', '/guides', '/blog', '/book-demo'];
+const KEY_URLS = ['/', '/solution/accounting', '/solution/inventory', '/guides', '/blog', '/book-demo', '/blog/gst-bill-kaise-banaye-mobile-se'];
 
 if (!KEY_FILE || !fs.existsSync(KEY_FILE)) {
   console.error('Set GSC_KEY_FILE to the service account JSON path.');

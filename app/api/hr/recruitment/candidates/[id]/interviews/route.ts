@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { userBelongsToBusiness } from '@/lib/user-businesses';
 import { queryOne, queryRows, query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -62,6 +63,11 @@ export async function POST(
     );
     if (!stage) return NextResponse.json({ error: 'Invalid interview stage' }, { status: 400 });
 
+    const interviewerId = body?.interviewer_user_id ? String(body.interviewer_user_id) : null;
+    if (interviewerId) {
+      if (!(await userBelongsToBusiness(interviewerId, businessId))) return NextResponse.json({ error: 'Interviewer not found' }, { status: 404 });
+    }
+
     const interview = await queryOne(
       `INSERT INTO recruitment_interviews (
         business_id, candidate_id, stage_id, scheduled_at, location_or_link,
@@ -73,7 +79,7 @@ export async function POST(
         stageId,
         body?.scheduled_at || null,
         body?.location_or_link?.trim() || null,
-        body?.interviewer_user_id || null,
+        interviewerId,
         body?.status || 'scheduled',
         body?.feedback?.trim() || null,
       ],

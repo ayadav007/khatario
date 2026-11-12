@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { getAuthenticatedUserId, requirePortalSession, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -187,6 +188,7 @@ export async function POST(
     
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: finalUserId, action: 'proforma_status' });
 
       // Verify invoice exists and is a proforma invoice
       let invoiceRes;

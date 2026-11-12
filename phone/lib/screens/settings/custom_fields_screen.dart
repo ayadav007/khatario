@@ -5,6 +5,7 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'settings_kit.dart';
 
 const _fieldTypes = [('text', 'Text'), ('number', 'Number'), ('date', 'Date'), ('dropdown', 'Dropdown')];
@@ -65,7 +66,7 @@ class _CustomFieldsScreenState extends State<CustomFieldsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(controller: label, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'Name')),
+              KTextField(label: 'Name', controller: label),
               const SizedBox(height: 12),
               Text('Type', style: AppText.caption),
               const SizedBox(height: 8),
@@ -83,7 +84,7 @@ class _CustomFieldsScreenState extends State<CustomFieldsScreen> {
               ),
               if (type == 'dropdown') ...[
                 const SizedBox(height: 12),
-                TextField(controller: options, decoration: const InputDecoration(labelText: 'Choices', hintText: 'Small, Medium, Large')),
+                KTextField(label: 'Choices', controller: options, hint: 'Small, Medium, Large'),
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

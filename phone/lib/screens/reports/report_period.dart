@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../format.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+
+/// Which period control a report uses, and so which query it sends.
+enum ReportPeriodKind { none, range, month, financialYear, asOn }
 
 /// A report's date span. Indian financial years start on 1 April.
 class ReportPeriod {
@@ -84,6 +88,169 @@ class ReportPeriodBar extends StatelessWidget {
           child: Text(period.label, style: AppText.caption),
         ),
       ],
+    );
+  }
+}
+
+const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// One calendar month. Query: `month=10&year=2026`.
+class MonthPeriod {
+  const MonthPeriod(this.year, this.month);
+
+  factory MonthPeriod.of(DateTime now) => MonthPeriod(now.year, now.month);
+
+  final int year;
+
+  /// 1-12.
+  final int month;
+
+  MonthPeriod get previous => month == 1 ? MonthPeriod(year - 1, 12) : MonthPeriod(year, month - 1);
+  MonthPeriod get next => month == 12 ? MonthPeriod(year + 1, 1) : MonthPeriod(year, month + 1);
+
+  String get query => 'month=$month&year=$year';
+  String get label => '${_monthNames[month - 1]} $year';
+
+  @override
+  bool operator ==(Object other) => other is MonthPeriod && other.year == year && other.month == month;
+
+  @override
+  int get hashCode => Object.hash(year, month);
+}
+
+/// One Indian financial year (1 April to 31 March). Query: `financial_year=2026-27`.
+class FinancialYear {
+  const FinancialYear(this.startYear);
+
+  factory FinancialYear.of(DateTime now) => FinancialYear(now.month < 4 ? now.year - 1 : now.year);
+
+  /// The calendar year in which the financial year starts.
+  final int startYear;
+
+  FinancialYear get previous => FinancialYear(startYear - 1);
+  FinancialYear get next => FinancialYear(startYear + 1);
+
+  String get code => '$startYear-${((startYear + 1) % 100).toString().padLeft(2, '0')}';
+  /// The long form, `2026-2027`, which is how a business registers its years (`financial_years.year_code`).
+  /// Closing stock (`/api/reports/stock/closing-stock`) wants this form; with [code] it finds no snapshot.
+  String get longCode => '$startYear-${startYear + 1}';
+
+  /// The short form, `financial_year=2026-27`, for routes that take it. Check the route before using it.
+  String get query => 'financial_year=$code';
+  String get label => 'FY $code';
+
+  @override
+  bool operator ==(Object other) => other is FinancialYear && other.startYear == startYear;
+
+  @override
+  int get hashCode => startYear.hashCode;
+}
+
+/// Query for "as on" reports.
+String asOnQuery(DateTime date) => 'as_on_date=${ymd(date)}';
+
+/// Previous / label / next row shared by the month and financial-year bars.
+class _StepBar extends StatelessWidget {
+  const _StepBar({required this.label, required this.previousTip, required this.nextTip, required this.onPrevious, required this.onNext});
+
+  final String label, previousTip, nextTip;
+  final VoidCallback onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm),
+      child: Row(
+        children: [
+          KIconButton(icon: LucideIcons.chevronLeft, tooltip: previousTip, onTap: onPrevious),
+          Expanded(child: Center(child: Text(label, style: AppText.bodyStrong))),
+          if (onNext != null)
+            KIconButton(icon: LucideIcons.chevronRight, tooltip: nextTip, onTap: onNext!)
+          else
+            const SizedBox(width: 44, height: 44),
+        ],
+      ),
+    );
+  }
+}
+
+/// Month with previous / next. Cannot step past the current month.
+class MonthPeriodBar extends StatelessWidget {
+  const MonthPeriodBar({super.key, required this.period, required this.onChanged, this.now});
+
+  final MonthPeriod period;
+  final ValueChanged<MonthPeriod> onChanged;
+
+  /// For tests; defaults to today.
+  final DateTime? now;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = MonthPeriod.of(now ?? DateTime.now());
+    final canNext = period.year < current.year || (period.year == current.year && period.month < current.month);
+    return _StepBar(
+      label: period.label,
+      previousTip: 'Previous month',
+      nextTip: 'Next month',
+      onPrevious: () => onChanged(period.previous),
+      onNext: canNext ? () => onChanged(period.next) : null,
+    );
+  }
+}
+
+/// Financial year with previous / next. Cannot step past the current financial year.
+class FinancialYearBar extends StatelessWidget {
+  const FinancialYearBar({super.key, required this.period, required this.onChanged, this.now});
+
+  final FinancialYear period;
+  final ValueChanged<FinancialYear> onChanged;
+  final DateTime? now;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = FinancialYear.of(now ?? DateTime.now());
+    return _StepBar(
+      label: period.label,
+      previousTip: 'Previous year',
+      nextTip: 'Next year',
+      onPrevious: () => onChanged(period.previous),
+      onNext: period.startYear < current.startYear ? () => onChanged(period.next) : null,
+    );
+  }
+}
+
+/// "As on" date row; tapping it opens the date picker.
+class AsOnDateBar extends StatelessWidget {
+  const AsOnDateBar({super.key, required this.date, required this.onChanged});
+
+  final DateTime date;
+  final ValueChanged<DateTime> onChanged;
+
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: date,
+      firstDate: DateTime(2015),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) onChanged(dateOnly(picked));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KCard(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
+      onTap: () => _pick(context),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.md),
+      child: Row(
+        children: [
+          const Icon(LucideIcons.calendar, size: 18, color: AppColors.ink2),
+          const SizedBox(width: AppSpace.md),
+          Expanded(child: Text('As on ${ddMMMyyyy(date)}', style: AppText.bodyStrong)),
+          const Icon(LucideIcons.chevronDown, size: 18, color: AppColors.ink3),
+        ],
+      ),
     );
   }
 }

@@ -16,6 +16,7 @@ export const RESERVED_BUSINESS_SLUGS = new Set([
   'guides',
   'themes',
   'book-demo',
+  'about',
   'attendance',
   'pay',
   'auth',

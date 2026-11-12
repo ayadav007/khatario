@@ -1,0 +1,36 @@
+{
+  "salesByType": [
+    {
+      "sale_type": "B2B",
+      "invoice_count": "3",
+      "total_sales": "25960.00",
+      "total_taxable_value": "22000.00",
+      "total_tax": "3960.00",
+      "total_cgst": "1980.00",
+      "total_sgst": "1980.00",
+      "total_igst": "0.00",
+      "total_collected": "19460.00",
+      "total_pending": "6500.00"
+    },
+    {
+      "sale_type": "B2C (Cash Sale)",
+      "invoice_count": "3",
+      "total_sales": "5310.00",
+      "total_taxable_value": "4500.00",
+      "total_tax": "810.00",
+      "total_cgst": "405.00",
+      "total_sgst": "405.00",
+      "total_igst": "0.00",
+      "total_collected": "5310.00",
+      "total_pending": "0.00"
+    }
+  ],
+  "totals": {
+    "total_invoices": 6,
+    "total_sales": 31270,
+    "total_taxable_value": 26500,
+    "total_tax": 4770,
+    "total_collected": 24770,
+    "total_pending": 6500
+  }
+}

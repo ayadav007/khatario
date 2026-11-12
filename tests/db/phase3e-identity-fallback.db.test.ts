@@ -1,6 +1,7 @@
 /**
  * Phase 3E: remaining dashboard and list handlers that still read identity from the query.
  * Does not stub authorize. Does not change application code.
+ * The cash-flow markers (11.11, 88.88) are posted to the cash ledger, which is what that card reads.
  * Connects only after current_database() is kh_phase2_test on localhost.
  */
 import fs from 'fs';
@@ -60,6 +61,8 @@ jest.mock('@/lib/platform-jwt', () => ({ getPlatformSessionFromRequest: jest.fn(
 jest.mock('@/lib/credit-alerts', () => ({ checkAndSendCreditAlerts: jest.fn(async () => undefined) }));
 
 import { getPool, closePool } from '@/lib/db';
+import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
+import { insertVoucherLines } from '@/lib/accounting/voucher-posting';
 import { middleware } from '../../middleware';
 import { GET as topProducts } from '@/app/api/dashboard/top-products/route';
 import { GET as receivables } from '@/app/api/dashboard/receivables/route';
@@ -116,6 +119,42 @@ describe('Phase 3E remaining identity fallbacks', () => {
     return { status: res.status, text: await res.text() };
   }
 
+  /** Removes the given test businesses and everything this file created for them. */
+  async function purge(ids: string[]) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await withLedgerDelete(client, 'admin:seed_demo', null, () =>
+        client.query(`DELETE FROM ledger_entry_lines WHERE business_id = ANY($1::uuid[])`, [ids]),
+      );
+      await client.query(`DELETE FROM accounts WHERE business_id = ANY($1::uuid[])`, [ids]);
+      await client.query(`DELETE FROM account_groups WHERE business_id = ANY($1::uuid[])`, [ids]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    for (const id of ids) {
+      await pool.query(`DELETE FROM user_branches WHERE user_id IN (SELECT id FROM users WHERE business_id = $1)`, [id]);
+      await pool.query(`DELETE FROM sales_orders WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM payments WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE business_id = $1)`, [id]);
+      await pool.query(`DELETE FROM expenses WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM debit_notes WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM credit_notes WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM invoices WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM items WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM customers WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM users WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM business_module_subscriptions WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM business_modules WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM branches WHERE business_id = $1`, [id]);
+      await pool.query(`DELETE FROM businesses WHERE id = $1`, [id]);
+    }
+  }
+
   beforeAll(async () => {
     pool = getPool();
     const db = await pool.query<{ db: string; addr: string; port: number }>(
@@ -129,6 +168,11 @@ describe('Phase 3E remaining identity fallbacks', () => {
     ) {
       throw new Error(`Refusing Phase 3E tests against ${info.db} at ${info.addr}:${info.port}`);
     }
+    // A run that stopped before afterAll leaves its two businesses behind.
+    const orphans = await pool.query<{ id: string }>(
+      `SELECT id FROM businesses WHERE name LIKE 'P3E A %' OR name LIKE 'P3E B %'`,
+    );
+    if (orphans.rows.length) await purge(orphans.rows.map((row) => row.id));
     const plan = await pool.query<{ plan_id: string }>(
       `SELECT plan_id FROM subscription_plan_features
         WHERE feature_id = 'reports_basic' AND enabled = true ORDER BY plan_id LIMIT 1`,
@@ -210,6 +254,42 @@ describe('Phase 3E remaining identity fallbacks', () => {
               ($5, $6, $7, 'receivable', $8, 88.88, 'cash', CURRENT_DATE, 'active')`,
       [randomUUID(), A, branchA, customerA, randomUUID(), B, branchB, customerB],
     );
+    // The cash-flow card reads the cash and bank ledgers, so each receipt needs its posting.
+    for (const [biz, branch, amount] of [
+      [A, branchA, 11.11],
+      [B, branchB, 88.88],
+    ] as const) {
+      await pool.query(`SELECT create_default_chart_of_accounts($1)`, [biz]);
+      const acc = await pool.query<{ id: string; account_code: string }>(
+        `SELECT id, account_code FROM accounts WHERE business_id = $1 AND account_code IN ('1101', '1103')`,
+        [biz],
+      );
+      const cash = acc.rows.find((r) => r.account_code === '1101')?.id;
+      const receivable = acc.rows.find((r) => r.account_code === '1103')?.id;
+      if (!cash || !receivable) throw new Error('Seeded chart has no cash or receivable account');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await insertVoucherLines(client, {
+          businessId: biz,
+          branchId: branch,
+          voucherId: randomUUID(),
+          voucherType: 'payment',
+          entryDate: new Date(),
+          reference: null,
+          lines: [
+            { accountId: cash, debit: amount, credit: 0, narration: 'P3E receipt' },
+            { accountId: receivable, debit: 0, credit: amount, narration: 'P3E receipt' },
+          ],
+        });
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     for (const [biz, branch, customer, owner, mark] of [
       [A, branchA, customerA, ownerA, markA],
       [B, branchB, customerB, ownerB, markB],
@@ -242,23 +322,7 @@ describe('Phase 3E remaining identity fallbacks', () => {
   afterAll(async () => {
     if (!pool) return;
     try {
-      for (const id of [A, B]) {
-        await pool.query(`DELETE FROM user_branches WHERE user_id IN (SELECT id FROM users WHERE business_id = $1)`, [id]);
-        await pool.query(`DELETE FROM sales_orders WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM payments WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE business_id = $1)`, [id]);
-        await pool.query(`DELETE FROM expenses WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM debit_notes WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM credit_notes WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM invoices WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM items WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM customers WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM users WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM business_module_subscriptions WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM business_modules WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM branches WHERE business_id = $1`, [id]);
-        await pool.query(`DELETE FROM businesses WHERE id = $1`, [id]);
-      }
+      await purge([A, B]);
     } finally {
       await closePool();
     }

@@ -1,20 +1,40 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
+import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
+import '../../ui/toast.dart';
+import 'barcode_capture_screen.dart';
 import 'item_form_logic.dart';
+import 'items_screen.dart' show itemImage;
 
 bool _set(dynamic v) => v != null && v != false && v != 0 && v != '';
+
+/// A picture chosen from the phone, before it is uploaded.
+typedef PickedPhoto = ({List<int> bytes, String name});
+
+Future<PickedPhoto?> _pickFromPhone() async {
+  final file = await FilePicker.pickFile(type: FileType.image);
+  if (file == null) return null;
+  return (bytes: await file.readAsBytes(), name: file.name);
+}
 
 /// Create and edit form for the fields on `app/(app)/items/new/page.tsx` that the phone collects.
 /// Variants, bundles, images and opening stock stay as they are when [itemId] is set.
 class ItemFormScreen extends StatefulWidget {
-  const ItemFormScreen({super.key, required this.session, this.itemId});
+  const ItemFormScreen({super.key, required this.session, this.itemId, this.scanBarcode, this.pickPhoto});
 
   final AppSession session;
+
+  /// Opens the camera and returns a code. Defaults to [BarcodeCaptureScreen]; tests pass their own.
+  final Future<String?> Function(BuildContext context)? scanBarcode;
+
+  /// Picks a picture to upload. Defaults to the phone's file picker; tests pass their own.
+  final Future<PickedPhoto?> Function()? pickPhoto;
 
   /// Null creates an item. Set to edit.
   final String? itemId;
@@ -35,6 +55,18 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   final _opening = TextEditingController();
   final _min = TextEditingController();
   final _description = TextEditingController();
+  final _barcode = TextEditingController();
+  final _brand = TextEditingController();
+  final _mrp = TextEditingController();
+  final _packSize = TextEditingController();
+  final _packUnit = TextEditingController();
+  List<(String, String)> _categories = const [];
+  String _categoryId = '';
+  String _supplierId = '';
+  String? _supplierName;
+  String _image = '';
+  bool _uploading = false;
+  Map<String, String> _errors = const {};
   String _type = 'goods';
   String _unit = 'PCS';
   bool _store = false;
@@ -49,6 +81,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCategories();
     if (widget.editing) {
       _loading = true;
       _loadItem();
@@ -81,6 +114,14 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
       _store = row['show_in_store'] == true;
       _featured = row['featured_in_store'] == true;
       _returnable = row['store_returnable'] != false;
+      _barcode.text = row['barcode']?.toString() ?? '';
+      _brand.text = row['brand']?.toString() ?? '';
+      _mrp.text = itemFieldText(row['mrp']);
+      _packSize.text = itemFieldText(row['pack_size']);
+      _packUnit.text = row['pack_unit']?.toString() ?? '';
+      _categoryId = row['category_id']?.toString() ?? '';
+      _supplierId = row['default_supplier_id']?.toString() ?? '';
+      _image = row['image_url']?.toString() ?? '';
       _complex = _set(row['has_variants']) || _set(row['is_bundle']);
       _more = _code.text.isNotEmpty || _purchase.text.isNotEmpty || _hsn.text.isNotEmpty || _description.text.isNotEmpty || _store || _featured || !_returnable;
     } catch (_) {
@@ -88,6 +129,33 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+    _loadSupplierName();
+  }
+
+  /// The item only carries the supplier's id; the name is shown in the field.
+  Future<void> _loadSupplierName() async {
+    if (_supplierId.isEmpty) return;
+    try {
+      final body = await widget.session.api.getJson('/api/suppliers/$_supplierId');
+      final supplier = body['supplier'];
+      final name = supplier is Map ? supplier['name']?.toString() : null;
+      if (mounted && name != null && name.isNotEmpty) setState(() => _supplierName = name);
+    } catch (_) {}
+  }
+
+  /// `GET /api/categories` -> `{categories: [{id, name}]}`.
+  Future<void> _loadCategories() async {
+    try {
+      final body = await widget.session.api.getJson('/api/categories');
+      final rows = body['categories'];
+      if (rows is! List || !mounted) return;
+      setState(() {
+        _categories = [
+          for (final r in rows)
+            if (r is Map && r['id'] != null && '${r['name'] ?? ''}'.isNotEmpty) ('${r['id']}', '${r['name']}'),
+        ];
+      });
+    } catch (_) {}
   }
 
   /// Settings › Items & stock › Low-stock alert at: filled in until the user types their own.
@@ -102,7 +170,7 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _code, _selling, _purchase, _tax, _hsn, _opening, _min, _description]) {
+    for (final c in [_name, _code, _selling, _purchase, _tax, _hsn, _opening, _min, _description, _barcode, _brand, _mrp, _packSize, _packUnit]) {
       c.dispose();
     }
     super.dispose();
@@ -113,6 +181,9 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name is required')));
       return;
     }
+    final errors = validateItemExtras(barcode: _barcode.text, mrp: _mrp.text, packSize: _packSize.text, packUnit: _packUnit.text, unit: _unit);
+    setState(() => _errors = errors);
+    if (errors.isNotEmpty) return;
     setState(() => _saving = true);
     try {
       final fields = (
@@ -148,6 +219,14 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           showInStore: fields.showInStore,
           featuredInStore: fields.featuredInStore,
           storeReturnable: fields.storeReturnable,
+          barcode: _barcode.text,
+          categoryId: _categoryId,
+          brand: _brand.text,
+          mrp: _mrp.text,
+          defaultSupplierId: _supplierId,
+          packSize: _packSize.text,
+          packUnit: _packUnit.text,
+          imageUrl: _image,
         ));
       } else {
         await widget.session.api.postJson('/api/items', itemCreateBody(
@@ -165,6 +244,14 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
           showInStore: fields.showInStore,
           featuredInStore: fields.featuredInStore,
           storeReturnable: fields.storeReturnable,
+          barcode: _barcode.text,
+          categoryId: _categoryId,
+          brand: _brand.text,
+          mrp: _mrp.text,
+          defaultSupplierId: _supplierId,
+          packSize: _packSize.text,
+          packUnit: _packUnit.text,
+          imageUrl: _image,
         ));
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -177,27 +264,151 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
 
   bool _more = false;
 
-  Widget _f(TextEditingController c, String label, {bool number = false, int lines = 1}) => TextField(
-        controller: c,
-        maxLines: lines,
-        keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : null,
-        style: AppText.body,
-        cursorColor: AppColors.brand,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: AppText.body.copyWith(color: AppColors.ink3),
-          filled: true,
-          fillColor: AppColors.surface,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            borderSide: const BorderSide(color: AppColors.hairline, width: 1.5),
+  void _clearError(String key) {
+    if (_errors.containsKey(key)) setState(() => _errors = {..._errors}..remove(key));
+  }
+
+  Future<void> _scan() async {
+    final code = await (widget.scanBarcode ?? BarcodeCaptureScreen.open)(context);
+    if (code == null || code.isEmpty || !mounted) return;
+    setState(() => _barcode.text = normalizeItemBarcode(code));
+    _clearError('barcode');
+  }
+
+  /// Same 2 MB limit as the website's item form. The upload route returns the picture as a data URL.
+  Future<void> _addPhoto() async {
+    final picked = await (widget.pickPhoto ?? _pickFromPhone)();
+    if (picked == null || !mounted) return;
+    if (picked.bytes.length > 2 * 1024 * 1024) {
+      showKToast(context, 'Image size should be less than 2MB', tone: KTone.negative);
+      return;
+    }
+    setState(() => _uploading = true);
+    try {
+      final res = await widget.session.api.uploadImage('/api/upload/image', bytes: picked.bytes, fileName: picked.name, fields: const {'type': 'item'});
+      final url = res['url']?.toString() ?? '';
+      if (url.isEmpty) throw ApiException('Upload failed');
+      if (mounted) setState(() => _image = url);
+    } on ApiException catch (e) {
+      if (mounted) showKToast(context, e.message, tone: KTone.negative);
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  /// Identify (barcode, category, brand, MRP), Stock (supplier, pack) and Photos, as on the website's item form.
+  /// Batch and serial tracking and the valuation method are left out: the items routes do not accept them.
+  List<Widget> _extraSections() {
+    final hasVariants = _existing != null && _set(_existing!['has_variants']);
+    final image = itemImage(_image);
+    return [
+      KFormSection(title: 'Identify', children: [
+        KTextField(
+          label: 'Barcode',
+          controller: _barcode,
+          hint: 'Scan or type the barcode',
+          error: _errors['barcode'],
+          onChanged: (_) => _clearError('barcode'),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: KButton.secondary(label: 'Scan with camera', icon: LucideIcons.scanBarcode, expand: false, onPressed: _scan),
+        ),
+        KPickField<String>(
+          label: 'Category',
+          value: _categoryId,
+          searchable: _categories.length > 8,
+          options: [
+            ('', 'No category'),
+            if (_categoryId.isNotEmpty && !_categories.any((c) => c.$1 == _categoryId)) (_categoryId, 'Current category'),
+            ..._categories,
+          ],
+          onChanged: (v) => setState(() => _categoryId = v),
+        ),
+        if (_type == 'goods') KTextField(label: 'Brand', controller: _brand, hint: 'e.g. Parle, Britannia'),
+        if (!hasVariants) KAmountField(label: 'MRP', controller: _mrp, error: _errors['mrp']),
+      ]),
+      const SizedBox(height: AppSpace.md),
+      KFormSection(title: 'Stock', children: [
+        KAsyncPickField(
+          label: 'Default supplier',
+          valueLabel: _supplierId.isEmpty ? null : (_supplierName ?? 'Selected supplier'),
+          search: (q) => searchSuppliers(widget.session.api, q),
+          onPicked: (id, label) => setState(() {
+            _supplierId = id;
+            _supplierName = label;
+          }),
+        ),
+        if (_supplierId.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: KTextButton(label: 'Remove supplier', onTap: () => setState(() {
+              _supplierId = '';
+              _supplierName = null;
+            })),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            borderSide: BorderSide(color: AppColors.brand, width: 2),
+        KTextField(
+          label: 'Pack size',
+          controller: _packSize,
+          keyboard: TextInputType.number,
+          hint: 'Pieces in one pack, e.g. 12',
+          error: _errors['pack_size'],
+          onChanged: (_) {
+            _clearError('pack_size');
+            _clearError('pack_unit');
+          },
+        ),
+        KTextField(
+          label: 'Pack name',
+          controller: _packUnit,
+          caps: true,
+          hint: 'CTN',
+          error: _errors['pack_unit'],
+          onChanged: (_) => _clearError('pack_unit'),
+        ),
+      ]),
+      const SizedBox(height: AppSpace.md),
+      KFormSection(title: 'Photos', children: [
+        KCard(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(color: AppColors.sunken, borderRadius: BorderRadius.circular(AppRadius.sm)),
+                child: image != null
+                    ? Image(image: image, fit: BoxFit.cover, errorBuilder: (_, _, _) => Icon(LucideIcons.image, size: 22, color: AppColors.ink3))
+                    : Icon(LucideIcons.image, size: 22, color: AppColors.ink3),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Main image', style: AppText.body.copyWith(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text('Up to 2 MB, JPG, PNG or WebP.', style: AppText.caption),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 12, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [KButton.secondary(label: _image.isEmpty ? 'Add photo' : 'Replace photo', icon: LucideIcons.upload, expand: false, loading: _uploading, onPressed: _uploading ? null : _addPhoto),
+                      if (_image.isNotEmpty) KTextButton(label: 'Remove', onTap: () => setState(() => _image = '')),
+                    ]),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
+      ]),
+    ];
+  }
+
+  Widget _f(TextEditingController c, String label, {bool number = false, int lines = 1}) => KTextField(
+        label: label,
+        controller: c,
+        maxLines: lines,
+        keyboard: number ? const TextInputType.numberWithOptions(decimal: true) : null,
       );
 
   @override
@@ -277,6 +488,8 @@ class _ItemFormScreenState extends State<ItemFormScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: AppSpace.md),
+                  ..._extraSections(),
                   const SizedBox(height: AppSpace.md),
                   KCard(
                     child: Column(

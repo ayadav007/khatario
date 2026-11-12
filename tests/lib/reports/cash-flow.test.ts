@@ -102,3 +102,17 @@ describe('buildCashFlow', () => {
     expect(cf.difference).toBe(0);
   });
 });
+
+describe('receivable category accounts', () => {
+  it('labels an account flagged as receivable as Trade receivables whatever its code', () => {
+    const cf = buildCashFlow([
+      acc('1102', 'asset', 400, 0, { isCash: true }),
+      acc('DOM-DEBTORS', 'asset', 1000, 400, { receivable: true }),
+      acc('4101', 'income', 0, 1000),
+    ]);
+    const line = cf.operating.workingCapital.find((l) => l.label === 'Trade receivables');
+    expect(line?.amount).toBe(-600);
+    expect(line?.codes).toEqual(['DOM-DEBTORS']);
+    expect(cf.difference).toBe(0);
+  });
+});

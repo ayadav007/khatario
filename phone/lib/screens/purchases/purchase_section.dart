@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'bill_form_screen.dart';
 import 'purchase_tools.dart';
 
@@ -256,8 +257,9 @@ class _PurchaseSectionScreenState extends State<PurchaseSectionScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount')),
-            TextField(controller: reference, decoration: const InputDecoration(labelText: 'Reference')),
+            KTextField(label: 'Amount', controller: amount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+            const SizedBox(height: AppSpace.md),
+            KTextField(label: 'Reference', controller: reference),
             const SizedBox(height: 8),
             DropdownButton<String>(
               isExpanded: true,
@@ -311,7 +313,7 @@ class _PurchaseSectionScreenState extends State<PurchaseSectionScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancel bill'),
-        content: TextField(controller: reason, decoration: const InputDecoration(labelText: 'Reason'), maxLines: 2),
+        content: KTextField(label: 'Reason', controller: reason, maxLines: 2),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Back')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cancel bill')),
@@ -491,7 +493,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Record payment'),
-        content: TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount')),
+        content: KTextField(label: 'Amount', controller: amount, keyboard: const TextInputType.numberWithOptions(decimal: true)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
@@ -521,7 +523,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancel bill'),
-        content: TextField(controller: reason, decoration: const InputDecoration(labelText: 'Reason')),
+        content: KTextField(label: 'Reason', controller: reason),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Back')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cancel bill')),
@@ -851,21 +853,17 @@ class _PurchaseReturnFormState extends State<PurchaseReturnForm> {
           }),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _number, decoration: const InputDecoration(labelText: 'Return number')),
+            child: KTextField(label: 'Return number', controller: _number),
           ),
-          ListTile(
-            title: const Text('Date'),
-            subtitle: Text(ddMMMyyyy(_date)),
-            onTap: () async {
-              final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
-              if (picked != null) setState(() => _date = picked);
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+            child: KDateField(label: 'Date', value: _date, first: DateTime(2000), last: DateTime(2100), onChanged: (picked) => setState(() => _date = picked)),
           ),
           for (var i = 0; i < _lines.length; i++) _returnLine(i),
           TextButton(onPressed: () => setState(() => _lines.add(_ReturnLine())), child: const Text('Add item')),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _reason, decoration: const InputDecoration(labelText: 'Reason'), maxLines: 2),
+            child: KTextField(label: 'Reason', controller: _reason, maxLines: 2),
           ),
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
           Padding(padding: const EdgeInsets.all(16), child: KButton(label: _saving ? 'Saving…' : 'Save return', onPressed: _saving ? null : _save)),
@@ -899,8 +897,10 @@ class _PurchaseReturnFormState extends State<PurchaseReturnForm> {
                   },
                 );
               }),
-              TextField(controller: line.qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
-              TextField(controller: line.price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Unit price')),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Quantity', controller: line.qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              const SizedBox(height: AppSpace.md),
+              KTextField(label: 'Unit price', controller: line.price, keyboard: const TextInputType.numberWithOptions(decimal: true)),
             ],
           ),
         ),
@@ -1022,11 +1022,11 @@ class _PurchaseRequestFormState extends State<PurchaseRequestForm> {
           }),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
+            child: KTextField(label: 'Quantity', controller: _qty, keyboard: const TextInputType.numberWithOptions(decimal: true)),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.gutter),
-            child: TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Note'), maxLines: 2),
+            child: KTextField(label: 'Note', controller: _notes, maxLines: 2),
           ),
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
           Padding(padding: const EdgeInsets.all(16), child: KButton(label: _saving ? 'Sending…' : 'Send request', onPressed: _saving ? null : _save)),

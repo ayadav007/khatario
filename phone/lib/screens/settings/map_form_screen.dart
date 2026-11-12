@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api.dart';
 import '../../session.dart';
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import 'settings_kit.dart';
 
 enum FormKind { text, number, toggle, choice }
@@ -289,7 +290,7 @@ Future<bool> askTextSheet(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final (label, controller, hint) in fields) ...[
-            TextField(controller: controller, decoration: InputDecoration(labelText: label, hintText: hint)),
+            KTextField(label: label, controller: controller, hint: hint),
             const SizedBox(height: 12),
           ],
           KButton(label: saveLabel, onPressed: () => Navigator.pop(ctx, true)),

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
 import { resolveHubAuth } from '@/lib/fulfilment/hub-scope';
@@ -123,10 +124,11 @@ function parseRefund(raw: unknown): RefundChoice | null {
   };
 }
 
-async function inTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+async function inTransaction<T>(actorUserId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId, action: 'credit_note_applied' });
     const out = await fn(client);
     await client.query('COMMIT');
     return out;
@@ -214,7 +216,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
   try {
     if (action === 'approve') {
-      const result = await inTransaction((c) =>
+      const result = await inTransaction(userId, (c) =>
         approveReturn(c, { businessId, returnId: id, userId, method, instructions, pickup }),
       );
       const extra: Record<string, unknown> = {};
@@ -234,7 +236,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
     if (action === 'book_pickup') {
       const locked = await withReturnPickupLock(id, async () => {
-        const saved = await inTransaction(async (c) => {
+        const saved = await inTransaction(userId, async (c) => {
           const row = await lockReturn(c, businessId, id);
           if (row.status !== 'approved' || row.return_method !== 'courier_pickup') {
             throw new ReturnError(409, 'NOT_COURIER_PICKUP', 'Approve the return with a courier pickup before booking it');
@@ -264,7 +266,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     if (action === 'set_method') {
       if (!method) return NextResponse.json({ error: 'Choose how the goods come back' }, { status: 400 });
       const locked = await withReturnPickupLock(id, async () => {
-        const changed = await inTransaction((c) =>
+        const changed = await inTransaction(userId, (c) =>
           setReturnMethod(c, { businessId, returnId: id, userId, method, instructions, pickup }),
         );
         if (changed.needsPickup) {
@@ -300,9 +302,9 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
         }
         if (action === 'reject') {
           const reason = typeof body.reason === 'string' ? body.reason : null;
-          await inTransaction((c) => rejectReturn(c, { businessId, returnId: id, reason, userId }));
+          await inTransaction(userId, (c) => rejectReturn(c, { businessId, returnId: id, reason, userId }));
         } else {
-          await inTransaction((c) => cancelReturn(c, { businessId, returnId: id, userId }));
+          await inTransaction(userId, (c) => cancelReturn(c, { businessId, returnId: id, userId }));
         }
         return { ok: true as const };
       });
@@ -325,7 +327,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
       const refund = parseRefund(body.refund);
       // A refund to the original payment is a gateway call: it goes after the receive has committed.
       const toGateway = refund?.method === 'original_payment';
-      const result = await inTransaction((c) =>
+      const result = await inTransaction(userId, (c) =>
         receiveReturn(c, { businessId, returnId: id, userId, lines, date, refund: toGateway ? null : refund }),
       );
       const extra: Record<string, unknown> = { credit_note_number: result.creditNoteNumber, credit_amount: result.creditAmount };
@@ -356,7 +358,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
         const sent = await refundReturnToOriginalPayment({ businessId, returnId: id, userId, amount: refund.amount });
         return respond({ refund: sent });
       }
-      const status = await inTransaction((c) => settleReturn(c, { businessId, returnId: id, userId, date, ...refund }));
+      const status = await inTransaction(userId, (c) => settleReturn(c, { businessId, returnId: id, userId, date, ...refund }));
       if (status === 'closed') await notifyReturnCustomer(businessId, id, 'refunded');
       return respond();
     }

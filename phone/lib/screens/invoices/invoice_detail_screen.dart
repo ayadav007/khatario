@@ -14,6 +14,9 @@ import 'invoice_payment_sheet.dart';
 import 'invoice_pdf_screen.dart';
 import '../settings/printers_screen.dart';
 import 'invoice_share.dart';
+import '../docs/doc_logic.dart';
+import '../sales/quotation_convert.dart';
+import '../sales/sales_logic.dart';
 import 'record_payment_dialog.dart';
 
 /// `formatINR` in `InvoiceDetailPanel.tsx`.
@@ -144,9 +147,53 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
 
   Future<void> _share() async {
     final number = _invoice?['invoice_number']?.toString() ?? 'Invoice';
+    final word = _isQuotation ? 'Quotation' : 'Invoice';
     final url = await fetchInvoiceShareUrl(widget.api, widget.invoiceId);
     if (!mounted) return;
-    await SharePlus.instance.share(ShareParams(text: 'Invoice $number\n$url', subject: 'Invoice $number', title: 'Share invoice'));
+    await SharePlus.instance.share(ShareParams(text: '$word $number\n$url', subject: '$word $number', title: 'Share ${word.toLowerCase()}'));
+  }
+
+  /// A quotation is an invoice row of type `proforma_invoice`: no payments, a status instead.
+  bool get _isQuotation => _invoice?['document_type'] == 'proforma_invoice';
+
+  Future<void> _convert() async {
+    final inv = _invoice;
+    if (inv == null) return;
+    final result = await convertQuotation(
+      context,
+      widget.api,
+      id: widget.invoiceId,
+      number: inv['invoice_number']?.toString() ?? 'Quotation',
+      amount: docNum(inv['grand_total']) ?? 0,
+    );
+    if (result == null || !mounted) return;
+    final newId = result.invoiceId;
+    if (newId == null) return _fetchInvoice();
+    // The list that opened this quotation reloads when this route closes.
+    Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+      builder: (_) => InvoiceDetailScreen(api: widget.api, invoiceId: newId, businessName: widget.businessName, session: widget.session),
+    ));
+  }
+
+  void _openConverted(String id) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => InvoiceDetailScreen(api: widget.api, invoiceId: id, businessName: widget.businessName, session: widget.session),
+    ));
+  }
+
+  Widget _quotationBar(Map<String, dynamic> inv) {
+    final convertedId = convertedInvoiceIdOf(inv);
+    return KBottomBar(children: [
+      KIconTile(icon: LucideIcons.fileText, label: 'View quotation', onTap: _openInvoiceView),
+      if (canConvertQuotation(inv)) ...[
+        KIconTile(icon: LucideIcons.share2, label: 'Share', onTap: _share),
+        Expanded(child: KButton(label: 'Convert to invoice', icon: LucideIcons.arrowRight, onPressed: _convert)),
+      ] else if (quotationStatus(inv) == 'converted' && convertedId != null) ...[
+        KIconTile(icon: LucideIcons.share2, label: 'Share', onTap: _share),
+        Expanded(child: KButton(label: 'Open invoice', icon: LucideIcons.externalLink, onPressed: () => _openConverted(convertedId))),
+      ] else
+        Expanded(child: KButton(label: 'Share quotation', icon: LucideIcons.share2, onPressed: _share)),
+    ]);
   }
 
   Future<void> _finalize() async {
@@ -212,13 +259,14 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final hasCustomer = (inv['customer_id']?.toString() ?? '').isNotEmpty;
     final canCollect = inv['status'] == 'final' && due && hasCustomer;
     final date = parseServerDate(inv['invoice_date']);
+    final quotation = _isQuotation;
     return DetailPanelShell<_Tab>(
       title: inv['invoice_number']?.toString() ?? 'Invoice',
       subtitle: [if (date != null) Text(ddMMMyyyy(date))],
       avatar: const SizedBox.shrink(),
-      tabs: const [
+      tabs: [
         (_Tab.overview, 'Details', LucideIcons.clipboardList),
-        (_Tab.transactions, 'Payments', LucideIcons.receipt),
+        if (!quotation) (_Tab.transactions, 'Payments', LucideIcons.receipt),
         (_Tab.history, 'History', LucideIcons.history),
       ],
       activeTab: _tab,
@@ -233,8 +281,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
               builder: (_) => InvoiceFormScreen(session: widget.session!, invoiceId: widget.invoiceId),
             )),
           ),
-        DetailMoreAction(label: 'View invoice', icon: LucideIcons.externalLink, onTap: _openInvoiceView),
-        if (widget.session != null && !draft && inv['status'] != 'cancelled')
+        DetailMoreAction(label: quotation ? 'View quotation' : 'View invoice', icon: LucideIcons.externalLink, onTap: _openInvoiceView),
+        if (widget.session != null && !quotation && !draft && inv['status'] != 'cancelled')
           DetailMoreAction(
             label: 'Print bill (thermal)',
             icon: LucideIcons.printer,
@@ -247,7 +295,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         _Tab.transactions => _payments(inv),
         _Tab.history => _historyTab(),
       },
-      bottomBar: KBottomBar(children: [
+      bottomBar: quotation ? _quotationBar(inv) : KBottomBar(children: [
         KIconTile(icon: LucideIcons.fileText, label: 'View invoice', onTap: _openInvoiceView),
         if (draft) ...[
           KIconTile(icon: LucideIcons.share2, label: 'Share', onTap: _share),
@@ -277,6 +325,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         ? (inv['payment_status']?.toString() ?? 'unpaid')
         : deriveInvoicePaymentStatus(inv['grand_total'], paid, inv['balance_amount'] ?? balance);
     final docType = inv['document_type']?.toString() ?? '';
+    if (_isQuotation) return _quotationHero(inv, name, cancelled);
     final (KTone tone, String label) = cancelled
         ? (KTone.negative, 'Cancelled')
         : inv['status'] == 'draft'
@@ -344,6 +393,33 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
               ),
             ],
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Customer, total and the estimate status (Draft, Sent, Accepted...). No payment figures.
+  Widget _quotationHero(Map<String, dynamic> inv, String name, bool cancelled) {
+    final (tone, label) = cancelled ? (KTone.negative, 'Cancelled') : quotationStatusStyle(quotationStatus(inv));
+    final expiry = parseServerDate(inv['expiry_date']);
+    return KCard(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              KAvatar(name: name, size: 28, muted: name.isEmpty, icon: name.isEmpty ? LucideIcons.banknote : null),
+              const SizedBox(width: 8),
+              Flexible(child: Text(name.isEmpty ? 'No customer' : name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          KAmount(toNum(inv['grand_total']), maxFraction: 2),
+          const SizedBox(height: 8),
+          KPill(label: label, tone: tone),
+          const SizedBox(height: 12),
+          Text(expiry == null ? 'Quotation' : 'Quotation · Expires ${ddMMMyyyy(expiry)}', style: AppText.caption),
         ],
       ),
     );

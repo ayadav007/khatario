@@ -9,6 +9,7 @@ import '../../ui/detail_panel_shell.dart';
 import '../../ui/kit.dart';
 import '../hub/hub_link_cards.dart';
 import 'party_logic.dart';
+import 'supplier_form_screen.dart';
 
 /// `SupplierDetailPanel`: Overview, Transactions and History. Purchases stay on the server.
 class SupplierDetailScreen extends StatefulWidget {
@@ -78,6 +79,15 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
     }
   }
 
+  Future<void> _edit() async {
+    final supplier = _supplier;
+    if (supplier == null) return;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => SupplierFormScreen(session: widget.session, supplier: supplier)),
+    );
+    if (saved == true && mounted) _load();
+  }
+
   void _selectTab(String id) {
     setState(() => _tab = id);
     if (id == 'history' && _history == null) _loadHistory();
@@ -125,7 +135,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
           onTabChange: _selectTab,
           onClose: () => Navigator.of(context).pop(),
           actions: [
-            Tooltip(message: 'Edit', child: KIconButton(icon: LucideIcons.pencil, tooltip: 'Edit', onTap: () => widget.onOpen('Edit supplier'))),
+            Tooltip(message: 'Edit', child: KIconButton(icon: LucideIcons.pencil, tooltip: 'Edit', onTap: _edit)),
           ],
           header: KCard(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),

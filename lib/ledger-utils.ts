@@ -106,7 +106,11 @@ export async function getAccountByName(
  * Get default accounts for a business
  * Uses configured account mappings if available, otherwise falls back to default lookup
  */
-export async function getDefaultAccounts(businessId: string): Promise<{
+export async function getDefaultAccounts(
+  businessId: string,
+  /** With `customerId`, `accountsReceivable` is that customer's own receivable account when they have one. */
+  opts: { customerId?: string | null; poolClient?: PoolClient } = {}
+): Promise<{
   sales?: Account;
   accountsReceivable?: Account;
   cash?: Account;
@@ -273,6 +277,15 @@ export async function getDefaultAccounts(businessId: string): Promise<{
   if (rcmInput) defaults.rcmInput = rcmInput;
   if (gstNetSettlement) defaults.gstNetSettlement = gstNetSettlement;
   if (itcSuspense) defaults.itcSuspense = itcSuspense;
+
+  if (opts.customerId) {
+    const { customerReceivableAccountOverride } = await import('@/lib/accounting/receivable-accounts');
+    const ownAccountId = await customerReceivableAccountOverride(businessId, opts.customerId, opts.poolClient);
+    if (ownAccountId) {
+      const ownAccount = await getAccountById(businessId, ownAccountId);
+      if (ownAccount) defaults.accountsReceivable = ownAccount;
+    }
+  }
 
   return defaults;
 }
@@ -447,7 +460,9 @@ export async function postOpeningBalanceLedgerEntry(params: {
   }
 
   // Get accounts
-  const accounts = await getDefaultAccounts(businessId);
+  const accounts = await getDefaultAccounts(businessId, {
+    customerId: entityType === 'customer' ? entityId : null,
+  });
   const openingBalanceAccount = await getOrCreateOpeningBalanceAdjustmentAccount(businessId);
   const fyStartDate = await getFinancialYearStartDate(businessId);
 
@@ -496,34 +511,47 @@ export async function postOpeningBalanceLedgerEntry(params: {
     }
   }
 
-  // Create ledger entries (double-entry)
-  // Entry 1: Party Account
-  await createLedgerEntryLine({
-    businessId,
-    voucherId,
-    voucherType: 'opening_balance',
-    accountId: partyAccount.id,
-    entryDate: fyStartDate,
-    debit: partyDebit,
-    credit: partyCredit,
-    narration: `Opening balance - ${entityName}`,
-    referenceNumber: entityName,
-    branchId: undefined, // Business-level, not branch-specific
-  });
+  // Create ledger entries (double-entry). Both lines go in one transaction: the voucher-balance
+  // trigger checks at commit, so a line committed on its own is rejected as unbalanced.
+  const poolClient = await db.getPool().connect();
+  try {
+    await poolClient.query('BEGIN');
+    // Entry 1: Party Account
+    await createLedgerEntryLine({
+      businessId,
+      voucherId,
+      voucherType: 'opening_balance',
+      accountId: partyAccount.id,
+      entryDate: fyStartDate,
+      debit: partyDebit,
+      credit: partyCredit,
+      narration: `Opening balance - ${entityName}`,
+      referenceNumber: entityName,
+      branchId: undefined, // Business-level, not branch-specific
+      poolClient,
+    });
 
-  // Entry 2: Opening Balance Adjustment Account
-  await createLedgerEntryLine({
-    businessId,
-    voucherId,
-    voucherType: 'opening_balance',
-    accountId: openingBalanceAccount.id,
-    entryDate: fyStartDate,
-    debit: adjustmentDebit,
-    credit: adjustmentCredit,
-    narration: `Opening balance adjustment - ${entityName}`,
-    referenceNumber: entityName,
-    branchId: undefined, // Business-level, not branch-specific
-  });
+    // Entry 2: Opening Balance Adjustment Account
+    await createLedgerEntryLine({
+      businessId,
+      voucherId,
+      voucherType: 'opening_balance',
+      accountId: openingBalanceAccount.id,
+      entryDate: fyStartDate,
+      debit: adjustmentDebit,
+      credit: adjustmentCredit,
+      narration: `Opening balance adjustment - ${entityName}`,
+      referenceNumber: entityName,
+      branchId: undefined, // Business-level, not branch-specific
+      poolClient,
+    });
+    await poolClient.query('COMMIT');
+  } catch (error) {
+    await poolClient.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    poolClient.release();
+  }
 }
 
 /**
@@ -728,7 +756,7 @@ export async function createInvoiceLedgerEntries(params: {
     poolClient,
   } = params;
 
-  const accounts = await getDefaultAccounts(businessId);
+  const accounts = await getDefaultAccounts(businessId, { customerId: customerId, poolClient });
 
   if (!accounts.sales) {
     throw new Error(
@@ -1701,7 +1729,7 @@ export async function createCreditNoteLedgerEntries(params: {
   } = params;
   const noteLabel = params.noteType === 'post_sale_discount' ? 'Post-sale discount' : 'Sales return';
 
-  const accounts = await getDefaultAccounts(businessId);
+  const accounts = await getDefaultAccounts(businessId, { customerId: params.customerId, poolClient });
 
   if (!accounts.sales) {
     throw new Error(
@@ -2226,7 +2254,7 @@ export async function createPaymentLedgerEntries(params: {
   } = params;
   const tdsAmount = Math.max(0, Number(params.tdsAmount) || 0);
 
-  const accounts = await getDefaultAccounts(businessId);
+  const accounts = await getDefaultAccounts(businessId, { customerId: customerId, poolClient });
 
   // Get payment account (Cash or Bank)
   const paymentAccount = await getAccountForPaymentMode(
@@ -2405,7 +2433,7 @@ export async function createDebitNoteLedgerEntries(params: {
     poolClient,
   } = params;
 
-  const accounts = await getDefaultAccounts(businessId);
+  const accounts = await getDefaultAccounts(businessId, { customerId: customerId, poolClient });
 
   if (!accounts.sales) {
     throw new Error(

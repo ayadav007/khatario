@@ -53,6 +53,17 @@ export async function PATCH(
       due_date,
     } = body;
 
+    // The assignee must be an employee of the session business (null un-assigns).
+    if (assigned_to) {
+      const assignee = await queryOne(
+        'SELECT 1 FROM employees WHERE id = $1 AND business_id = $2',
+        [assigned_to, businessId]
+      );
+      if (!assignee) {
+        return NextResponse.json({ error: 'Assignee not found' }, { status: 404 });
+      }
+    }
+
     const updates: string[] = [];
     const queryParams: any[] = [];
     let paramIndex = 1;
@@ -88,9 +99,9 @@ export async function PATCH(
     }
 
     if (updates.length > 0) {
-      queryParams.push(taskId);
+      queryParams.push(taskId, businessId);
       await query(
-        `UPDATE tasks SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex}`,
+        `UPDATE tasks SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}`,
         queryParams
       );
     }

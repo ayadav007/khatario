@@ -15,12 +15,27 @@ import { useEntityRecord } from '@/hooks/useEntityRecord';
 import { useEntityMutation } from '@/hooks/useEntityMutation';
 import { useToastContext } from '@/contexts/ToastContext';
 import { INDIAN_STATES } from '@/lib/gst-utils';
+import { ReceivableAccountPicker } from '@/components/customers/ReceivableAccountPicker';
+
+const formatRupees = (n: number) =>
+  `₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function EditCustomerPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { business, user } = useAuth();
   const toast = useToastContext();
   const [sameAsBilling, setSameAsBilling] = useState(false);
+
+  // The ledger account this customer's sales are recorded in (null = Accounts Receivable).
+  // It is changed through its own endpoint, because a change transfers the customer's balance.
+  const [receivableAccountId, setReceivableAccountId] = useState<string | null>(null);
+  const [receivableAccountLabel, setReceivableAccountLabel] = useState('Accounts Receivable');
+  const [savedReceivableAccount, setSavedReceivableAccount] = useState<{ id: string | null; label: string }>({
+    id: null,
+    label: 'Accounts Receivable',
+  });
+  const [pendingTransfer, setPendingTransfer] = useState<{ toAccountId: string | null; amount: number } | null>(null);
+  const [movingAccount, setMovingAccount] = useState(false);
 
   const { data: customer, loading, refetch } = useEntityRecord({
     recordId: params.id,
@@ -111,6 +126,14 @@ export default function EditCustomerPage({ params }: { params: { id: string } })
             : ''
       };
       setFormData(loadedData);
+      const account = c.receivable_account as { id: string; account_code: string; account_name: string } | null | undefined;
+      const savedId = (c.receivable_account_id as string | null | undefined) ?? null;
+      // A saved account that is no longer usable falls back to Accounts Receivable.
+      const effectiveId = savedId && account?.id === savedId ? savedId : null;
+      const label = account ? `${account.account_code} ${account.account_name}` : 'Accounts Receivable';
+      setReceivableAccountId(effectiveId);
+      setReceivableAccountLabel(label);
+      setSavedReceivableAccount({ id: effectiveId, label });
       const expectedShipping = buildShippingAddress(
         loadedData.billing_address,
         loadedData.city,
@@ -167,6 +190,40 @@ export default function EditCustomerPage({ params }: { params: { id: string } })
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id || !business?.id) return;
+
+    if (receivableAccountId !== savedReceivableAccount.id) {
+      const moveUrl = `/api/customers/${params.id}/receivable-account`;
+      const post = async (dryRun: boolean) => {
+        const res = await fetch(moveUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receivable_account_id: receivableAccountId, dry_run: dryRun }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Could not change the receivable account');
+        return data.result as { transferredAmount: number };
+      };
+      setMovingAccount(true);
+      try {
+        const confirmed = pendingTransfer && pendingTransfer.toAccountId === receivableAccountId;
+        if (!confirmed) {
+          const preview = await post(true);
+          if (Math.abs(preview.transferredAmount) >= 0.005) {
+            // Show what will be transferred; the next Save carries it out.
+            setPendingTransfer({ toAccountId: receivableAccountId, amount: preview.transferredAmount });
+            return;
+          }
+        }
+        await post(false);
+        setSavedReceivableAccount({ id: receivableAccountId, label: receivableAccountLabel });
+        setPendingTransfer(null);
+      } catch (error) {
+        toast.error(error instanceof Error && error.message ? error.message : 'Could not change the receivable account');
+        return;
+      } finally {
+        setMovingAccount(false);
+      }
+    }
 
     try {
       await update(params.id, {
@@ -385,15 +442,38 @@ export default function EditCustomerPage({ params }: { params: { id: string } })
                 onChange={handleChange}
                 placeholder="Optional — e.g. 30"
               />
+              <ReceivableAccountPicker
+                value={receivableAccountId}
+                disabled={saving || movingAccount}
+                onChange={(accountId, option) => {
+                  setReceivableAccountId(accountId);
+                  setReceivableAccountLabel(option?.label ?? 'Accounts Receivable');
+                  setPendingTransfer(null);
+                }}
+              />
             </div>
           </AnnotatedFormSection>
         </div>
+
+        {pendingTransfer && (
+          <div
+            role="alert"
+            className="mt-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+          >
+            <p className="font-medium">
+              {formatRupees(pendingTransfer.amount)}
+              {pendingTransfer.amount < 0 ? ' (credit balance)' : ''} will be transferred from{' '}
+              {savedReceivableAccount.label} to {receivableAccountLabel}, dated today.
+            </p>
+            <p className="mt-1">Earlier entries are not changed. Save again to confirm.</p>
+          </div>
+        )}
 
         <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
           <Button type="button" variant="secondary" onClick={() => router.back()}>
             Cancel
           </Button>
-          <Button type="submit" isLoading={saving}>
+          <Button type="submit" isLoading={saving || movingAccount}>
             Update customer
           </Button>
         </div>

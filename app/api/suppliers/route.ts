@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { Supplier } from '@/types/database';
-import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession } from '@/lib/auth-helpers';
-import { normalizePhoneOrNull } from '@/lib/utils/phone';
-import { normalizePan, panFromGstin } from '@/lib/tax/pan';
-import { resolveGstinAndState } from '@/lib/tax/gstin';
-import { openConnectionRequest } from '@/lib/supplier-hub-links';
+import {
+  checkSupplierInput,
+  createSupplier,
+  SupplierAccessRefused,
+  CREATE_FAILED,
+  DUPLICATE_GSTIN,
+  DUPLICATE_SUPPLIER,
+  INVALID_PAN,
+  NAME_REQUIRED,
+  SELF_LINK,
+  type CreateSupplierInput,
+} from '@/lib/suppliers/create-supplier';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,46 +136,15 @@ export async function POST(request: NextRequest) {
     if (!session.ok) return session.response;
     const business_id = session.businessId;
     const createdByUserId = session.userId;
-    const {
-      name,
-      phone,
-      email,
-      address,
-      city,
-      state,
-      state_code,
-      pincode,
-      gstin,
-      pan,
-      opening_balance = 0,
-      opening_balance_type = 'credit',
-      linked_business_id,
-      allow_low_stock_access = false,
-    } = body;
+    const input = body as CreateSupplierInput;
 
-    if (pan && !normalizePan(pan)) {
-      return NextResponse.json(
-        { error: `Invalid PAN "${pan}". Expected format: ABCDE1234F` },
-        { status: 400 }
-      );
-    }
-
-    if (!name) {
-      return NextResponse.json(
-        { error: 'name is required' },
-        { status: 400 }
-      );
-    }
-
-    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
-    if (!gstinCheck.ok) {
-      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
-    }
-    if (gstinCheck.pan && pan && normalizePan(pan) && normalizePan(pan) !== gstinCheck.pan) {
-      return NextResponse.json(
-        { error: `PAN ${String(pan).toUpperCase()} does not match the PAN inside GSTIN (${gstinCheck.pan}).`, code: 'PAN_GSTIN_MISMATCH' },
-        { status: 400 }
-      );
+    // PAN, name and GSTIN are checked before authorize, as they always have been.
+    const checked = checkSupplierInput(input);
+    if (!checked.ok) {
+      if (checked.code === INVALID_PAN || checked.code === NAME_REQUIRED) {
+        return NextResponse.json({ error: checked.error }, { status: checked.status });
+      }
+      return NextResponse.json({ error: checked.error, code: checked.code }, { status: checked.status });
     }
 
     // AUTHORIZATION: supplier create (not purchase create — avoids purchase-only PBAC side effects)
@@ -181,162 +157,42 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    const { getClientIP, getUserAgent } = await import('@/lib/activity-logger');
+    let result: Awaited<ReturnType<typeof createSupplier>>;
     try {
-      await enforceAccess({
-        businessId: business_id,
-        userId: createdByUserId,
-        feature: FeatureKeys.SUPPLIER_MANAGEMENT,
-        limitType: 'suppliers',
-      });
-    } catch (e) {
-      const res = enforceAccessErrorResponse(e);
-      if (res) return res;
-      throw e;
-    }
-
-    // Helper function to get state code if not provided
-    const getStateCode = (stateName: string): string => {
-      if (!stateName) return '';
-      const name = stateName.trim().toLowerCase();
-      const map: Record<string, string> = {
-        'andhra pradesh': '37', 'karnataka': '29', 'tamil nadu': '33', 'maharashtra': '27',
-        'gujarat': '24', 'rajasthan': '08', 'uttar pradesh': '09', 'west bengal': '19',
-        'delhi': '07', 'telangana': '36', 'haryana': '06', 'punjab': '03', 'odisha': '21',
-        'bihar': '10', 'madhya pradesh': '23', 'assam': '18', 'jharkhand': '20',
-        'kerala': '32', 'chhattisgarh': '22', 'uttarakhand': '05', 'himachal pradesh': '02',
-        'tripura': '16', 'manipur': '14', 'meghalaya': '17', 'mizoram': '15',
-        'nagaland': '13', 'arunachal pradesh': '12', 'goa': '30', 'sikkim': '11',
-        'andaman and nicobar islands': '35', 'chandigarh': '04',
-        'dadra and nagar haveli and daman and diu': '26', 'jammu and kashmir': '01',
-        'ladakh': '38', 'lakshadweep': '31', 'puducherry': '34'
-      };
-      return map[name] || '';
-    };
-
-    // Use provided state_code or calculate from state name
-    const finalState = gstinCheck.state;
-    const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
-
-    // A link to another business stays pending until that business approves it
-    // (POST /api/suppliers/[id]/approve); every hub gate requires approval_status = 'approved'.
-    if (linked_business_id && String(linked_business_id) === String(business_id)) {
-      return NextResponse.json({ error: 'A business cannot be its own supplier' }, { status: 400 });
-    }
-    const approvalStatus = linked_business_id ? 'pending' : 'none';
-    const approvedAt = null;
-
-    // Validate: allow_low_stock_access can only be true if linked to business
-    const finalAllowLowStockAccess = linked_business_id ? (allow_low_stock_access === true) : false;
-
-    const phoneNorm = normalizePhoneOrNull(phone);
-
-    const gstinNorm = gstinCheck.gstin;
-
-    if (gstinNorm) {
-      const existingGstin = await db.queryOne<Supplier>(
-        `SELECT * FROM suppliers
-         WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true
-           AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2
-         LIMIT 1`,
-        [business_id, gstinNorm]
+      result = await createSupplier(
+        { businessId: business_id, userId: createdByUserId },
+        input,
+        { ip: getClientIP(request), userAgent: getUserAgent(request) }
       );
-      if (existingGstin) {
+    } catch (e) {
+      if (!(e instanceof SupplierAccessRefused)) throw e;
+      const res = enforceAccessErrorResponse(e.reason);
+      if (res) return res;
+      throw e.reason;
+    }
+
+    if (!result.ok) {
+      if (result.code === DUPLICATE_GSTIN && result.existing) {
         return NextResponse.json(
-          {
-            supplier: existingGstin,
-            deduplicated: true,
-            message: 'Existing supplier with this GSTIN returned.',
-          },
+          { supplier: result.existing, deduplicated: true, message: result.error },
           { status: 200 }
         );
       }
-    }
-
-    const gstinStatePrefix =
-      gstinNorm && gstinNorm.length >= 2 && /^\d{2}$/.test(gstinNorm.slice(0, 2))
-        ? gstinNorm.slice(0, 2)
-        : null;
-    const finalStateCodeResolved =
-      finalStateCode || gstinStatePrefix || null;
-
-    const supplier = await db.queryOne<Supplier>(`
-      INSERT INTO suppliers (
-        business_id, name, phone, email, address,
-        city, state, state_code, pincode, gstin,
-        opening_balance, opening_balance_type,
-        linked_business_id, requested_by_business_id, approval_status,
-        approved_at, allow_low_stock_access, pan
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      RETURNING *
-    `, [
-      business_id, name, phoneNorm, email, address,
-      city, finalState, finalStateCodeResolved, pincode, gstinNorm,
-      opening_balance, opening_balance_type,
-      linked_business_id || null,
-      linked_business_id ? business_id : null, // Set requester if linking
-      approvalStatus,
-      approvedAt,
-      finalAllowLowStockAccess,
-      normalizePan(pan) ?? panFromGstin(gstinNorm),
-    ]);
-
-    if (!supplier) {
-      return NextResponse.json(
-        { error: 'Failed to create supplier' },
-        { status: 500 }
-      );
-    }
-
-    // PHASE 2: Post opening balance to ledger (if opening_balance > 0)
-    if (opening_balance > 0) {
-      try {
-        const { postOpeningBalanceLedgerEntry } = await import('@/lib/ledger-utils');
-        await postOpeningBalanceLedgerEntry({
-          businessId: business_id,
-          entityType: 'supplier',
-          entityId: supplier.id,
-          entityName: name,
-          openingBalance: opening_balance,
-          openingBalanceType: opening_balance_type,
-        });
-      } catch (ledgerError: any) {
-        // Log error but don't fail supplier creation
-        // Opening balance is stored in supplier record, ledger entry is supplementary
-        console.error('Error posting opening balance ledger entry for supplier:', ledgerError);
+      if (result.code === DUPLICATE_SUPPLIER) {
+        console.error('[SupplierAPI] ERROR creating supplier:', result.details);
+        return NextResponse.json(
+          { error: result.error, code: DUPLICATE_SUPPLIER, details: result.details },
+          { status: 409 }
+        );
       }
+      if (result.code === CREATE_FAILED || result.code === SELF_LINK) {
+        return NextResponse.json({ error: result.error }, { status: result.status });
+      }
+      return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
     }
 
-    // Linking to a business account is a Supplier Hub connection request; the pending
-    // supplier row goes live when that business accepts it in the hub.
-    if (linked_business_id) {
-      await openConnectionRequest({
-        buyerBusinessId: business_id,
-        supplierBusinessId: String(linked_business_id),
-        createdByUserId,
-        shareLowStock: finalAllowLowStockAccess,
-      });
-    }
-
-    const { logActivity, getClientIP, getUserAgent } = await import('@/lib/activity-logger');
-    await logActivity({
-      business_id,
-      user_id: createdByUserId,
-      action_type: 'create',
-      module: 'suppliers',
-      entity_id: supplier.id,
-      entity_type: 'supplier',
-      description: `Created supplier ${name}`,
-      ip_address: getClientIP(request),
-      user_agent: getUserAgent(request),
-      metadata: {
-        name,
-        gstin: gstin || null,
-        linked_business_id: linked_business_id || null,
-      },
-    });
-
-    return NextResponse.json({ supplier }, { status: 201 });
+    return NextResponse.json({ supplier: result.record }, { status: 201 });
   } catch (error: any) {
     console.error('[SupplierAPI] ERROR creating supplier:', error?.message);
     console.error('[SupplierAPI] Stack:', error?.stack);

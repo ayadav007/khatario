@@ -55,9 +55,10 @@ function ItemsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const toast = useToastContext();
-  const { canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const { canAdd, canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
   const { hasCapability, snapshotLoaded } = useCapabilityCheck();
   const canDeleteItems = !permissionsLoading && (canDelete('items') || isPrimaryAdmin);
+  const canImportItems = !permissionsLoading && (canAdd('items') || isPrimaryAdmin);
   const moduleSettingsMenu = getModuleSettingsMenu(pathname);
   const [search, setSearch] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
@@ -71,7 +72,6 @@ function ItemsPage() {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [page, setPage] = useState(1);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [deleteModalItem, setDeleteModalItem] = useState<Item | null>(null);
@@ -344,15 +344,13 @@ function ItemsPage() {
               >
                 Template
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="min-h-11"
-                onClick={() => document.getElementById('item-import-input')?.click()}
-                isLoading={importing}
-              >
-                Import
-              </Button>
+              {canImportItems ? (
+                <Link href="/import/items">
+                  <Button variant="secondary" size="sm" className="min-h-11">
+                    Import
+                  </Button>
+                </Link>
+              ) : null}
             </div>
           </div>
         </div>
@@ -842,66 +840,6 @@ function ItemsPage() {
         </button>
       </PageToolbar>
 
-      {/* Hidden file input for import */}
-      <input
-        id="item-import-input"
-        type="file"
-        accept=".csv,text/csv"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file || !business?.id) return;
-          setImporting(true);
-          try {
-            const text = await file.text();
-            const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-            if (lines.length < 2) throw new Error('CSV has no data rows');
-            const headers = lines[0].split(',').map((h) => h.trim());
-            const itemsToImport = lines.slice(1).map((line) => {
-              const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-              const row: any = {};
-              headers.forEach((h, idx) => {
-                row[h] = cols[idx];
-              });
-              return {
-                name: row.name,
-                code: row.code || null,
-                barcode: row.barcode || null,
-                unit: row.unit || 'PCS',
-                item_type: row.item_type || 'goods',
-                category_name: row.category_name || null,
-                selling_price: Number(row.selling_price || 0),
-                purchase_price: Number(row.purchase_price || 0),
-                mrp: row.mrp ? Number(row.mrp) : null,
-                tax_rate: Number(row.tax_rate || 18),
-                hsn_sac: row.hsn_sac || null,
-                opening_stock: Number(row.opening_stock || 0),
-                min_stock: Number(row.min_stock || 0),
-                description: row.description || null,
-                image_url: row.image_url || null,
-                is_active: row.is_active === undefined ? true : (row.is_active === 'true' || row.is_active === true),
-              };
-            });
-
-            const res = await fetch('/api/items/import', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ business_id: business.id, items: itemsToImport }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Import failed');
-            toast.success(`Import completed. Success: ${data.success}, Failed: ${data.failed}`);
-            setSearch('');
-            refresh();
-          } catch (err: any) {
-            toast.error(err.message || 'Import failed');
-          } finally {
-            setImporting(false);
-            e.target.value = '';
-          }
-        }}
-      />
-
       {/* Mobile Filter Bottom Sheet */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-[100] md:hidden">
@@ -1020,14 +958,13 @@ function ItemsPage() {
                 >
                   Template
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="w-full h-12 rounded-xl"
-                  onClick={() => document.getElementById('item-import-input')?.click()}
-                  isLoading={importing}
-                >
-                  Import
-                </Button>
+                {canImportItems ? (
+                  <Link href="/import/items">
+                    <Button variant="secondary" className="w-full h-12 rounded-xl">
+                      Import
+                    </Button>
+                  </Link>
+                ) : null}
               </div>
             </div>
 

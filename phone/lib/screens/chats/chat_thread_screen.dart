@@ -8,6 +8,12 @@ import 'package:flutter/material.dart';
 import '../../api.dart';
 import '../../session.dart';
 import 'chat_thread_logic.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../../theme.dart';
+import '../../ui/form_kit.dart';
+import '../../ui/kit.dart';
+import '../../ui/toast.dart';
 import 'deal_sheet.dart';
 
 /// One WhatsApp conversation: read the messages and send a text reply.
@@ -139,9 +145,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   Future<void> _openReplies() async {
     await _ensureReplies();
     if (!mounted) return;
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      showDragHandle: true,
+    final picked = await showKSheet<Map<String, dynamic>>(
+      context,
+      title: _replies.isEmpty ? null : 'Saved replies',
       builder: (context) {
         if (_replies.isEmpty) {
           return const Padding(
@@ -150,16 +156,12 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           );
         }
         return ListView(
+          shrinkWrap: true,
           children: [
-            const ListTile(title: Text('Saved replies', style: TextStyle(fontWeight: FontWeight.w600))),
             for (final reply in _replies)
-              ListTile(
-                title: Text(reply['title']?.toString() ?? 'Reply'),
-                subtitle: Text(
-                  reply['shortcut']?.toString().isNotEmpty == true ? '/${reply['shortcut']}' : (reply['message']?.toString() ?? ''),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              KListRow(
+                title: reply['title']?.toString() ?? 'Reply',
+                subtitle: reply['shortcut']?.toString().isNotEmpty == true ? '/${reply['shortcut']}' : (reply['message']?.toString() ?? ''),
                 onTap: () => Navigator.pop(context, reply),
               ),
           ],
@@ -183,21 +185,21 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     if (!mounted) return;
     final assigned = _thread?.assignedTo;
     final choices = people.where((person) => person['can_receive'] != false && person['id']?.toString() != assigned).toList();
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
+    final picked = await showKSheet<String>(
+      context,
+      title: choices.isEmpty ? null : 'Transfer chat',
       builder: (context) {
         if (choices.isEmpty) {
           return const Padding(padding: EdgeInsets.all(24), child: Text('No other team member can receive chats.'));
         }
         return ListView(
+          shrinkWrap: true,
           children: [
-            const ListTile(title: Text('Transfer chat', style: TextStyle(fontWeight: FontWeight.w600))),
             for (final person in choices)
-              ListTile(
-                leading: Icon(Icons.circle, size: 10, color: person['online'] == true ? const Color(0xFF16A34A) : const Color(0xFFD1D5DB)),
-                title: Text(person['name']?.toString() ?? 'Team member'),
-                subtitle: Text(person['online'] == true ? 'Online' : 'Offline'),
+              KListRow(
+                leading: Icon(Icons.circle, size: 10, color: person['online'] == true ? AppColors.positive : AppColors.ink3),
+                title: person['name']?.toString() ?? 'Team member',
+                subtitle: person['online'] == true ? 'Online' : 'Offline',
                 onTap: () => Navigator.pop(context, person['id']?.toString()),
               ),
           ],
@@ -224,9 +226,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     }
     if (!mounted) return;
     final selected = current.map((label) => label['id']?.toString()).whereType<String>().toSet();
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
+    await showKSheet<void>(
+      context,
+      title: catalog.isEmpty ? null : 'Tags',
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheet) {
@@ -234,8 +236,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               return const Padding(padding: EdgeInsets.all(24), child: Text('No tags yet. Create them from the website inbox.'));
             }
             return ListView(
+              shrinkWrap: true,
               children: [
-                const ListTile(title: Text('Tags', style: TextStyle(fontWeight: FontWeight.w600))),
                 for (final label in catalog)
                   CheckboxListTile(
                     value: selected.contains(label['id']?.toString()),
@@ -266,7 +268,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                             selected.add(id);
                           }
                         });
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+                        showKToast(context, error.message, tone: KTone.negative);
                       }
                     },
                   ),
@@ -354,14 +356,14 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             const Text('Up to three buttons. The customer taps one and that text comes back as their reply.'),
             const SizedBox(height: 12),
             for (final field in fields) ...[
-              TextField(controller: field, decoration: const InputDecoration(labelText: 'Button')),
+              KTextField(label: 'Button', controller: field),
               const SizedBox(height: 8),
             ],
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Use')),
+          KButton.secondary(label: 'Cancel', expand: false, height: 44, onPressed: () => Navigator.pop(context, false)),
+          KButton(label: 'Use', expand: false, height: 44, onPressed: () => Navigator.pop(context, true)),
         ],
       ),
     );
@@ -385,29 +387,38 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           );
     return Scaffold(
       backgroundColor: const Color(0xFFEFEAE2),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF008069),
-        foregroundColor: Colors.white,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white)),
-            if ((widget.subtitle ?? '').isNotEmpty)
-              Text(widget.subtitle!, style: const TextStyle(fontSize: 13, color: Color(0xCCFFFFFF))),
-          ],
-        ),
-        actions: [
-          if (thread == null || !thread.isGroup)
-            IconButton(
-              tooltip: 'Deal & follow-ups',
-              onPressed: () => showDealSheet(context, session: widget.session, conversationId: widget.conversationId),
-              icon: const Icon(Icons.trending_up),
-            ),
-          IconButton(tooltip: 'Tags', onPressed: _tags, icon: const Icon(Icons.label_outline)),
-        ],
-      ),
-      body: Column(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
         children: [
+          ColoredBox(
+            color: AppColors.bg,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                KBackBar(
+                  widget.title,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (thread == null || !thread.isGroup)
+                        KIconButton(
+                          tooltip: 'Deal & follow-ups',
+                          onTap: () => showDealSheet(context, session: widget.session, conversationId: widget.conversationId),
+                          icon: LucideIcons.trendingUp,
+                        ),
+                      KIconButton(tooltip: 'Tags', onTap: _tags, icon: LucideIcons.tag),
+                    ],
+                  ),
+                ),
+                if ((widget.subtitle ?? '').isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpace.gutter + 48, 0, AppSpace.gutter, AppSpace.sm),
+                    child: Text(widget.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                  ),
+              ],
+            ),
+          ),
           if (thread != null && !thread.isGroup && thread.inboxState != null) _ownershipBar(thread),
           Expanded(child: _messages(thread)),
           if (_error != null)
@@ -458,10 +469,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                         child: Column(
                           children: [
                             for (final reply in matchingSavedReplies(_input.text, _replies))
-                              ListTile(
-                                dense: true,
-                                title: Text(reply['title']?.toString() ?? 'Reply'),
-                                subtitle: Text('/${reply['shortcut'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                              KListRow(
+                                title: reply['title']?.toString() ?? 'Reply',
+                                subtitle: '/${reply['shortcut'] ?? ''}',
                                 onTap: () => _applyReply(reply),
                               ),
                           ],
@@ -526,6 +536,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -574,21 +585,13 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               runSpacing: 6,
               children: [
                 if (thread.canIntervene)
-                  FilledButton(
-                    onPressed: _sending ? null : () => _ownership('intervene'),
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF008069), visualDensity: VisualDensity.compact),
-                    child: const Text('Intervene'),
-                  ),
+                  KButton(label: 'Intervene', expand: false, height: 40, onPressed: _sending ? null : () => _ownership('intervene')),
                 if (thread.canTakeOver)
-                  OutlinedButton(onPressed: _sending ? null : () => _ownership('take_over'), child: const Text('Take over')),
+                  KButton.secondary(label: 'Take over', expand: false, height: 40, onPressed: _sending ? null : () => _ownership('take_over')),
                 if (thread.canTransfer)
-                  OutlinedButton(onPressed: _sending ? null : _transfer, child: const Text('Transfer')),
+                  KButton.secondary(label: 'Transfer', expand: false, height: 40, onPressed: _sending ? null : _transfer),
                 if (thread.canResolve)
-                  FilledButton(
-                    onPressed: _sending ? null : () => _ownership('resolve'),
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF008069), visualDensity: VisualDensity.compact),
-                    child: const Text('Resolve'),
-                  ),
+                  KButton(label: 'Resolve', expand: false, height: 40, onPressed: _sending ? null : () => _ownership('resolve')),
               ],
             ),
           ],

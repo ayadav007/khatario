@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import {
   getAuthenticatedUserId,
@@ -85,6 +86,7 @@ export async function POST(
     if (guard) return guard;
 
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'converted' });
 
     const locked = await client.query(
       `SELECT status, proforma_lifecycle_status, estimate_status, converted_invoice_id

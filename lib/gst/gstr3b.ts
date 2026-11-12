@@ -27,6 +27,15 @@ import {
 import { aggregateTable5, type GSTR3BTable5 } from './gstr3b-table5';
 import { registrationBranchIds, resolveSupplierRegistration } from './registration';
 import { loadItcGate, type HeldBill, type ItcHeads } from './itc-2b-gate';
+import {
+  buildItcTable4,
+  ITC_INPUT_ACCOUNT_CODES,
+  ITC_MOVEMENT_VOUCHER_TYPES,
+  itcLedgerMovements,
+  type ITCDetails,
+} from './gstr3b-itc';
+
+export type { ITCDetails } from './gstr3b-itc';
 
 export interface GSTR3BFilters {
   business_id: string;
@@ -145,18 +154,6 @@ export interface TaxBreakdown {
   cgst: number;
   sgst: number;
   cess: number;
-}
-
-export interface ITCDetails {
-  /** 4A(1) import of goods */
-  imports: TaxBreakdown;
-  /** 4A(2) import of services */
-  import_services: TaxBreakdown;
-  /** 4A(3) inward supplies liable to reverse charge */
-  inward_reverse_charge: TaxBreakdown;
-  other_itc: TaxBreakdown;
-  itc_reversed: TaxBreakdown;
-  net_itc: TaxBreakdown;
 }
 
 const emptyTax = (): TaxBreakdown => ({
@@ -658,58 +655,31 @@ export class GSTR3BGenerator {
         emptyTax()
       );
 
-    // s.17(5)(h) reversals (stock lost / destroyed / free samples) are credits to input GST in the
-    // ledger; add them back to 4A(5) and report them in 4B(1).
+    // Ledger reversals and re-claims outside documents: s.17(5)(h) stock losses (4B(1)),
+    // Rule 37 reversals (4B(2)) and Rule 37 re-claims on payment (4A(5) and 4D(1)).
     const rev = await pool.query(
-      `SELECT a.account_code, COALESCE(SUM(l.credit - l.debit), 0) AS amt
+      `SELECT l.voucher_type, a.account_code, COALESCE(SUM(l.credit - l.debit), 0) AS amt
          FROM ledger_entry_lines l
          JOIN accounts a ON a.id = l.account_id
         WHERE l.business_id = $1::uuid
-          AND l.voucher_type IN ('itc_reversal', 'itc_reversal_r37')
-          AND a.account_code IN ($5, $6, $7)
+          AND l.voucher_type = ANY($5::text[])
+          AND a.account_code = ANY($6::text[])
           AND l.entry_date >= $2::date AND l.entry_date <= $3::date
           AND ($4::uuid[] IS NULL OR l.branch_id = ANY($4::uuid[]))
-        GROUP BY a.account_code`,
-      [business_id, startOfMonth, endOfMonth, branch, GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST]
+        GROUP BY l.voucher_type, a.account_code`,
+      [business_id, startOfMonth, endOfMonth, branch, [...ITC_MOVEMENT_VOUCHER_TYPES], ITC_INPUT_ACCOUNT_CODES]
     );
-    const revAmt = (code: string) => round2(Number(rev.rows.find((r) => r.account_code === code)?.amt ?? 0));
-    const stockLossReversal = {
-      igst: revAmt(GSTR3B_INPUT_IGST),
-      cgst: revAmt(GSTR3B_INPUT_CGST),
-      sgst: revAmt(GSTR3B_INPUT_SGST),
-    };
-
-    // 4A(5): books ITC less the credits reported in 4A(1)-(3) and less what GSTR-2B does not
-    // support yet, plus earlier credit 2B now supports, plus credit reversed in 4B(1).
-    const otherHead = (ledger: number, head: 'igst' | 'cgst' | 'sgst') =>
-      round2(
-        Math.max(
-          0,
-          ledger + stockLossReversal[head] - itcImports[head] - itcImportServices[head] - itcRcm[head] -
-            gate.held[head] + gate.released[head]
-        ) + blocked[head]
-      );
-    const other_itc: TaxBreakdown = {
-      taxable_value: 0,
-      igst: otherHead(itcIGST, 'igst'),
-      cgst: otherHead(itcCGST, 'cgst'),
-      sgst: otherHead(itcSGST, 'sgst'),
-      cess: Math.max(0, round2(itcCess - gate.held.cess + gate.released.cess)),
-    };
-    const itc_reversed: TaxBreakdown = roundTax({
-      taxable_value: 0,
-      igst: blocked.igst + stockLossReversal.igst,
-      cgst: blocked.cgst + stockLossReversal.cgst,
-      sgst: blocked.sgst + stockLossReversal.sgst,
-      cess: 0,
+    const itc_details = buildItcTable4({
+      books: { igst: itcIGST, cgst: itcCGST, sgst: itcSGST, cess: itcCess },
+      imports: itcImports,
+      import_services: itcImportServices,
+      inward_reverse_charge: itcRcm,
+      blocked,
+      movements: itcLedgerMovements(rev.rows),
+      held: gate.held,
+      released: gate.released,
     });
-    const net_itc: TaxBreakdown = roundTax({
-      taxable_value: 0,
-      igst: itcImports.igst + itcImportServices.igst + itcRcm.igst + other_itc.igst - itc_reversed.igst,
-      cgst: itcImports.cgst + itcImportServices.cgst + itcRcm.cgst + other_itc.cgst - itc_reversed.cgst,
-      sgst: itcImports.sgst + itcImportServices.sgst + itcRcm.sgst + other_itc.sgst - itc_reversed.sgst,
-      cess: other_itc.cess,
-    });
+    const { net_itc } = itc_details;
     const itcFromDocs = round2(itcImports.igst + itcImportServices.igst + itcRcm.igst);
     if (itcFromDocs > round2(itcIGST) + 0.5 || itcRcm.cgst > round2(itcCGST) + 0.5 || itcRcm.sgst > round2(itcSGST) + 0.5) {
       warnings.push('Import / reverse-charge ITC on bills exceeds input GST in the ledger for the period — check that RCM ITC was booked.');
@@ -757,14 +727,7 @@ export class GSTR3BGenerator {
       inward_reverse_charge,
       non_gst_outward_supplies,
       inter_state_supplies_unregistered,
-      itc_details: {
-        imports: itcImports,
-        import_services: itcImportServices,
-        inward_reverse_charge: itcRcm,
-        other_itc,
-        itc_reversed,
-        net_itc,
-      },
+      itc_details,
       gross_output_tax,
       tax_liability,
       inward_exempt_nil_non_gst,

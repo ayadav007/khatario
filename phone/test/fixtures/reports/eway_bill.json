@@ -1,0 +1,3 @@
+{
+  "eway_bill": {"id": "e1000000-0000-4000-8000-000000000001", "source_type": "invoice", "source_id": "5a1d0c10-0000-4000-8000-000000000001", "source_number": "INV-2026-0042", "direction": "outward", "ewb_number": "281001234567", "doc_type": "tax_invoice", "sub_supply_type": "supply", "from_gstin": "27AAAPL1234C1ZV", "to_gstin": "29AABCU9603R1ZM", "from_pincode": "411001", "to_pincode": "560001", "distance_km": 120, "is_odc": false, "goods_value": 59000, "generated_at": "2026-11-10T06:30:00.000Z", "valid_until": "2026-11-11T18:29:59.000Z", "stored_status": "active", "status": "active", "hours_to_expiry": 12, "can_extend": true, "can_cancel": true, "extension_count": 0, "vehicle_number": "MH12AB1234", "transporter_name": "Shree Roadways", "notes": "Handle with care"}
+}

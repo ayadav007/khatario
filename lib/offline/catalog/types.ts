@@ -54,6 +54,7 @@ export type CatalogCustomer = Pick<
   | 'opening_balance_type'
   | 'credit_limit'
   | 'credit_days'
+  | 'receivable_account_id'
   | 'current_balance'
   | 'is_active'
   | 'created_at'

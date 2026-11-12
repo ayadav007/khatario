@@ -1,5 +1,7 @@
 # Khatario phone app — build plan
 
+> **Out of date (10 Nov 2026).** The counts below are from 12 Oct 2026. About 75 routes now have live phone screens. The work left is in `docs/superpowers/plans/2026-11-10-phone-app-parity.md`; the route lists per phase below are still correct.
+
 Flutter app in `phone/`. The current APK is a prototype: 13 screens, sample shop **Gupta Kirana**, no server calls. Install id `com.khatario.phone` (the Capacitor app stays `com.khatario.app`).
 
 Counted on 12 Oct 2026 from `app/(app)/**/page.tsx`.

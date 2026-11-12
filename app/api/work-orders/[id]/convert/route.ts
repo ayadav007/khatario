@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { resolveBranchId } from '@/lib/branch-helpers';
@@ -24,6 +25,7 @@ export const POST = withPremiumSubscriptionApi<{ id: string }>(
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
+      await setInvoiceAuditContext(client, { actorUserId: ctx.userId, action: 'converted' });
 
       const woRes = await client.query(
         `SELECT wo.*, c.state_code AS customer_state_code, c.billing_address AS customer_billing_address,

@@ -1,14 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows, queryOne } from '@/lib/db';
+import { queryRows } from '@/lib/db';
 import { requireStrictSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { format, eachMonthOfInterval, subDays } from 'date-fns';
+import { cashAccountSql } from '@/lib/accounting/cash-accounts';
+import { activeLedgerLineSql } from '@/lib/ledger-reversal';
+import { classifyBsAccount } from '@/lib/reports/balance-sheet';
+import { loadGroupMap } from '@/lib/reports/account-groups';
+import { buildDashboardCashFlow, type CashMovement } from '@/lib/reports/dashboard-cash-flow';
 
 export const dynamic = 'force-dynamic';
 
+const OPENING_VOUCHERS = ['opening_balance', 'opening_stock'];
+
 /**
  * GET /api/dashboard/cash-flow
- * Get monthly cash flow data for fiscal year
+ * Monthly movement of the cash and bank ledgers for a fiscal year (April to March).
+ *
+ * Read from ledger lines, not from the payments and expenses tables, so everything that moves
+ * money is counted: receipts, supplier payments, cash sales and purchases posted on the bill,
+ * expenses, salaries, tax payments, capital, drawings, loans and journals.
+ *
+ * - Lines of one voucher on one date are netted across the cash and bank ledgers, so a contra
+ *   (cash deposited to bank, transfer between banks) is neither money in nor money out.
+ * - Reversed lines and their reversals are left out, so a reversed payment or a cancelled
+ *   cash sale is shown as if it was never entered.
+ * - Opening-balance vouchers count as the opening figure, whatever their date in the year.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +33,6 @@ export async function GET(request: NextRequest) {
     const businessId = session.businessId;
     const userId = session.userId;
     const { searchParams } = new URL(request.url);
-    const fiscalYear = searchParams.get('fiscal_year');
 
     try {
       await authorize(userId, 'dashboard', 'read', { businessId });
@@ -28,207 +43,106 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Determine fiscal year
-    const currentDate = new Date();
-    let year = fiscalYear ? parseInt(fiscalYear) : currentDate.getFullYear();
-    
-    // If current month is Jan-Mar, fiscal year is previous year
-    if (currentDate.getMonth() < 3 && !fiscalYear) {
-      year = currentDate.getFullYear() - 1;
-    }
+    // Fiscal year starts in April; January to March belong to the year that started before.
+    const now = new Date();
+    const currentStartYear = now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+    const requested = parseInt(searchParams.get('fiscal_year') || '', 10);
+    const startYear = requested >= 2000 && requested <= 2100 ? requested : currentStartYear;
+    const fyStart = `${startYear}-04-01`;
+    const fyEnd = `${startYear + 1}-03-31`;
 
-    const fiscalYearStart = new Date(year, 3, 1); // April 1
-    const fiscalYearEnd = new Date(year + 1, 2, 31); // March 31
-    const fyStartStr = fiscalYearStart.toISOString().split('T')[0];
-    const fyEndStr = fiscalYearEnd.toISOString().split('T')[0];
-    /** Balance as of last day before FY (cash position on 1 Apr morning). */
-    const openingAsOf = subDays(fiscalYearStart, 1).toISOString().split('T')[0];
+    const rows = await queryRows<{
+      month: string | null;
+      direction: 'in' | 'out' | null;
+      account_id: string | null;
+      account_code: string | null;
+      account_name: string | null;
+      account_type: string | null;
+      account_group_id: string | null;
+      net: string;
+    }>(
+      `
+      WITH cash_accounts AS (
+        SELECT a.id
+          FROM accounts a
+          LEFT JOIN account_groups ag ON ag.id = a.account_group_id
+         WHERE a.business_id = $1
+           AND ${cashAccountSql('a', 'ag')}
+      ),
+      vouchers AS (
+        SELECT l.voucher_id, l.voucher_type, l.entry_date,
+               (l.entry_date < $2::date OR l.voucher_type = ANY($4::text[])) AS is_opening,
+               SUM(l.debit - l.credit) AS net
+          FROM ledger_entry_lines l
+          JOIN cash_accounts ca ON ca.id = l.account_id
+         WHERE l.business_id = $1
+           AND l.entry_date <= $3::date
+           AND ${activeLedgerLineSql('l')}
+         GROUP BY l.voucher_id, l.voucher_type, l.entry_date
+      ),
+      counter AS (
+        SELECT DISTINCT ON (v.voucher_id, v.voucher_type, v.entry_date)
+               v.voucher_id, v.voucher_type, v.entry_date, c.account_id
+          FROM vouchers v
+          JOIN ledger_entry_lines c
+            ON c.business_id = $1
+           AND c.voucher_id = v.voucher_id
+           AND c.voucher_type = v.voucher_type
+           AND c.entry_date = v.entry_date
+         WHERE NOT v.is_opening
+           AND v.net <> 0
+           AND c.account_id NOT IN (SELECT id FROM cash_accounts)
+           AND ${activeLedgerLineSql('c')}
+           AND ((v.net > 0 AND c.credit > 0) OR (v.net < 0 AND c.debit > 0))
+         ORDER BY v.voucher_id, v.voucher_type, v.entry_date, GREATEST(c.debit, c.credit) DESC, c.account_id
+      )
+      SELECT
+        CASE WHEN v.is_opening THEN NULL ELSE TO_CHAR(v.entry_date, 'YYYY-MM') END AS month,
+        CASE WHEN v.is_opening THEN NULL WHEN v.net > 0 THEN 'in' ELSE 'out' END AS direction,
+        a.id AS account_id, a.account_code, a.account_name, a.account_type, a.account_group_id,
+        SUM(v.net) AS net
+      FROM vouchers v
+      LEFT JOIN counter k
+        ON NOT v.is_opening
+       AND k.voucher_id = v.voucher_id
+       AND k.voucher_type = v.voucher_type
+       AND k.entry_date = v.entry_date
+      LEFT JOIN accounts a ON a.id = k.account_id
+      WHERE v.is_opening OR v.net <> 0
+      GROUP BY 1, 2, a.id, a.account_code, a.account_name, a.account_type, a.account_group_id
+      `,
+      [businessId, fyStart, fyEnd, OPENING_VOUCHERS]
+    );
 
-    let openingBalance = 0;
-    try {
-      const cashBankAccounts = await queryRows<{ id: string }>(
-        `SELECT id FROM accounts
-         WHERE business_id = $1
-           AND is_active = true
-           AND account_type = 'asset'
-           AND (
-             account_code LIKE '1101%'
-             OR account_code LIKE '1102%'
-             OR account_name ILIKE '%cash%'
-             OR account_name ILIKE '%bank%'
-           )`,
-        [businessId]
-      );
-
-      for (const account of cashBankAccounts) {
-        const row = await queryOne<{ balance: string }>(
-          `SELECT get_account_balance($1::uuid, $2::uuid, $3::date, NULL::uuid) AS balance`,
-          [account.id, businessId, openingAsOf]
-        );
-        openingBalance += Number(row?.balance ?? 0);
+    const groups = await loadGroupMap(businessId);
+    const { receivableAccountIds } = await import('@/lib/accounting/receivable-accounts');
+    const receivableIds = new Set(await receivableAccountIds(businessId));
+    let opening = 0;
+    const movements: CashMovement[] = [];
+    for (const r of rows) {
+      const net = Number(r.net) || 0;
+      if (!r.month || !r.direction) {
+        opening += net;
+        continue;
       }
-    } catch (error) {
-      console.warn('[cash-flow] Could not fetch ledger opening balance:', error);
-      openingBalance = 0;
+      movements.push({
+        month: r.month,
+        direction: r.direction,
+        amount: Math.abs(net),
+        counter:
+          r.account_code && r.account_type
+            ? {
+                code: r.account_code,
+                name: r.account_name || '',
+                type: r.account_type,
+                bsClass: classifyBsAccount(r.account_type, r.account_group_id, groups),
+                receivable: !!r.account_id && receivableIds.has(r.account_id),
+              }
+            : null,
+      });
     }
 
-    // Get all months in fiscal year
-    const months = eachMonthOfInterval({
-      start: fiscalYearStart,
-      end: fiscalYearEnd
-    });
-
-    // Get incoming payments (receivables) grouped by month
-    const incomingPayments = await queryRows<{
-      month: string;
-      total: number;
-    }>(
-      `SELECT 
-        TO_CHAR(payment_date, 'YYYY-MM') as month,
-        COALESCE(SUM(ABS(amount)), 0) as total
-       FROM payments
-       WHERE business_id = $1
-         AND deleted_at IS NULL
-         AND status = 'active'
-         AND type = 'receivable'
-         AND payment_date >= $2
-         AND payment_date <= $3
-       GROUP BY TO_CHAR(payment_date, 'YYYY-MM')
-       ORDER BY month`,
-      [businessId, fyStartStr, fyEndStr]
-    );
-
-    // Cash out: payment-out records (includes supplier / purchase settlements)
-    const outgoingPayments = await queryRows<{
-      month: string;
-      total: number;
-    }>(
-      `SELECT
-        TO_CHAR(payment_date, 'YYYY-MM') AS month,
-        COALESCE(SUM(ABS(amount)), 0) AS total
-       FROM payments
-       WHERE business_id = $1
-         AND deleted_at IS NULL
-         AND status = 'active'
-         AND type = 'payable'
-         AND payment_date >= $2
-         AND payment_date <= $3
-       GROUP BY TO_CHAR(payment_date, 'YYYY-MM')
-       ORDER BY month`,
-      [businessId, fyStartStr, fyEndStr]
-    );
-
-    // Get expenses grouped by month — only expenses that were actually paid in cash/bank
-    // (on_account / pay_later are Dr expense Cr payables; no cash out until supplier payment in payments)
-    const expenses = await queryRows<{
-      month: string;
-      total: number;
-    }>(
-      `SELECT 
-        TO_CHAR(expense_date, 'YYYY-MM') as month,
-        COALESCE(SUM(amount), 0) as total
-       FROM expenses
-       WHERE business_id = $1 AND deleted_at IS NULL
-         AND expense_date >= $2
-         AND expense_date <= $3
-         AND LOWER(COALESCE(payment_mode, '')) NOT IN ('on_account', 'pay_later', 'unpaid', 'credit')
-       GROUP BY TO_CHAR(expense_date, 'YYYY-MM')
-       ORDER BY month`,
-      [businessId, fyStartStr, fyEndStr]
-    );
-
-    const incomingMap = new Map<string, number>();
-    incomingPayments.forEach((p) => {
-      incomingMap.set(p.month, Number(p.total));
-    });
-
-    const outgoingMap = new Map<string, number>();
-    outgoingPayments.forEach((p) => {
-      outgoingMap.set(p.month, (outgoingMap.get(p.month) || 0) + Number(p.total));
-    });
-    expenses.forEach((e) => {
-      outgoingMap.set(e.month, (outgoingMap.get(e.month) || 0) + Number(e.total));
-    });
-
-    // Build monthly data
-    const monthlyData: Array<{
-      month: string;
-      monthLabel: string;
-      opening: number;
-      incoming: number;
-      outgoing: number;
-      closing: number;
-    }> = [];
-
-    let runningBalance = openingBalance;
-
-    months.forEach((monthDate) => {
-      const monthKey = format(monthDate, 'yyyy-MM');
-      const monthLabel = format(monthDate, 'MMM yyyy');
-      
-      const incoming = incomingMap.get(monthKey) || 0;
-      const outgoing = outgoingMap.get(monthKey) || 0;
-      const opening = runningBalance;
-      const closing = opening + incoming - outgoing;
-
-      monthlyData.push({
-        month: monthKey,
-        monthLabel,
-        opening,
-        incoming,
-        outgoing,
-        closing
-      });
-
-      runningBalance = closing;
-    });
-
-    // Calculate summary totals
-    const totalIncoming = monthlyData.reduce((sum, m) => sum + m.incoming, 0);
-    const totalOutgoing = monthlyData.reduce((sum, m) => sum + m.outgoing, 0);
-    const closingBalance = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1].closing : openingBalance;
-
-    // Calculate breakdown totals for tooltips
-    const totalPayablePayments = outgoingPayments.reduce((sum, p) => sum + Number(p.total), 0);
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.total), 0);
-    const totalReceivablePayments = incomingPayments.reduce((sum, p) => sum + Number(p.total), 0);
-
-    const openingLabel = format(fiscalYearStart, 'dd MMM yyyy');
-
-    return NextResponse.json({
-      fiscal_year: `${year}-${year + 1}`,
-      months: monthlyData,
-      chart_series: [
-        {
-          month: 'opening',
-          monthLabel: `Opening (${openingLabel})`,
-          opening: openingBalance,
-          incoming: 0,
-          outgoing: 0,
-          closing: openingBalance,
-        },
-        ...monthlyData,
-      ],
-      summary: {
-        total_incoming: totalIncoming,
-        total_outgoing: totalOutgoing,
-        opening_balance: openingBalance,
-        closing_balance: closingBalance,
-        opening_as_of: openingAsOf,
-        breakdown: {
-          incoming: {
-            receivable_payments: totalReceivablePayments,
-          },
-          outgoing: {
-            payments_out: totalPayablePayments,
-            expenses: totalExpenses,
-            /** @deprecated use payments_out — kept for older clients */
-            purchases: 0,
-            other_payments: totalPayablePayments,
-          },
-        },
-      },
-    });
+    return NextResponse.json(buildDashboardCashFlow({ startYear, opening, movements }));
   } catch (error: any) {
     console.error('Error fetching cash flow data:', error);
     return NextResponse.json(
@@ -237,4 +151,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

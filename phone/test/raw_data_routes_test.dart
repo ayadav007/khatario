@@ -169,7 +169,6 @@ void main() {
   });
 
   test('every report and HR route in the catalog still resolves', () {
-    expect(pageForHref('/employees/new')?.path, '/employees/new', reason: 'website-only form, not the employee list');
     for (final href in ['/reports/cash-flow', '/employees', '/reports/stock/valuation', '/hr/dashboard']) {
       expect(pageForHref(href), isNotNull, reason: href);
     }

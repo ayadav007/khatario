@@ -17,6 +17,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import type { InvoiceHistoryEntry } from '@/lib/invoices/invoice-history';
+import { InvoiceHistoryTimeline } from '@/components/invoices/InvoiceHistoryTimeline';
 
 interface InvoiceDetailPanelProps {
   invoiceId: string;
@@ -56,14 +58,7 @@ interface PaymentRow {
   detail?: string | null;
 }
 
-interface HistoryEntry {
-  id: string;
-  action_type: string;
-  description: string;
-  created_at: string;
-  user_name: string | null;
-  user_email: string | null;
-}
+type HistoryEntry = InvoiceHistoryEntry;
 
 function formatINR(n: number | string | null | undefined) {
   const num = Number(n ?? 0);
@@ -106,7 +101,7 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
     if (!user?.id || !invoiceId) return;
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/history?user_id=${user.id}`, {
+      const res = await fetch(`/api/invoices/${invoiceId}/history`, {
         credentials: 'include',
       });
       if (res.ok) {
@@ -434,18 +429,7 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
               <p>No activity recorded yet.</p>
             </div>
           ) : (
-            <ol className="relative border-l-2 border-border ml-2 space-y-4">
-              {history?.map((h) => (
-                <li key={h.id} className="pl-4 relative">
-                  <span className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full border-2 border-surface bg-primary-500" />
-                  <div className="text-sm text-text-primary font-medium">{h.description}</div>
-                  <div className="text-xs text-text-secondary mt-0.5">
-                    {h.user_name || h.user_email || 'System'} •{' '}
-                    {format(new Date(h.created_at), 'dd MMM yyyy, HH:mm')}
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <InvoiceHistoryTimeline invoiceId={invoiceId} entries={history ?? []} />
           )}
         </div>
       )}

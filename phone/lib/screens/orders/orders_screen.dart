@@ -157,8 +157,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (widget.embedded) return body;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(),
-      body: body,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const KBackBar(''),
+            Expanded(child: body),
+          ],
+        ),
+      ),
     );
   }
 

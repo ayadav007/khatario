@@ -133,6 +133,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const ownedEmployee = await queryOne(
+      'SELECT id FROM employees WHERE id = $1 AND business_id = $2',
+      [employee_id, business_id]
+    );
+    if (!ownedEmployee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    }
+
     const advanceLimit = await limitExceededResponse(business_id, 'salary_advances');
     if (advanceLimit) return advanceLimit;
 

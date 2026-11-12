@@ -1,0 +1,37 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "creditPurchases": [
+    {
+      "id": "6b2e0c10-0000-4000-8000-0000000000b1",
+      "bill_number": "BILL-2026-0018",
+      "bill_date": "2026-11-09",
+      "due_date": "2026-11-24",
+      "supplier_name": "Agro Wholesale Co",
+      "grand_total": 10620,
+      "paid_amount": 5000,
+      "balance_amount": 5620,
+      "days_overdue": 0,
+      "status_category": "partially_paid"
+    },
+    {
+      "id": "6b2e0c10-0000-4000-8000-0000000000b2",
+      "bill_number": "BILL-2026-0011",
+      "bill_date": "2026-10-12",
+      "due_date": "2026-10-27",
+      "supplier_name": "Metro Packaging",
+      "grand_total": 3000,
+      "paid_amount": 0,
+      "balance_amount": 3000,
+      "days_overdue": 15,
+      "status_category": "overdue"
+    }
+  ],
+  "totals": {
+    "total_purchases": 2,
+    "total_amount": 13620,
+    "total_outstanding": 8620,
+    "total_overdue": 3000
+  }
+}

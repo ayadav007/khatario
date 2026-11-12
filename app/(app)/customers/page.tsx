@@ -6,13 +6,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Loader2, Edit, Eye, Filter, X, MessageCircle } from 'lucide-react';
+import { Search, Plus, Loader2, Edit, Eye, Filter, X, MessageCircle, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Customer } from '@/types/database';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useEntityList } from '@/hooks/useEntityList';
 import {
@@ -28,6 +29,9 @@ import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { CustomerDetailPanel } from '@/components/customers/CustomerDetailPanel';
 import { clsx } from 'clsx';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { ReceivableAccountFilterSelect, useReceivableAccounts } from '@/components/customers/ReceivableAccountPicker';
+import { BulkReceivableAccountDialog } from '@/components/customers/BulkReceivableAccountDialog';
+import { receivableAccountFilterIds } from '@/lib/customers/receivable-account-options';
 
 const PAGE_SIZE = 50;
 const SUPPLIER_LIST_PARAMS = { limit: 500 };
@@ -83,6 +87,8 @@ export default function CustomersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const partyTab: PartyKind = searchParams.get('tab') === 'suppliers' ? 'suppliers' : 'customers';
+  const { canAdd, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
+  const canImport = !permissionsLoading && (canAdd(partyTab) || isPrimaryAdmin);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance' | 'khata' | 'khata-requests'>(
     () => (searchParams.get('filter') === 'khata-requests' ? 'khata-requests' : searchParams.get('filter') === 'khata' ? 'khata' : 'all'),
@@ -93,6 +99,11 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  // Customers can be recorded in separate accounts under Accounts Receivable (Domestic, Foreign, ...).
+  const receivableAccounts = useReceivableAccounts();
+  const [accountFilter, setAccountFilter] = useState('');
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkAccountOpen, setBulkAccountOpen] = useState(false);
 
   const setPartyTab = (next: PartyKind) => {
     if (next === partyTab) return;
@@ -148,8 +159,21 @@ export default function CustomersPage() {
         (filter === 'zero-balance' && isPartyBalanceSettled(balance))
       );
     };
+    const keep = receivableAccountFilterIds(
+      receivableAccounts.accounts,
+      receivableAccounts.controlAccountId,
+      accountFilter,
+    );
+    if (keep) {
+      const active = new Set(receivableAccounts.accounts.filter((a) => a.is_active).map((a) => a.id));
+      list = list.filter((c) => {
+        // An account that is no longer usable counts as none: such a customer posts to Accounts Receivable.
+        const own = c.receivable_account_id && active.has(c.receivable_account_id) ? c.receivable_account_id : null;
+        return own ? keep.accountIds.has(own) : keep.unassigned;
+      });
+    }
     return list.filter(balanceFilter);
-  }, [allCustomers, search, filter]);
+  }, [allCustomers, search, filter, accountFilter, receivableAccounts.accounts, receivableAccounts.controlAccountId]);
 
   const filteredSuppliers = useMemo(() => {
     let list = allSuppliers.filter((s) => s.is_active !== false);
@@ -193,6 +217,13 @@ export default function CustomersPage() {
       </Button>
     </div>
   );
+  // Ticking customers is only offered when there are category accounts to move them to.
+  const canSelectCustomers = partyTab === 'customers' && receivableAccounts.hasCategories;
+  const checkedCustomers = useMemo(
+    () => allCustomers.filter((c) => checkedIds.has(c.id)).map((c) => ({ id: c.id, name: c.name })),
+    [allCustomers, checkedIds],
+  );
+
   const filteredCount = partyTab === 'suppliers' ? filteredSuppliers.length : filteredCustomers.length;
   const totalPages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
 
@@ -321,6 +352,16 @@ export default function CustomersPage() {
               </>
             ) : null}
           </div>
+          {partyTab === 'customers' ? (
+            <ReceivableAccountFilterSelect
+              source={receivableAccounts}
+              value={accountFilter}
+              onChange={(id) => {
+                setAccountFilter(id);
+                setPage(1);
+              }}
+            />
+          ) : null}
         </div>
       </Card>
 
@@ -481,11 +522,39 @@ export default function CustomersPage() {
       ) : (
         <>
           {/* Desktop Table */}
+          {canSelectCustomers && checkedIds.size > 0 && (
+            <div className="mb-3 hidden items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm md:flex">
+              <span className="font-medium text-text-primary">{checkedIds.size} selected</span>
+              <Button size="sm" onClick={() => setBulkAccountOpen(true)}>
+                Set receivable account
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setCheckedIds(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
           <Card padding="none" className="overflow-hidden hidden md:block">
             <div className="overflow-x-auto">
             <table className="table w-full">
               <thead>
                 <tr className="table-header border-b border-border">
+                  {canSelectCustomers && (
+                    <th className="table-cell w-10 py-4 pl-6 pr-0 text-left">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all customers on this page"
+                        checked={paginatedCustomers.length > 0 && paginatedCustomers.every((c) => checkedIds.has(c.id))}
+                        onChange={(e) => {
+                          const next = new Set(checkedIds);
+                          for (const c of paginatedCustomers) {
+                            if (e.target.checked) next.add(c.id);
+                            else next.delete(c.id);
+                          }
+                          setCheckedIds(next);
+                        }}
+                      />
+                    </th>
+                  )}
                   <th className="table-cell text-left py-4 px-6">Name</th>
                   <th className="table-cell text-left py-4 px-6">Phone</th>
                   <th className="table-cell text-right py-4 px-6">{PARTY_BALANCE_COLUMN_HEADER}</th>
@@ -555,6 +624,21 @@ export default function CustomersPage() {
                         className="cursor-pointer border-b border-border last:border-0 transition-colors duration-150 ease-out hover:bg-slate-50 hover:shadow-[inset_3px_0_0_0_rgb(191_219_254)] dark:hover:bg-slate-700/60 dark:hover:shadow-[inset_3px_0_0_0_rgba(56,189,248,0.45)]"
                         onClick={() => setSelectedCustomerId(customer.id)}
                       >
+                        {canSelectCustomers && (
+                          <td className="table-cell w-10 py-4 pl-6 pr-0 text-left" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${customer.name}`}
+                              checked={checkedIds.has(customer.id)}
+                              onChange={(e) => {
+                                const next = new Set(checkedIds);
+                                if (e.target.checked) next.add(customer.id);
+                                else next.delete(customer.id);
+                                setCheckedIds(next);
+                              }}
+                            />
+                          </td>
+                        )}
                         <td className="table-cell text-left py-4 px-6 font-semibold text-text-primary">{customer.name}</td>
                         <td className="table-cell text-left py-4 px-6 text-text-secondary">{customer.phone || '-'}</td>
                         <td className="table-cell text-right py-4 px-6 font-bold">
@@ -607,7 +691,7 @@ export default function CustomersPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={5} className="text-center py-12 text-text-secondary">
+                    <td colSpan={canSelectCustomers ? 6 : 5} className="text-center py-12 text-text-secondary">
                       {customersLoadFailed ? loadFailedNotice : 'No customers found.'}
                     </td>
                   </tr>
@@ -752,6 +836,14 @@ export default function CustomersPage() {
               >
                 <Filter className="w-5 h-5" />
               </button>
+              {canImport ? (
+                <Link href={partyTab === 'suppliers' ? '/import/suppliers' : '/import/customers'}>
+                  <Button variant="secondary" className="h-10 px-4" aria-label="Import">
+                    <Upload className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">Import</span>
+                  </Button>
+                </Link>
+              ) : null}
               <Link href={partyTab === 'suppliers' ? '/suppliers/new' : '/customers/new'}>
                 <Button className="h-10 px-4">
                   <Plus className="w-4 h-4 md:mr-2" />
@@ -849,6 +941,15 @@ export default function CustomersPage() {
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <BulkReceivableAccountDialog
+        open={bulkAccountOpen}
+        customers={checkedCustomers}
+        onClose={() => {
+          setBulkAccountOpen(false);
+          setCheckedIds(new Set());
+        }}
+        onDone={() => void refreshCustomers()}
+      />
     </>
   );
 }

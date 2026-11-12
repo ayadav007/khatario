@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Employee } from '@/types/database';
 import { checkLimit } from '@/lib/subscription';
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      business_id,
+      business_id: claimedBusinessId,
       name,
       email,
       phone,
@@ -202,9 +202,14 @@ export async function POST(request: NextRequest) {
     } = body;
     const createdByUserId = resolveCreatedByUserId(request, body);
 
-    if (!business_id || !name || !phone) {
+    // The business always comes from the session. A body business_id is optional and must match it.
+    const tenant = requireTenantBusinessId(request, claimedBusinessId);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+
+    if (!name || !phone) {
       return NextResponse.json(
-        { error: 'business_id, name, and phone are required' },
+        { error: 'name and phone are required' },
         { status: 400 }
       );
     }

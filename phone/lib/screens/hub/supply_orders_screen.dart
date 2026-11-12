@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import '../../ui/form_kit.dart';
 import '../invoices/invoice_form_screen.dart';
 import 'hub_common.dart';
 import 'incoming_bills_screen.dart';
@@ -598,7 +599,7 @@ class _NewSupplyOrderScreenState extends State<NewSupplyOrderScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.lg, AppSpace.gutter, 0),
-                child: TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Note to supplier (optional)')),
+                child: KTextField(label: 'Note to supplier (optional)', controller: _notes),
               ),
             ],
           ],

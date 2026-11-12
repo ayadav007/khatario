@@ -118,7 +118,7 @@ export async function fetchRosterWeek(input: {
     `SELECT r.employee_id, r.roster_date::text, r.shift_id, r.is_day_off,
             s.shift_name, s.start_time::text, s.end_time::text
      FROM shift_roster_entries r
-     LEFT JOIN shifts s ON s.id = r.shift_id
+     LEFT JOIN shifts s ON s.id = r.shift_id AND s.business_id = r.business_id
      WHERE r.business_id = $1 AND r.roster_date >= $2::date AND r.roster_date <= $3::date`,
     [input.businessId, weekStart, weekEnd],
   );
@@ -159,17 +159,23 @@ export async function upsertRosterEntries(
     const isDayOff = entry.is_day_off === true;
     const shiftId = isDayOff ? null : entry.shift_id ?? null;
 
-    await queryOne(
+    // Written only for this business's own employee and shift.
+    const saved = await queryOne(
       `INSERT INTO shift_roster_entries (
          business_id, employee_id, roster_date, shift_id, is_day_off, assigned_by, notes, updated_at
-       ) VALUES ($1, $2, $3::date, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+       )
+       SELECT $1::uuid, e.id, $3::date, $4::uuid, $5::boolean, $6::uuid, $7::text, CURRENT_TIMESTAMP
+       FROM employees e
+       WHERE e.id = $2::uuid AND e.business_id = $1::uuid
+         AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM shifts sh WHERE sh.id = $4::uuid AND sh.business_id = $1::uuid))
        ON CONFLICT (business_id, employee_id, roster_date)
        DO UPDATE SET
          shift_id = EXCLUDED.shift_id,
          is_day_off = EXCLUDED.is_day_off,
          assigned_by = EXCLUDED.assigned_by,
          notes = EXCLUDED.notes,
-         updated_at = CURRENT_TIMESTAMP`,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING id`,
       [
         businessId,
         entry.employee_id,
@@ -180,6 +186,7 @@ export async function upsertRosterEntries(
         entry.notes ?? null,
       ],
     );
+    if (!saved) continue;
     count++;
   }
   return count;

@@ -5,10 +5,11 @@ import { marketingRobots, resolveCanonical } from '@/lib/marketing-builder/seo';
 import { isSafeImageSrc } from '@/lib/marketing-builder/safe-url';
 import { publicSiteUrl } from '@/lib/blog/site';
 import { loadPricingCatalog } from '@/lib/subscription/pricing-catalog';
+import { khatarioOrganizationJsonLd } from '@/lib/marketing/brand-structured-data';
 
 export const revalidate = 300;
 
-const TITLE = 'Khatario — GST Billing, Stock & WhatsApp Invoices for Indian Shops';
+const TITLE = 'Khatario Billing App: GST Bills, Stock & WhatsApp Invoices for Shops';
 const DESCRIPTION =
   'Make GST-ready bills in under a minute, share them on WhatsApp, track who owes you, manage stock and file GSTR reports. Free to start, works on phone and computer.';
 
@@ -54,23 +55,21 @@ export default async function Page() {
   );
 }
 
-/** Organization, WebSite and SoftwareApplication so search engines can show the brand and app details. */
+/**
+ * Organization, WebSite and SoftwareApplication so search engines can show the brand and app details.
+ * `alternateName` tells Google that "Khatario" is a brand (it was auto-correcting the name to "khataro").
+ */
 function homeStructuredData() {
   const site = publicSiteUrl();
   return {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': `${site}/#organization`,
-        name: 'Khatario',
-        url: site,
-        logo: `${site}/icon.png`,
-      },
+      khatarioOrganizationJsonLd(site),
       {
         '@type': 'WebSite',
         '@id': `${site}/#website`,
         name: 'Khatario',
+        alternateName: ['Khatario Billing App', 'khatario.com'],
         url: site,
         publisher: { '@id': `${site}/#organization` },
         inLanguage: 'en-IN',
@@ -78,6 +77,7 @@ function homeStructuredData() {
       {
         '@type': 'SoftwareApplication',
         name: 'Khatario',
+        alternateName: 'Khatario Billing App',
         url: site,
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web, Android',

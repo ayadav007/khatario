@@ -1,4 +1,5 @@
 import { getPool } from '@/lib/db';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { createInvoiceInTransaction } from '@/lib/invoices/invoice-create-service';
 import { roundMoney } from '@/lib/store/pricing';
@@ -54,6 +55,7 @@ export async function fulfillStoreOrderPayment(
   } | null = null;
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'store_order' });
     const claimed = await client.query<{ id: string }>(
       `INSERT INTO store_payment_events
          (business_id, order_id, provider, idempotency_key, payload, amount, status, processed_at)
@@ -219,6 +221,7 @@ export async function recordStorePaymentFailure(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'store_order' });
     const order = await client.query<{ payment_status: string }>(
       `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [orderId, businessId],
@@ -465,6 +468,7 @@ export async function createInvoiceForStoreOrder(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: actorUserId ?? null, action: 'store_order' });
     const order = await client.query(
       `SELECT * FROM store_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [orderId, businessId],

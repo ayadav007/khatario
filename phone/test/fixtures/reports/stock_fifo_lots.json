@@ -1,0 +1,13 @@
+{
+  "report": {
+    "method": "fifo",
+    "recost_from": null,
+    "as_on_date": "2026-11-11",
+    "items": [
+      {"item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001", "item_name": "Basmati Rice 5kg", "open_qty": 42, "open_value": 17220, "unmatched": [], "lots": [
+        {"kind": "purchase", "doc_id": "p9", "doc_number": "B-101", "party": "Rajesh Traders", "date": "2026-10-20", "qty": 60, "remaining": 42, "unit_cost": 410, "total": 17220, "issued_to": []}
+      ]}
+    ],
+    "totals": {"open_value": 17220, "ledger_inventory": 17220, "difference": 0}
+  }
+}

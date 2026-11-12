@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { userBelongsToBusiness } from '@/lib/user-businesses';
 import { queryOne, query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,9 @@ export async function PATCH(
     await authorize(userId, 'recruitment', 'update', { businessId, resourceId: params.id });
 
     const body = await request.json();
+    if (body.interviewer_user_id) {
+      if (!(await userBelongsToBusiness(String(body.interviewer_user_id), businessId))) return NextResponse.json({ error: 'Interviewer not found' }, { status: 404 });
+    }
     const fields: string[] = [];
     const values: unknown[] = [params.interviewId, params.id, businessId];
     const allowed = [

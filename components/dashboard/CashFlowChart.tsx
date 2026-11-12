@@ -18,6 +18,12 @@ interface CashFlowMonth {
   closing: number;
 }
 
+interface CashFlowLine {
+  key: string;
+  label: string;
+  amount: number;
+}
+
 interface CashFlowData {
   fiscal_year: string;
   months: CashFlowMonth[];
@@ -28,15 +34,8 @@ interface CashFlowData {
     opening_balance: number;
     closing_balance: number;
     breakdown?: {
-      incoming: {
-        receivable_payments: number;
-      };
-      outgoing: {
-        purchases?: number;
-        payments_out?: number;
-        expenses: number;
-        other_payments: number;
-      };
+      incoming: { lines?: CashFlowLine[] };
+      outgoing: { lines?: CashFlowLine[] };
     };
   };
 }
@@ -308,10 +307,10 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
             <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
               <p className="font-semibold mb-2">Cash Flow Calculation:</p>
               <ul className="space-y-1 list-disc list-inside">
-                <li><strong>Incoming:</strong> Payments received from customers (receivables)</li>
-                <li><strong>Outgoing:</strong> Payments out (suppliers, payables) + cash expenses (rent, utilities, etc.)</li>
+                <li><strong>Incoming:</strong> All money received in cash &amp; bank accounts: sales, customer payments, capital added by the owner, loans</li>
+                <li><strong>Outgoing:</strong> All money paid from cash &amp; bank accounts: suppliers, expenses, salaries, taxes, owner drawings, loan repayments</li>
                 <li><strong>Opening:</strong> Ledger balance of cash &amp; bank accounts on the day before 1 Apr</li>
-                <li><strong>Expenses:</strong> Rent, utilities, and other operational expenses</li>
+                <li><strong>Not counted:</strong> Transfers between your own cash &amp; bank accounts, and reversed entries</li>
                 <li><strong>Closing Balance:</strong> Opening balance + Incoming - Outgoing</li>
               </ul>
               <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
@@ -391,10 +390,12 @@ function CashFlowSummary({
             <div className="absolute left-0 bottom-full mb-2 w-72 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
               <p className="font-bold mb-3 text-sm">Incoming Cash Flow Breakdown:</p>
               <div className="space-y-2">
-                <div className="flex justify-between items-center py-1 border-b border-gray-700">
-                  <span className="text-gray-300">Payments from Customers:</span>
-                  <span className="font-semibold text-green-400">₹{data.summary.breakdown.incoming.receivable_payments.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                </div>
+                {(data.summary.breakdown.incoming.lines ?? []).map((line) => (
+                  <div key={line.key} className="flex justify-between items-center gap-3 py-1 border-b border-gray-700">
+                    <span className="text-gray-300">{line.label}:</span>
+                    <span className="font-semibold text-green-400">₹{line.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between items-center pt-1 border-t border-gray-700">
                   <span className="font-semibold">Total Incoming:</span>
                   <span className="font-bold text-green-400 text-sm">₹{data.summary.total_incoming.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
@@ -415,16 +416,12 @@ function CashFlowSummary({
             <div className="absolute left-0 bottom-full mb-2 w-72 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
               <p className="font-bold mb-3 text-sm">Outgoing Cash Flow Breakdown:</p>
               <div className="space-y-2">
-                <div className="flex justify-between items-center py-1 border-b border-gray-700">
-                  <span className="text-gray-300">Payments out:</span>
-                  <span className="font-semibold text-red-400">
-                    ₹{(data.summary.breakdown.outgoing.payments_out ?? data.summary.breakdown.outgoing.other_payments ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-gray-700">
-                  <span className="text-gray-300">Expenses (cash):</span>
-                  <span className="font-semibold text-red-400">₹{data.summary.breakdown.outgoing.expenses.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                </div>
+                {(data.summary.breakdown.outgoing.lines ?? []).map((line) => (
+                  <div key={line.key} className="flex justify-between items-center gap-3 py-1 border-b border-gray-700">
+                    <span className="text-gray-300">{line.label}:</span>
+                    <span className="font-semibold text-red-400">₹{line.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between items-center pt-1 border-t-2 border-gray-600">
                   <span className="font-semibold">Total Outgoing:</span>
                   <span className="font-bold text-red-400 text-sm">₹{data.summary.total_outgoing.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>

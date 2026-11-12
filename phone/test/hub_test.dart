@@ -8,6 +8,7 @@ import 'package:khatario_phone/screens/hub/supply_orders_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/theme.dart';
 import 'package:khatario_phone/ui/kit.dart';
+import 'support/finders.dart';
 
 /// Supplier Hub on the phone: receiving a connected supplier's bill and confirming an order.
 class _FakeApi extends KhatarioApi {
@@ -134,7 +135,7 @@ void main() {
     expect(find.text('Adds 10 PCS of Kurti Floral Blue M'), findsOneWidget);
 
     // 4 packs short on the carton line.
-    await tester.enterText(find.widgetWithText(TextField, 'Short').first, '4');
+    await tester.enterText(textFieldLabelled('Short', within: HubQtyField).first, '4');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Receive and create purchase'));
     await tester.pumpAndSettle();

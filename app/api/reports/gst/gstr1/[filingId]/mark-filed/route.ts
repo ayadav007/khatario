@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
@@ -119,6 +120,7 @@ export async function POST(
     const periodMonth = parseInt(periodParts[2], 10);
 
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'gstr1_locked', reason: `GSTR-1 filed for ${filing.filing_period}` });
 
     try {
       const gen = new GSTR1Generator();

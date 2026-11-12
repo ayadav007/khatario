@@ -5,6 +5,7 @@
  * from the gateway payload.
  */
 import { getPool, queryOne } from '@/lib/db';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import {
@@ -138,6 +139,7 @@ export async function applyKhataGatewayPayment(input: {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'payment_recorded' });
     const r = await client.query<{ id: string; customer_id: string; amount: string; status: string }>(
       `SELECT id, customer_id, amount::text, status FROM khata_payments
         WHERE id = $1 AND business_id = $2 FOR UPDATE`,

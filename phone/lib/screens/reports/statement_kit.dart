@@ -42,6 +42,8 @@ class StatementSection extends StatelessWidget {
     this.icon,
     this.emptyText = 'Nothing in this period',
     this.signed = true,
+    this.onLineTap,
+    this.onTotalTap,
   });
 
   final String title;
@@ -54,9 +56,15 @@ class StatementSection extends StatelessWidget {
   /// Colour the total green / red by its sign.
   final bool signed;
 
+  /// Makes each line tappable; gets the line's index in [lines].
+  final ValueChanged<int>? onLineTap;
+
+  /// Makes the total row tappable.
+  final VoidCallback? onTotalTap;
+
   @override
   Widget build(BuildContext context) {
-    final shown = lines.where((l) => l.amount.abs() >= 0.005).toList();
+    final shown = [for (final (i, l) in lines.indexed) if (l.amount.abs() >= 0.005) (i, l)];
     return Padding(
       padding: const EdgeInsets.only(top: AppSpace.md),
       child: Column(
@@ -70,9 +78,9 @@ class StatementSection extends StatelessWidget {
               children: [
                 if (shown.isEmpty)
                   Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(emptyText, style: AppText.caption)),
-                for (final (i, line) in shown.indexed) ...[
-                  if (i > 0) const Divider(height: 1, color: AppColors.hairline),
-                  StatementRow(label: line.label, amount: line.amount),
+                for (final (n, (index, line)) in shown.indexed) ...[
+                  if (n > 0) const Divider(height: 1, color: AppColors.hairline),
+                  StatementRow(label: line.label, amount: line.amount, onTap: onLineTap == null ? null : () => onLineTap!(index)),
                 ],
                 if (total != null) ...[
                   const Divider(height: 1, thickness: 1.5, color: AppColors.hairline),
@@ -80,6 +88,7 @@ class StatementSection extends StatelessWidget {
                     label: totalLabel ?? 'Total',
                     amount: total!,
                     strong: true,
+                    onTap: onTotalTap,
                     color: !signed || total!.abs() < 0.005 ? null : (total! < 0 ? AppColors.negative : AppColors.positive),
                   ),
                 ],
@@ -93,17 +102,20 @@ class StatementSection extends StatelessWidget {
 }
 
 class StatementRow extends StatelessWidget {
-  const StatementRow({super.key, required this.label, required this.amount, this.strong = false, this.color});
+  const StatementRow({super.key, required this.label, required this.amount, this.strong = false, this.color, this.onTap});
 
   final String label;
   final num amount;
   final bool strong;
   final Color? color;
 
+  /// When set, the row opens the entries behind the figure.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final style = (strong ? AppText.bodyStrong : AppText.body).copyWith(fontFeatures: AppText.tabular);
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,9 +123,11 @@ class StatementRow extends StatelessWidget {
           Expanded(child: Text(label, style: strong ? AppText.bodyStrong : AppText.body.copyWith(color: AppColors.ink2))),
           const SizedBox(width: AppSpace.md),
           Text(statementMoney(amount), style: style.copyWith(color: color ?? (amount < -0.004 ? AppColors.negative : null))),
+          if (onTap != null) Padding(padding: const EdgeInsets.only(left: 4, top: 2), child: Icon(LucideIcons.chevronRight, size: 16, color: AppColors.ink3)),
         ],
       ),
     );
+    return onTap == null ? row : InkWell(onTap: onTap, highlightColor: AppColors.sunken, child: row);
   }
 }
 
@@ -169,6 +183,7 @@ class StatementScaffold extends StatelessWidget {
     required this.onRetry,
     required this.children,
     this.periodBar,
+    this.onShare,
   });
 
   final String title;
@@ -182,6 +197,9 @@ class StatementScaffold extends StatelessWidget {
 
   /// Replaces the period chips (for an "as on" date instead of a range).
   final Widget? periodBar;
+
+  /// Shows the "Share PDF" button in the header when set.
+  final VoidCallback? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +216,7 @@ class StatementScaffold extends StatelessWidget {
                 KIconButton(icon: LucideIcons.arrowLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
                 const SizedBox(width: 4),
                 Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.heading.copyWith(fontSize: 18))),
+                if (onShare != null) KIconButton(icon: LucideIcons.share2, tooltip: 'Share PDF', onTap: onShare!),
                 const SizedBox(width: AppSpace.gutter),
               ]),
             ),

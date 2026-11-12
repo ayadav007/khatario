@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import * as db from '@/lib/db';
 import { Pool, PoolClient } from 'pg';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
@@ -136,6 +137,7 @@ export async function POST(request: NextRequest) {
     // Start transaction
     if (!client) throw new Error('Failed to get database client');
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'restored', reason: 'Restored from backup' });
 
     const stats: any = {};
 

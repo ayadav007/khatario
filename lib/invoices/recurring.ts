@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import {
   createInvoiceInTransaction,
   InvoiceCreateServiceError,
@@ -61,6 +62,7 @@ export async function runRecurringInvoices(
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        await setInvoiceAuditContext(client, { actorUserId: null, action: 'created', reason: 'Recurring invoice' });
         const claim = await client.query(
           `INSERT INTO recurring_invoice_history (recurring_invoice_id, run_date, status)
            VALUES ($1, $2, 'processing')

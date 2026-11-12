@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { createPaymentLedgerEntries, getAccountForPaymentMode } from '@/lib/ledger-utils';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
@@ -138,6 +139,7 @@ export async function settleStoreOrderReceipt(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'payment_recorded' });
     const order = await client.query<{
       payment_status: string;
       invoice_id: string | null;
@@ -361,6 +363,7 @@ export async function collectStoreOrderCash(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: null, action: 'payment_recorded' });
     const order = await client.query<{
       payment_status: string;
       payment_provider: string | null;

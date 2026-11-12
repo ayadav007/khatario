@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryOne } from '@/lib/db';
 import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { guardLedgerRoute } from '@/lib/http/ledger-route-guard';
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: guard.userId, action: 'payment_recorded' });
     const result = await adjustAdvance(client, {
       businessId: guard.businessId,
       branchId: guard.branchId,

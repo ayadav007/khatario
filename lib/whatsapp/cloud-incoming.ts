@@ -35,18 +35,19 @@ async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullabl
   await sendShopOrderReply(job.businessId, job.from, outcome);
 }
 
-/** Saves the customer's file locally (Meta's copy needs a token and expires); undefined if it can't be fetched. */
+/**
+ * Link to the customer's file on Meta; nothing is downloaded. The inbox route fetches it with the
+ * business's token when someone opens it. Files we must keep (payment screenshots) are copied then.
+ */
 async function storeCloudMedia(
-  businessId: string,
+  _businessId: string,
   media: NonNullable<CloudIncomingQueueJob['media']>,
 ): Promise<string | undefined> {
   try {
-    const { downloadMedia } = await import('@/lib/meta-whatsapp');
-    const { saveInboxMedia } = await import('./inbox-media');
-    const file = await downloadMedia({ businessId, mediaId: media.id });
-    return await saveInboxMedia(businessId, file.buffer, media.mimeType || file.mimeType);
+    const { cloudMediaRefUrl } = await import('./media-ref-server');
+    return cloudMediaRefUrl(media);
   } catch (err) {
-    console.error('[cloud-incoming] media download failed:', err instanceof Error ? err.message : err);
+    console.error('[cloud-incoming] media link failed:', err instanceof Error ? err.message : err);
     return undefined;
   }
 }

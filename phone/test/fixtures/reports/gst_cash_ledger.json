@@ -1,0 +1,14 @@
+{
+  "as_on_date": "2026-11-11",
+  "igst": {"cash_account_code": "1130", "cash_balance": 5000, "output_liability_account": "2150", "output_liability": 3600, "rcm_liability_account": "2156", "rcm_liability": 0},
+  "cgst": {"cash_account_code": "1131", "cash_balance": 2500, "output_liability_account": "2151", "output_liability": 7200, "rcm_liability_account": "2157", "rcm_liability": 180},
+  "sgst": {"cash_account_code": "1132", "cash_balance": 2500, "output_liability_account": "2152", "output_liability": 7200, "rcm_liability_account": "2158", "rcm_liability": 180},
+  "cess": {"cash_account_code": "1133", "cash_balance": 0, "output_liability_account": "2153", "output_liability": 0, "rcm_liability_account": null, "rcm_liability": 0},
+  "pooled_rcm": {"liability_account": "2155", "liability": 0, "cash_account_when_unspecified": "1130"},
+  "statement": [
+    {"id": "l1", "date": "2026-11-02", "head": "IGST", "account_code": "1130", "voucher_type": "gst_cash_deposit", "voucher_id": "a0000000-0000-4000-8000-000000000001", "debit": 5000, "credit": 0, "running_balance": 5000, "narration": "GST cash deposit", "reference_number": "CH-778"},
+    {"id": "l2", "date": "2026-11-05", "head": "CGST", "account_code": "1131", "voucher_type": "gst_cash_utilization", "voucher_id": "a0000000-0000-4000-8000-000000000002", "debit": 0, "credit": 1500, "running_balance": 2500, "narration": "Utilisation", "reference_number": null},
+    {"id": "l3", "date": "2026-11-06", "head": "SGST", "account_code": "1132", "voucher_type": "gst_cash_deposit", "voucher_id": "a0000000-0000-4000-8000-000000000003", "debit": 2500, "credit": 0, "running_balance": 2500, "narration": "Reversal: wrong head", "reference_number": null}
+  ],
+  "branch_scope": "all_branches"
+}

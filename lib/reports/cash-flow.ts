@@ -14,6 +14,8 @@ export type CfAccount = {
   /** Balance-sheet class from the account's group chain; code ranges are the fallback. */
   bsClass?: BsClass | null;
   isCash: boolean;
+  /** Accounts Receivable or an account under it (set by the loader); such accounts have free codes. */
+  receivable?: boolean;
   /** Dr - Cr before the period. */
   opening: number;
   periodDebit: number;
@@ -151,7 +153,13 @@ export function buildCashFlow(accounts: CfAccount[], opts: CashFlowOptions = {})
     }
 
     const match = WC_LABELS.find(([re]) => re.test(a.code));
-    const label = match ? match[1] : a.type === 'liability' ? 'Other current liabilities' : 'Other current assets';
+    const label = a.receivable
+      ? 'Trade receivables'
+      : match
+        ? match[1]
+        : a.type === 'liability'
+          ? 'Other current liabilities'
+          : 'Other current assets';
     add(wc, label, -drCr, a.code);
   }
 

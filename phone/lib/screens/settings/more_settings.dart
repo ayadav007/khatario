@@ -429,8 +429,16 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => Scaffold(
                 backgroundColor: AppColors.bg,
-                appBar: AppBar(title: const Text('Appearance')),
-                body: AppearanceEditor(session: widget.session),
+                body: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const KBackBar('Appearance'),
+                      Expanded(child: AppearanceEditor(session: widget.session)),
+                    ],
+                  ),
+                ),
               ),
             )),
           ),

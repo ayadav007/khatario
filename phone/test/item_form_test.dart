@@ -7,6 +7,7 @@ import 'package:khatario_phone/screens/items/item_form_logic.dart';
 import 'package:khatario_phone/screens/items/item_form_screen.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/theme.dart';
+import 'package:khatario_phone/ui/form_kit.dart';
 
 class _Api extends KhatarioApi {
   _Api(this.item) : super(Dio());
@@ -85,6 +86,147 @@ void main() {
     expect(itemFieldText(null), '');
   });
 
+  group('new item fields', () {
+    test('create carries the new keys only when they are set', () {
+      final bare = itemCreateBody(name: 'Rice');
+      for (final k in ['barcode', 'category_id', 'brand', 'mrp', 'default_supplier_id', 'pack_size', 'pack_unit', 'image_url']) {
+        expect(bare.containsKey(k), isFalse, reason: k);
+      }
+      final body = itemCreateBody(
+        name: 'Rice',
+        barcode: ' 8901234567 897 ',
+        categoryId: 'cat-1',
+        brand: ' Hyper ',
+        mrp: '120.50',
+        defaultSupplierId: 'sup-1',
+        packSize: '12',
+        packUnit: 'ctn',
+        imageUrl: 'data:image/png;base64,abc',
+      );
+      expect(body['barcode'], '8901234567897');
+      expect(body['category_id'], 'cat-1');
+      expect(body['brand'], 'Hyper');
+      expect(body['mrp'], 120.5);
+      expect(body['default_supplier_id'], 'sup-1');
+      expect(body['pack_size'], 12);
+      expect(body['pack_unit'], 'CTN');
+      expect(body['image_url'], 'data:image/png;base64,abc');
+      expect(body.containsKey('track_batch'), isFalse);
+    });
+
+    test('an untouched edit keeps barcode, category, brand, MRP, supplier, pack and photo', () {
+      final existing = {
+        'barcode': '8901234567897',
+        'category_id': 'cat-1',
+        'brand': 'Hyper',
+        'mrp': '120.00',
+        'default_supplier_id': 'sup-1',
+        'pack_size': 12,
+        'pack_unit': 'CTN',
+        'image_url': 'data:image/png;base64,abc',
+      };
+      final body = itemUpdateBody(
+        existing: existing,
+        name: 'Rice',
+        barcode: '8901234567897',
+        categoryId: 'cat-1',
+        brand: 'Hyper',
+        mrp: '120',
+        defaultSupplierId: 'sup-1',
+        packSize: '12',
+        packUnit: 'CTN',
+        imageUrl: 'data:image/png;base64,abc',
+      );
+      // PATCH leaves barcode, category and pack alone when the key is missing.
+      expect(body.containsKey('barcode'), isFalse);
+      expect(body.containsKey('category_id'), isFalse);
+      expect(body.containsKey('pack_size'), isFalse);
+      expect(body.containsKey('pack_unit'), isFalse);
+      // It wipes these when missing, so they are carried.
+      expect(body['brand'], 'Hyper');
+      expect(body['mrp'], '120.00');
+      expect(body['default_supplier_id'], 'sup-1');
+      expect(body['image_url'], 'data:image/png;base64,abc');
+    });
+
+    test('not passing the fields behaves as before', () {
+      final body = itemUpdateBody(existing: {'barcode': '123', 'category_id': 'c', 'brand': 'B'}, name: 'Rice');
+      expect(body.containsKey('barcode'), isFalse);
+      expect(body.containsKey('category_id'), isFalse);
+      expect(body['brand'], 'B');
+    });
+
+    test('changed values are sent and cleared values clear', () {
+      final existing = {
+        'barcode': '8901234567897',
+        'category_id': 'cat-1',
+        'brand': 'Hyper',
+        'mrp': '120.00',
+        'default_supplier_id': 'sup-1',
+        'pack_size': 12,
+        'pack_unit': 'CTN',
+        'image_url': 'data:image/png;base64,abc',
+      };
+      final changed = itemUpdateBody(
+        existing: existing,
+        name: 'Rice',
+        barcode: 'ABCD1234',
+        categoryId: 'cat-2',
+        brand: 'New',
+        mrp: '130',
+        defaultSupplierId: 'sup-2',
+        packSize: '24',
+        packUnit: 'BOX',
+        imageUrl: 'data:image/png;base64,zzz',
+      );
+      expect(changed['barcode'], 'ABCD1234');
+      expect(changed['category_id'], 'cat-2');
+      expect(changed['brand'], 'New');
+      expect(changed['mrp'], 130);
+      expect(changed['default_supplier_id'], 'sup-2');
+      expect(changed['pack_size'], 24);
+      expect(changed['pack_unit'], 'BOX');
+      expect(changed['image_url'], 'data:image/png;base64,zzz');
+
+      final cleared = itemUpdateBody(
+        existing: existing,
+        name: 'Rice',
+        barcode: '',
+        categoryId: '',
+        brand: '',
+        mrp: '',
+        defaultSupplierId: '',
+        packSize: '',
+        packUnit: '',
+        imageUrl: '',
+      );
+      expect(cleared.containsKey('barcode'), isTrue);
+      expect(cleared['barcode'], isNull);
+      expect(cleared['category_id'], isNull);
+      expect(cleared['pack_size'], isNull);
+      expect(cleared['pack_unit'], isNull);
+      expect(cleared.containsKey('brand'), isFalse);
+      expect(cleared.containsKey('mrp'), isFalse);
+      expect(cleared.containsKey('default_supplier_id'), isFalse);
+      expect(cleared['image_url'], '');
+    });
+
+    test('validation follows the website', () {
+      expect(validateItemExtras(), isEmpty);
+      expect(validateItemExtras(barcode: 'ab')['barcode'], 'Barcode must be at least 3 characters');
+      expect(validateItemExtras(barcode: '8901234567897')['barcode'], 'Invalid EAN-13 check digit');
+      expect(validateItemExtras(barcode: '8901234567890'), isEmpty);
+      expect(validateItemExtras(barcode: 'ab-c'), isEmpty);
+      expect(validateItemExtras(barcode: '8901234567'), isEmpty);
+      expect(validateItemExtras(barcode: '123456789013')['barcode'], 'Invalid UPC-A check digit');
+      expect(validateItemExtras(packSize: '1', packUnit: 'CTN')['pack_size'], 'Pack size must be a whole number from 2 to 100000');
+      expect(validateItemExtras(packSize: '12')['pack_unit'], 'Enter the pack name, such as CTN or BOX');
+      expect(validateItemExtras(packUnit: 'CTN')['pack_size'], 'Pack size must be a whole number from 2 to 100000');
+      expect(validateItemExtras(packSize: '12', packUnit: 'pcs', unit: 'PCS')['pack_unit'], 'Pack name must be different from the stock unit');
+      expect(validateItemExtras(packSize: '12', packUnit: 'CTN', unit: 'PCS'), isEmpty);
+    });
+  });
+
   testWidgets('editing an item shows a pencil, fills the form, and keeps the photo', (tester) async {
     final api = _Api({
       'id': 'item-1',
@@ -129,4 +271,242 @@ void main() {
     expect(find.text('Edit item'), findsNothing);
     expect(find.text('Rice'), findsWidgets);
   });
+
+  group('new item fields on the form', () {
+    Future<_FormApi> open(WidgetTester tester, _FormApi api, {String? itemId, Future<String?> Function(BuildContext)? scan, Future<PickedPhoto?> Function()? pick}) async {
+      await tester.binding.setSurfaceSize(const Size(420, 2600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final session = AppSession(api, {'isPrimaryAdmin': true, 'user': <String, dynamic>{}, 'business': <String, dynamic>{}});
+      await tester.pumpWidget(MaterialApp(
+        theme: khatarioTheme(),
+        home: ItemFormScreen(session: session, itemId: itemId, scanBarcode: scan, pickPhoto: pick),
+      ));
+      await tester.pumpAndSettle();
+      return api;
+    }
+
+    Future<void> typeIn(WidgetTester tester, String label, String text) async {
+      final kit = find.descendant(of: find.byWidgetPredicate((w) => w is KTextField && w.label == label), matching: find.byType(TextField));
+      await tester.enterText(kit.evaluate().isNotEmpty ? kit.first : find.widgetWithText(TextField, label).first, text);
+      await tester.pump();
+    }
+
+    testWidgets('the new fields are on the create form', (tester) async {
+      await open(tester, _FormApi());
+      for (final label in ['Identify', 'Stock', 'Photos', 'Barcode', 'Category', 'Brand', 'MRP', 'Default supplier', 'Pack size', 'Pack name']) {
+        expect(find.text(label), findsWidgets, reason: label);
+      }
+      expect(find.text('No category'), findsOneWidget);
+      expect(find.text('Scan with camera'), findsOneWidget);
+    });
+
+    testWidgets('a service has no brand field', (tester) async {
+      await open(tester, _FormApi());
+      expect(find.text('Brand'), findsOneWidget);
+      await tester.tap(find.text('Service'));
+      await tester.pumpAndSettle();
+      expect(find.text('Brand'), findsNothing);
+    });
+
+    testWidgets('a category and a supplier can be picked, the scanner fills the barcode, and all of it is posted', (tester) async {
+      final api = await open(tester, _FormApi(), scan: (_) async => '8901234567890');
+      await typeIn(tester, 'Name *', 'Rice');
+      await tester.tap(find.text('Scan with camera'));
+      await tester.pumpAndSettle();
+      expect(find.text('8901234567890'), findsOneWidget);
+
+      await tester.tap(find.text('No category'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Staples').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Select'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Acme Traders').last);
+      await tester.pumpAndSettle();
+
+      await typeIn(tester, 'Brand', 'Hyper');
+      await typeIn(tester, 'Pack size', '12');
+      await typeIn(tester, 'Pack name', 'ctn');
+      await tester.tap(find.text('Save item'));
+      await tester.pumpAndSettle();
+
+      final body = api.posted!;
+      expect(body['barcode'], '8901234567890');
+      expect(body['category_id'], 'cat-1');
+      expect(body['default_supplier_id'], 'sup-1');
+      expect(body['brand'], 'Hyper');
+      expect(body['pack_size'], 12);
+      expect(body['pack_unit'], 'CTN');
+      expect(body.containsKey('business_id'), isFalse);
+      expect(body.containsKey('created_by'), isFalse);
+      expect(body.containsKey('track_batch'), isFalse);
+    });
+
+    testWidgets('a bad barcode shows under the field and nothing is sent', (tester) async {
+      final api = await open(tester, _FormApi());
+      await typeIn(tester, 'Name *', 'Rice');
+      await typeIn(tester, 'Barcode', '8901234567897');
+      await tester.tap(find.text('Save item'));
+      await tester.pumpAndSettle();
+      expect(find.text('Invalid EAN-13 check digit'), findsOneWidget);
+      expect(api.posted, isNull);
+    });
+
+    testWidgets('a bad pack shows under the field and nothing is sent', (tester) async {
+      final api = await open(tester, _FormApi());
+      await typeIn(tester, 'Name *', 'Rice');
+      await typeIn(tester, 'Pack size', '12');
+      await tester.tap(find.text('Save item'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter the pack name, such as CTN or BOX'), findsOneWidget);
+      expect(api.posted, isNull);
+    });
+
+    testWidgets('a refused save shows the server message and keeps the form', (tester) async {
+      final api = _FormApi()..refuse = ApiException('Barcode "ABC123" already exists for item "Soap"', status: 400);
+      await open(tester, api);
+      await typeIn(tester, 'Name *', 'Rice');
+      await typeIn(tester, 'Barcode', 'ABC123');
+      await tester.tap(find.text('Save item'));
+      await tester.pumpAndSettle();
+      expect(find.text('Barcode "ABC123" already exists for item "Soap"'), findsOneWidget);
+      expect(find.text('New item'), findsOneWidget);
+      expect(find.text('ABC123'), findsOneWidget);
+      expect(find.text('Rice'), findsOneWidget);
+    });
+
+    testWidgets('a photo is uploaded, shown, and sent as image_url', (tester) async {
+      final api = await open(tester, _FormApi(), pick: () async => (bytes: _png, name: 'rice.png'));
+      await typeIn(tester, 'Name *', 'Rice');
+      await tester.tap(find.text('Add photo'));
+      await tester.pumpAndSettle();
+      expect(api.uploads, ['/api/upload/image']);
+      expect(find.text('Remove'), findsOneWidget);
+      await tester.tap(find.text('Save item'));
+      await tester.pumpAndSettle();
+      expect(api.posted!['image_url'], startsWith('data:image/png;base64,'));
+    });
+
+    testWidgets('an item that has these fields shows them and keeps them when untouched', (tester) async {
+      final api = _FormApi(item: {
+        'id': 'item-1',
+        'name': 'Rice',
+        'selling_price': '95.00',
+        'unit': 'KG',
+        'item_type': 'goods',
+        'barcode': '8901234567890',
+        'category_id': 'cat-1',
+        'brand': 'Hyper',
+        'mrp': '120.00',
+        'default_supplier_id': 'sup-1',
+        'pack_size': 12,
+        'pack_unit': 'CTN',
+        'image_url': 'data:image/png;base64,abc',
+      });
+      await open(tester, api, itemId: 'item-1');
+      expect(find.text('8901234567890'), findsOneWidget);
+      expect(find.text('Staples'), findsOneWidget);
+      expect(find.text('Acme Traders'), findsOneWidget);
+      expect(find.text('Hyper'), findsOneWidget);
+      expect(find.text('120'), findsOneWidget);
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      final body = api.patched!;
+      expect(body.containsKey('barcode'), isFalse);
+      expect(body.containsKey('category_id'), isFalse);
+      expect(body.containsKey('pack_size'), isFalse);
+      expect(body['brand'], 'Hyper');
+      expect(body['mrp'], '120.00');
+      expect(body['default_supplier_id'], 'sup-1');
+      expect(body['image_url'], 'data:image/png;base64,abc');
+    });
+
+    testWidgets('editing the barcode and clearing the category sends just those', (tester) async {
+      final api = _FormApi(item: {
+        'id': 'item-1',
+        'name': 'Rice',
+        'selling_price': '95.00',
+        'unit': 'KG',
+        'item_type': 'goods',
+        'barcode': '8901234567890',
+        'category_id': 'cat-1',
+      });
+      await open(tester, api, itemId: 'item-1');
+      await typeIn(tester, 'Barcode', 'ABCD1234');
+      await tester.tap(find.text('Staples'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('No category').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      final body = api.patched!;
+      expect(body['barcode'], 'ABCD1234');
+      expect(body.containsKey('category_id'), isTrue);
+      expect(body['category_id'], isNull);
+    });
+  });
+}
+
+const _png = <int>[137, 80, 78, 71, 13, 10, 26, 10];
+
+class _FormApi extends KhatarioApi {
+  _FormApi({Map<String, dynamic>? item})
+      : item = item ?? {},
+        super(Dio());
+
+  final Map<String, dynamic> item;
+  Map<String, dynamic>? posted;
+  Map<String, dynamic>? patched;
+  ApiException? refuse;
+  final uploads = <String>[];
+
+  @override
+  Future<Map<String, dynamic>> getJson(String path) async {
+    if (path == '/api/categories') {
+      return {
+        'categories': [
+          {'id': 'cat-1', 'name': 'Staples'},
+          {'id': 'cat-2', 'name': 'Dairy'},
+        ]
+      };
+    }
+    if (path == '/api/suppliers/sup-1') {
+      return {'supplier': {'id': 'sup-1', 'name': 'Acme Traders'}};
+    }
+    if (path.startsWith('/api/items/')) return {'item': item};
+    throw ApiException('not found', status: 404);
+  }
+
+  @override
+  Future<dynamic> getData(String path) async {
+    if (path.startsWith('/api/suppliers')) {
+      return {
+        'suppliers': [
+          {'id': 'sup-1', 'name': 'Acme Traders', 'phone': '9999999999'},
+        ]
+      };
+    }
+    return {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body, {Map<String, String>? headers}) async {
+    final refused = refuse;
+    if (refused != null) throw refused;
+    posted = body;
+    return {'item': {'id': 'new'}};
+  }
+
+  @override
+  Future<Map<String, dynamic>> patchJson(String path, Map<String, dynamic> body) async {
+    patched = body;
+    return {'item': item};
+  }
+
+  @override
+  Future<Map<String, dynamic>> uploadImage(String path, {required List<int> bytes, required String fileName, Map<String, String> fields = const {}}) async {
+    uploads.add(path);
+    return {'url': 'data:image/png;base64,iVBORw0KGgo='};
+  }
 }

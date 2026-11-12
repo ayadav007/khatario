@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool, queryRows } from '@/lib/db';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
 import {
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       const client = await getPool().connect();
       try {
         await client.query('BEGIN');
+        await setInvoiceAuditContext(client, { actorUserId: userId, action: 'payment_recorded' });
         const result = await settleKhataPayment(client, {
           businessId,
           customerId: params.id,

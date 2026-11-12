@@ -1,0 +1,62 @@
+{
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-10",
+  "branch_id": null,
+  "items": [
+    {
+      "item_id": "0c1d6f10-1a2b-4c3d-8e4f-000000000001",
+      "item_name": "Basmati Rice 5kg",
+      "hsn_sac": "1006",
+      "unit": "BAG",
+      "quantity_purchased": 50,
+      "quantity_returned": 2,
+      "quantity": 48,
+      "amount": 19680,
+      "tax": 984,
+      "amount_with_tax": 20664,
+      "discount": 200,
+      "average_cost": 410,
+      "bill_count": 3
+    },
+    {
+      "item_id": null,
+      "item_name": "Packing material",
+      "hsn_sac": null,
+      "unit": null,
+      "quantity_purchased": 10,
+      "quantity_returned": 0,
+      "quantity": 10,
+      "amount": 320,
+      "tax": 58,
+      "amount_with_tax": 378,
+      "discount": 0,
+      "average_cost": 32,
+      "bill_count": 1
+    }
+  ],
+  "totals": {
+    "quantity_purchased": 60,
+    "quantity_returned": 2,
+    "quantity": 58,
+    "amount": 20000,
+    "tax": 1042,
+    "amount_with_tax": 21042,
+    "discount": 200
+  },
+  "charges": {
+    "contract": "goods_lines",
+    "note": "Item amounts are goods and catalogue lines.",
+    "incidental_freight": {
+      "taxable": 500,
+      "tax": 25,
+      "refunded_taxable": 0,
+      "refunded_tax": 0,
+      "net_taxable": 500,
+      "net_tax": 25
+    },
+    "independent_services": {
+      "taxable": 250,
+      "tax": 45
+    }
+  }
+}

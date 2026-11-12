@@ -1,0 +1,337 @@
+{
+  "generatedAt": "2026-11-09T09:50:35.902Z",
+  "site": "sc-domain:khatario.com",
+  "range": {
+    "startDate": "2026-10-11",
+    "endDate": "2026-11-07"
+  },
+  "totals": {
+    "clicks": 0,
+    "impressions": 67
+  },
+  "daily": [
+    {
+      "keys": [
+        "2026-10-23"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 1
+    },
+    {
+      "keys": [
+        "2026-10-24"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-10-25"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-10-26"
+      ],
+      "clicks": 0,
+      "impressions": 6,
+      "ctr": 0,
+      "position": 7.333333333333333
+    },
+    {
+      "keys": [
+        "2026-10-27"
+      ],
+      "clicks": 0,
+      "impressions": 7,
+      "ctr": 0,
+      "position": 8.714285714285715
+    },
+    {
+      "keys": [
+        "2026-10-28"
+      ],
+      "clicks": 0,
+      "impressions": 27,
+      "ctr": 0,
+      "position": 7.185185185185185
+    },
+    {
+      "keys": [
+        "2026-10-29"
+      ],
+      "clicks": 0,
+      "impressions": 16,
+      "ctr": 0,
+      "position": 7.625
+    },
+    {
+      "keys": [
+        "2026-10-30"
+      ],
+      "clicks": 0,
+      "impressions": 5,
+      "ctr": 0,
+      "position": 8.8
+    },
+    {
+      "keys": [
+        "2026-10-31"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-11-01"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-11-02"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-11-03"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-11-04"
+      ],
+      "clicks": 0,
+      "impressions": 0,
+      "ctr": 0,
+      "position": 0
+    },
+    {
+      "keys": [
+        "2026-11-05"
+      ],
+      "clicks": 0,
+      "impressions": 2,
+      "ctr": 0,
+      "position": 6
+    },
+    {
+      "keys": [
+        "2026-11-06"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 1
+    },
+    {
+      "keys": [
+        "2026-11-07"
+      ],
+      "clicks": 0,
+      "impressions": 2,
+      "ctr": 0,
+      "position": 4
+    }
+  ],
+  "queries": [],
+  "pages": [
+    {
+      "keys": [
+        "https://khatario.com/"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 1
+    },
+    {
+      "keys": [
+        "https://khatario.com/blog"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 8
+    },
+    {
+      "keys": [
+        "https://khatario.com/blog/gst-bill-kaise-banaye-mobile-se"
+      ],
+      "clicks": 0,
+      "impressions": 2,
+      "ctr": 0,
+      "position": 6.5
+    },
+    {
+      "keys": [
+        "https://khatario.com/guides"
+      ],
+      "clicks": 0,
+      "impressions": 62,
+      "ctr": 0,
+      "position": 7.580645161290323
+    },
+    {
+      "keys": [
+        "https://khatario.com/signup"
+      ],
+      "clicks": 0,
+      "impressions": 2,
+      "ctr": 0,
+      "position": 2.5
+    },
+    {
+      "keys": [
+        "https://khatario.com/solution/accounting"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 1
+    },
+    {
+      "keys": [
+        "https://khatario.com/solution/inventory"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 6
+    },
+    {
+      "keys": [
+        "https://khatario.com/themes"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 7
+    },
+    {
+      "keys": [
+        "https://khatario.com/themes/heritage-couture"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 6
+    },
+    {
+      "keys": [
+        "https://khatario.com/themes/premium-grocery"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 10
+    },
+    {
+      "keys": [
+        "https://www.khatario.com/"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 1
+    }
+  ],
+  "sitemaps": [
+    {
+      "path": "https://khatario.com/sitemap.xml",
+      "lastSubmitted": "2026-11-08T06:30:09.076Z",
+      "isPending": false,
+      "isSitemapsIndex": false,
+      "type": "sitemap",
+      "lastDownloaded": "2026-11-08T06:30:11.579Z",
+      "warnings": "0",
+      "errors": "0",
+      "contents": [
+        {
+          "type": "web",
+          "submitted": "15",
+          "indexed": "0"
+        }
+      ]
+    }
+  ],
+  "inspections": [
+    {
+      "url": "/",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-07T08:35:22Z",
+      "googleCanonical": "https://khatario.com/",
+      "userCanonical": "https://khatario.com/"
+    },
+    {
+      "url": "/solution/accounting",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-03T17:55:57Z",
+      "googleCanonical": "https://khatario.com/solution/accounting",
+      "userCanonical": "https://khatario.com/solution/accounting"
+    },
+    {
+      "url": "/solution/inventory",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-10-26T12:23:47Z",
+      "googleCanonical": "https://khatario.com/solution/inventory",
+      "userCanonical": "https://khatario.com/solution/inventory"
+    },
+    {
+      "url": "/guides",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-03T08:29:52Z",
+      "googleCanonical": "https://khatario.com/guides",
+      "userCanonical": "https://khatario.com/guides"
+    },
+    {
+      "url": "/blog",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-07T13:57:16Z",
+      "googleCanonical": "https://khatario.com/blog",
+      "userCanonical": "https://khatario.com/blog"
+    },
+    {
+      "url": "/book-demo",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-07T21:27:16Z",
+      "googleCanonical": "https://khatario.com/book-demo",
+      "userCanonical": "https://khatario.com/book-demo"
+    },
+    {
+      "url": "/blog/gst-bill-kaise-banaye-mobile-se",
+      "verdict": "PASS",
+      "coverage": "Submitted and indexed",
+      "lastCrawl": "2026-11-05T07:20:24Z",
+      "googleCanonical": "https://khatario.com/blog/gst-bill-kaise-banaye-mobile-se",
+      "userCanonical": "https://khatario.com/blog/gst-bill-kaise-banaye-mobile-se"
+    }
+  ]
+}

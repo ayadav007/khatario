@@ -1,0 +1,34 @@
+{
+  "filing_period": "2026-11",
+  "summary": {
+    "MATCHED": {"count": 3, "total_books_itc": 1620, "total_gstr2b_itc": 1620},
+    "PARTIALLY_MATCHED": {"count": 1, "total_books_itc": 900, "total_gstr2b_itc": 810},
+    "MISSING_IN_2B": {"count": 1, "total_books_itc": 450, "total_gstr2b_itc": 0},
+    "ONLY_IN_2B": {"count": 1, "total_books_itc": 0, "total_gstr2b_itc": 270}
+  },
+  "missing_references": [
+    {"source": "purchase", "reason": "no_supplier_bill_number", "purchase_id": "5b2d0c10-0000-4000-8000-0000000000aa", "gstr2b_invoice_id": null, "bill_date": "2026-11-07"}
+  ],
+  "invoices": [
+    {"id": "c0000000-0000-4000-8000-000000000001", "match_status": "MATCHED", "supplier_gstin": "27AABCA1234B1ZP", "invoice_number": "BILL-2026-0018", "invoice_date": "2026-11-02", "document_type": "invoice",
+     "books": {"taxable_value": 9000, "igst": 0, "cgst": 810, "sgst": 810, "cess": 0, "itc_amount": 1620},
+     "gstr2b": {"taxable_value": 9000, "igst": 0, "cgst": 810, "sgst": 810, "cess": 0, "itc_eligibility": "Y"},
+     "differences": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0},
+     "is_import_goods": false, "is_import_services": false, "is_credit_note": false, "decision": null, "remarks": null, "decision_date": null, "eligible_itc_amount": null, "deferred_to_period": null, "decided_by_name": null},
+    {"id": "c0000000-0000-4000-8000-000000000002", "match_status": "PARTIALLY_MATCHED", "supplier_gstin": "29AABCU9603R1ZM", "invoice_number": "SUP-554", "invoice_date": "2026-11-03", "document_type": "invoice",
+     "books": {"taxable_value": 5000, "igst": 900, "cgst": 0, "sgst": 0, "cess": 0, "itc_amount": 900},
+     "gstr2b": {"taxable_value": 4500, "igst": 810, "cgst": 0, "sgst": 0, "cess": 0, "itc_eligibility": "Y"},
+     "differences": {"taxable_value": 500, "igst": 90, "cgst": 0, "sgst": 0, "cess": 0},
+     "is_import_goods": false, "is_import_services": false, "is_credit_note": false, "decision": "ITC_DEFERRED_TO_FUTURE", "remarks": "Supplier will correct", "decision_date": "2026-11-09", "eligible_itc_amount": null, "deferred_to_period": "2026-12", "decided_by_name": "Asha"},
+    {"id": "c0000000-0000-4000-8000-000000000003", "match_status": "MISSING_IN_2B", "supplier_gstin": "27AABCA1234B1ZP", "invoice_number": "BILL-2026-0020", "invoice_date": "2026-11-06", "document_type": "invoice",
+     "books": {"taxable_value": 2500, "igst": 0, "cgst": 225, "sgst": 225, "cess": 0, "itc_amount": 450},
+     "gstr2b": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0, "itc_eligibility": null},
+     "differences": {"taxable_value": 2500, "igst": 0, "cgst": 225, "sgst": 225, "cess": 0},
+     "is_import_goods": false, "is_import_services": false, "is_credit_note": false, "decision": null, "remarks": null, "decision_date": null, "eligible_itc_amount": null, "deferred_to_period": null, "decided_by_name": null},
+    {"id": "c0000000-0000-4000-8000-000000000004", "match_status": "ONLY_IN_2B", "supplier_gstin": "24AAACC1206D1ZM", "invoice_number": "GJ-77", "invoice_date": "2026-11-08", "document_type": "invoice",
+     "books": {"taxable_value": 0, "igst": 0, "cgst": 0, "sgst": 0, "cess": 0, "itc_amount": 0},
+     "gstr2b": {"taxable_value": 1500, "igst": 270, "cgst": 0, "sgst": 0, "cess": 0, "itc_eligibility": "Y"},
+     "differences": {"taxable_value": -1500, "igst": -270, "cgst": 0, "sgst": 0, "cess": 0},
+     "is_import_goods": false, "is_import_services": false, "is_credit_note": false, "decision": null, "remarks": null, "decision_date": null, "eligible_itc_amount": null, "deferred_to_period": null, "decided_by_name": null}
+  ]
+}

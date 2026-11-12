@@ -7,6 +7,7 @@ import { activeLedgerLineSql } from '@/lib/ledger-reversal';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { isInvoiceInFiledGstr1 } from '@/lib/invoices/gstr1-filed';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { parseChangeReason, setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,7 @@ const AMEND_DATE_FIELDS: Array<{ column: string; label: string }> = [
  * After finalization, change the invoice date, due date, billing address, the name printed
  * on this bill, the ship-to address, notes, and the PO / e-way bill / dispatch references.
  * Place of supply, items, amounts, and the customer master stay put.
+ * An optional `reason` (up to 500 characters) is kept in the invoice's history.
  * A date change reverses the invoice voucher and posts it again on the new date.
  */
 export async function PATCH(
@@ -110,6 +112,11 @@ export async function PATCH(
       return NextResponse.json({ error: `Enter a valid ${f.label}, or leave it blank.`, code: 'INVALID_DATE' }, { status: 400 });
     }
     extras.push({ column: f.column, value });
+  }
+
+  const reason = parseChangeReason(body.reason);
+  if (reason === 'too_long') {
+    return NextResponse.json({ error: 'Reason for change is too long.', code: 'REASON_TOO_LONG' }, { status: 400 });
   }
 
   const pool = getPool();
@@ -225,6 +232,7 @@ export async function PATCH(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'amended', reason });
     const locked = await client.query<{ status: string; document_type: string | null }>(
       `SELECT status, document_type FROM invoices
         WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
@@ -284,6 +292,7 @@ export async function PATCH(
 
     if (dateChanged) {
       const posted = await client.query<{
+        id: string;
         account_id: string;
         debit: string;
         credit: string;
@@ -291,13 +300,24 @@ export async function PATCH(
         reference_number: string | null;
         branch_id: string | null;
       }>(
-        `SELECT l.account_id, l.debit, l.credit, l.narration, l.reference_number, l.branch_id
+        `SELECT l.id, l.account_id, l.debit, l.credit, l.narration, l.reference_number, l.branch_id
            FROM ledger_entry_lines l
           WHERE l.business_id = $1 AND l.voucher_type = 'invoice' AND l.voucher_id = $2
             AND ${activeLedgerLineSql('l')}
           ORDER BY l.created_at, l.id`,
         [businessId, params.id],
       );
+
+      // A customer moved to another receivable account since this invoice was posted: the
+      // reversal below carries the old receivable line to the customer's current account, so
+      // the line is posted back there, not on the account the move already settled.
+      const { customerSweptLines } = await import('@/lib/accounting/receivable-account-move');
+      const moved = await customerSweptLines(client, {
+        businessId,
+        voucherType: 'invoice',
+        voucherId: params.id,
+        lines: posted.rows.map((l) => ({ id: l.id, account_id: l.account_id })),
+      });
 
       await reverseInvoicePostingForRepost(client, {
         businessId,
@@ -315,7 +335,7 @@ export async function PATCH(
           [
             businessId,
             params.id,
-            line.account_id,
+            moved?.sweptLineIds.has(line.id) ? moved.currentAccountId : line.account_id,
             invoiceDate,
             line.debit,
             line.credit,
