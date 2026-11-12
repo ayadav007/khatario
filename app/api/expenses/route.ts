@@ -375,7 +375,8 @@ export async function POST(request: NextRequest) {
         const supply = await loadExpenseSupplyStates(
           business_id,
           supplier_id,
-          supplierGstin
+          supplierGstin,
+          finalBranchId
         );
         lineBill = await buildExpenseBillFromLines({
           businessId: business_id,

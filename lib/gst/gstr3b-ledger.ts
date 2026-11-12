@@ -161,6 +161,19 @@ function branchIdList(scope: BranchScope): string[] | null {
 }
 
 /**
+ * Ledger lines without a branch (legacy or business-level postings) belong to the head office
+ * registration only: counting them in every GSTIN's 3B would report the same tax several times.
+ * The head office registration is the one that holds the default branch.
+ */
+async function scopeHoldsUnbranchedLines(businessId: string, branchIds: string[]): Promise<boolean> {
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM branches WHERE business_id = $1::uuid AND is_default = true AND id = ANY($2::uuid[]) LIMIT 1`,
+    [businessId, branchIds]
+  );
+  return rows.length > 0;
+}
+
+/**
  * Generic ledger net for liability-style interpretation: SUM(credit) − SUM(debit).
  * Uses `ledger_entry_lines` (debit/credit columns; no invoice-derived tax).
  */
@@ -185,7 +198,9 @@ export async function getLedgerNetCreditMinusDebit(
   let branchClause = '';
   const branchIds = branchIdList(branchId);
   if (branchIds) {
-    branchClause = ' AND (branch_id IS NULL OR branch_id = ANY($6::uuid[]))';
+    branchClause = (await scopeHoldsUnbranchedLines(businessId, branchIds))
+      ? ' AND (branch_id IS NULL OR branch_id = ANY($6::uuid[]))'
+      : ' AND branch_id = ANY($6::uuid[])';
     params.push(branchIds);
   }
 
@@ -223,12 +238,13 @@ export async function getLedgerBalanceBefore(
   const acc = await getAccountByCode(businessId, accountCode);
   if (!acc) return 0;
   const branchIds = branchIdList(branchId);
+  const withUnbranched = branchIds ? await scopeHoldsUnbranchedLines(businessId, branchIds) : true;
   const { rows } = await getPool().query<{ net: string }>(
     `SELECT COALESCE(SUM(credit) - SUM(debit), 0)::text AS net
        FROM ledger_entry_lines
       WHERE business_id = $1::uuid AND account_id = $2::uuid AND entry_date < $3::date
-        AND ($4::uuid[] IS NULL OR branch_id IS NULL OR branch_id = ANY($4::uuid[]))`,
-    [businessId, acc.id, beforeDate, branchIds]
+        AND ($4::uuid[] IS NULL OR branch_id = ANY($4::uuid[]) OR (branch_id IS NULL AND $5::boolean))`,
+    [businessId, acc.id, beforeDate, branchIds, withUnbranched]
   );
   return round2(parseFloat(rows[0]?.net ?? '0'));
 }

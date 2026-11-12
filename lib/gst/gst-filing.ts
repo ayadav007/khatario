@@ -1,4 +1,5 @@
 import { getPool, queryOne, queryRows } from '@/lib/db';
+import { registrationBranchIds } from '@/lib/gst/registration';
 import {
   GSTR3BGenerator,
   type GSTR3BData,
@@ -294,7 +295,7 @@ export async function validateBeforeFiling(
     throw new Error(`Resolve warnings before filing: ${critical.join(' ')}`);
   }
 
-  const orgDue = await loadGstFilingOrgDefaults(businessId);
+  const orgDue = await loadGstFilingOrgDefaults(businessId, branchId);
   const dueOpts = options?.dueDateOptions ?? mergeGstDueDateOptions(orgDue);
   const fd = options?.filingDateIso ?? new Date().toISOString().slice(0, 10);
   const late = lateFilingWarningMessage(gstPeriod, fd, dueOpts);
@@ -303,7 +304,10 @@ export async function validateBeforeFiling(
   }
 }
 
-/** Effective filing row: prefers branch-specific row over business-wide (branch_id NULL). */
+/**
+ * Effective filing row. A GST return is filed per GSTIN, so a row recorded by any branch on the same
+ * GSTIN counts; prefers this branch's row, then a sibling's, then the business-wide (NULL) row.
+ */
 export async function getGstFilingForScope(
   businessId: string,
   branchId: string,
@@ -316,11 +320,11 @@ export async function getGstFilingForScope(
     FROM gst_filings
     WHERE business_id = $1::uuid
       AND gst_period = $2
-      AND (branch_id = $3::uuid OR branch_id IS NULL)
-    ORDER BY (branch_id IS NOT NULL) DESC, updated_at DESC
+      AND (branch_id = ANY($3::uuid[]) OR branch_id IS NULL)
+    ORDER BY (branch_id IS NOT NULL) DESC, (branch_id = $4::uuid) DESC, updated_at DESC
     LIMIT 1
     `,
-    [businessId, gstPeriod, branchId]
+    [businessId, gstPeriod, await registrationBranchIds(getPool(), businessId, branchId), branchId]
   );
 }
 
@@ -339,10 +343,10 @@ export async function isGstPeriodFiled(
     WHERE business_id = $1::uuid
       AND gst_period = $2
       AND status = 'filed'
-      AND (branch_id IS NULL OR branch_id = $3::uuid)
+      AND (branch_id IS NULL OR branch_id = ANY($3::uuid[]))
     LIMIT 1
     `,
-    [businessId, gstPeriod, branchId]
+    [businessId, gstPeriod, await registrationBranchIds(getPool(), businessId, branchId)]
   );
   return !!row;
 }
@@ -441,7 +445,7 @@ export async function getGstFilingStatus(params: {
   const remaining_payable = round2(outstanding.total_liability);
   const payment_done = remaining_payable <= 1;
 
-  const orgDue = await loadGstFilingOrgDefaults(businessId);
+  const orgDue = await loadGstFilingOrgDefaults(businessId, branchId);
   const dueDateOverride = params.dueDateOverride ?? {
     filingFrequency: null,
     qrmpDueDay: null,
@@ -545,10 +549,11 @@ export async function fileGstReturn(params: FileGstReturnParams): Promise<{
     const existing = await client.query<GstFilingRow>(
       `
       SELECT * FROM gst_filings
-      WHERE business_id = $1::uuid AND gst_period = $2 AND branch_id = $3::uuid
+      WHERE business_id = $1::uuid AND gst_period = $2 AND branch_id = ANY($3::uuid[])
+      ORDER BY (branch_id = $4::uuid) DESC, updated_at DESC
       FOR UPDATE
       `,
-      [businessId, gstPeriod, branchId]
+      [businessId, gstPeriod, await registrationBranchIds(client, businessId, branchId), branchId]
     );
 
     if (existing.rows.length > 0 && existing.rows[0].status === 'filed') {
@@ -563,7 +568,7 @@ export async function fileGstReturn(params: FileGstReturnParams): Promise<{
       throw new Error(`Resolve warnings before filing: ${critical.join(' ')}`);
     }
 
-    const orgDue = await loadGstFilingOrgDefaults(businessId);
+    const orgDue = await loadGstFilingOrgDefaults(businessId, branchId);
     const dueDateOpts = mergeGstDueDateOptions(orgDue, dueDateOverride);
     const preFileDate = new Date().toISOString().slice(0, 10);
     const lateMsg = lateFilingWarningMessage(gstPeriod, preFileDate, dueDateOpts);
@@ -755,10 +760,11 @@ export async function reviseGstReturn(params: ReviseGstReturnParams): Promise<Gs
     const existing = await client.query<GstFilingRow>(
       `
       SELECT * FROM gst_filings
-      WHERE business_id = $1::uuid AND gst_period = $2 AND branch_id = $3::uuid
+      WHERE business_id = $1::uuid AND gst_period = $2 AND branch_id = ANY($3::uuid[])
+      ORDER BY (branch_id = $4::uuid) DESC, updated_at DESC
       FOR UPDATE
       `,
-      [businessId, gstPeriod, branchId]
+      [businessId, gstPeriod, await registrationBranchIds(client, businessId, branchId), branchId]
     );
 
     if (existing.rows.length === 0) {

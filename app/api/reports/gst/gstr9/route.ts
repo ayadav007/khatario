@@ -101,8 +101,10 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // One annual return per GSTIN: the branch picks the registration.
     const filters: GSTR9Filters = {
       business_id,
+      branch_id: finalBranchId,
       financial_year: fy
     };
     

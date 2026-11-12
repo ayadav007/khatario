@@ -255,3 +255,10 @@ export async function branchRegistrationKeys(db: Queryable, businessId: string):
 export async function registrationGstinKey(db: Queryable, businessId: string, branchId: string | null | undefined): Promise<string> {
   return (await resolveSupplierRegistration(db, businessId, branchId)).gstin ?? '';
 }
+
+/** True when both branches file under the same GSTIN (a credit or debit note must stay on its invoice's GSTIN). */
+export async function sameRegistration(db: Queryable, businessId: string, branchA: string, branchB: string): Promise<boolean> {
+  if (branchA === branchB) return true;
+  const keys = await branchRegistrationKeys(db, businessId);
+  return keys.has(branchA) && keys.has(branchB) && keys.get(branchA) === keys.get(branchB);
+}
