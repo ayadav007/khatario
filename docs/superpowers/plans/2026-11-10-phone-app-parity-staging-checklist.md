@@ -279,6 +279,25 @@ No server change in this stage; the APK alone is enough.
 188. More › Settings › Messaging › Saved replies → add, edit, delete; in a chat, the saved-replies sheet lists them and its Manage link opens this screen.
 189. Order verification → a WhatsApp order with a payment screenshot → the screenshot shows and opens full size → Verify & Create Invoice; reject another with a reason. No "Open on website" button.
 
+## Stage 8: remaining pages (commits 5c6ed962 to adb5c57c)
+
+Deploy first: the supplier dashboard reads changed on the server (they no longer need a business id from the client).
+
+### Supplier dashboard, to-do, settings (Task 43)
+190. As a supplier with a linked customer who shares low stock: More › Supplier dashboard → "Customers with Low Stock" cards and "Low Stock Alerts".
+191. Propose order on a customer card → quantities filled to the shortage → Send order asks first → sent; the order shows under View Requests.
+192. Dismiss a low-stock alert → it goes away. Contact on an alert opens WhatsApp.
+193. Analytics → period and ranking load. Thresholds → delete one (asks first); the screen says new thresholds are no longer added.
+194. More › Tools › To Do List → stats and views → add one assigned to a team member → edit it → snooze until tomorrow → mark complete → reopen.
+195. More › Settings → the restore-backup row says why it opens the website. Workflow automation still opens the website.
+
+### Website pages by design (Task 44)
+196. More menu → Report builder, GSTR-9, Schedule III and Bank import rows show a small globe and "Opens the website"; Help, Support and Privacy rows do not (they open phone screens).
+197. Tools → Image Reducer, BG Remover and WhatsApp Group Extractor cards → each opens the website inside the app.
+198. Open GSTR-9 → a loading bar runs along the top while it loads.
+199. Inside a website page, follow a link, then press Back → you return to the first page; Back again leaves the screen.
+200. Turn on airplane mode and open a website page → the offline message with Try again; turn it off and tap Try again → the page loads.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.
@@ -302,3 +321,5 @@ No server change in this stage; the APK alone is enough.
 - Campaign button clicks always show 0: the server never records which button a customer tapped (`whatsapp_campaign_recipients.button_clicked_id`), and the website page reads a field the API never sends.
 - Approving a WhatsApp order by id accepts any not-yet-invoiced order of the business, not only a draft WhatsApp order (the phone only offers WhatsApp drafts).
 - A lead opened from a link shows Delete only on your own comments, because no reply says who is a supervisor (the server still lets supervisors delete).
+- The website's Workflow automation page saves nothing: there is no workflows backend (`/api/workflows` does not exist).
+- Supply-order proposals check only the approved supplier link, not whether the customer shares low stock (`allow_low_stock_access`); the buyer still confirms.
