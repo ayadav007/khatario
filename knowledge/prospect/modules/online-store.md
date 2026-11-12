@@ -23,7 +23,7 @@ Yes. Pick a ready-made theme from the theme store (khatario.com/themes, or Explo
 
 ## How are orders delivered and returned?
 
-Deliver with your own staff, let customers pick up from the shop, or book a Shiprocket courier from the order. Customers can ask for a return from their account within the return window you set; you approve it, receive the items back and refund to the original payment, store credit, cash or UPI.
+Deliver with your own staff, let customers pick up from the shop, or book a Shiprocket courier from the order (connect Shiprocket once under Settings → Integrations). Customers can ask for a return from their account within the return window you set; you approve it, receive the items back and refund to the original payment, store credit, cash or UPI.
 
 ## What else does the store include?
 

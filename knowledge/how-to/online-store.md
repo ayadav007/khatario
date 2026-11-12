@@ -13,7 +13,7 @@ required_feature: online_store
 
 1. Go to Settings > Sales & billing > Online Store and open the Store setup tab.
 2. Enter your **Store URL** (for example my-shop). Your store address becomes my-shop.khatario.com. Use 3–63 lowercase letters, numbers or hyphens.
-3. Set **Minimum order (₹)** if you want one, keep **Allow pay on delivery** on if you accept cash on delivery, and choose the **Delivery partner** (Self (own staff) or Shiprocket). Add delivery areas and charges under Delivery zones.
+3. Set **Minimum order (₹)** if you want one, keep **Allow pay on delivery** on if you accept cash on delivery, and choose the **Delivery partner** (Self (own staff) or Shiprocket). Shiprocket appears only after you connect it under Settings → Integrations → Shiprocket by adding your Shiprocket API user (from Shiprocket → Settings → API, not your main login). Add delivery areas and charges under Delivery zones.
 4. Choose which items to sell: in Inventory > Items, turn on **Show in online store** on each item (on the item form or directly in the Items list). Turn on **Featured item (online store)** for up to 6 items to show on the home page.
 5. Turn on **Store is live** and tap Save. Use Copy to share the store link with customers on WhatsApp.
 

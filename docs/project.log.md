@@ -1855,3 +1855,100 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Not checked in a browser, on a phone, or with a real gateway or real WhatsApp. On staging: a customer with 3+ bills gets one message with the statement PDF; `/b/<token>` pay all and pay some (Razorpay test mode and Easebuzz sandbox); invoices split oldest first; payment received message; Recovery counts.
   - Bulk send (Payment reminders → Send reminders) still sends one message per selected invoice.
   - The combined message wording is fixed (not editable in settings); email reminders are still per invoice.
+
+## 2026-11-12: Phone app "walk every page" test, and four fixes it found
+- **Asked:** a test that starts from every More link and bottom tab of the Flutter shop-owner app and taps through to the deepest page, then fixes what it finds.
+- **Decided:**
+  - New `phone/test/walk_every_page_test.dart` (helpers in `phone/test/support/walk/`, sample replies in `phone/test/fixtures/walk/` and `walk_data_*.dart`). It opens each link the way the app does, taps every row, tile, tab and chip (never a button that writes), goes back, and fails on any exception, overflow, stuck spinner, server-error state with a 200 reply, tap that does nothing, GET with no sample reply, or write that reaches the fake server. Run alone with `flutter test test/walk_every_page_test.dart` (tag `walk`); `WALK_ONLY=reports,tds` and `WALK_TABS=Home` narrow it. About 90 seconds.
+  - Fixed in the phone app: item detail header overflowed when its subtitle wrapped (`detail_panel_shell.dart`); report rows with no record behind them (cash sale, free-text line) looked tappable and did nothing (`table_report_screen.dart`, four reports); Edit customer from a report showed a spinner forever because no role information was passed (`customer_form_screen.dart`); "+ New" under quotes and payments on a customer opened from a report did nothing (`sales_reports.dart`).
+  - Left for a decision: settings that save the moment a choice is tapped, the Parties list reminder icon sending a WhatsApp message in one tap, attendance status chips and quantity steppers writing on tap. Full list in `.superpowers/sdd/2026-11-10-phone-app-parity/walk-report.md`.
+- **Shipped:** nothing committed. Phone `lib/` changes: the four files above. New tests: `detail_panel_shell_test.dart`, plus one each in `table_report_test.dart`, `customer_form_test.dart`, `sales_purchase_reports_test.dart`.
+- **Open:**
+  - The walk uses sample replies, so it shows pages open and lead on, not that figures are right against real data. Printer, PDF and camera screens open but are not walked (they need phone plugins).
+  - Dates on screens come from the real clock, so the walk is deterministic in what it checks but not in the dates drawn.
+
+## 2026-11-12: Free tools spec
+- **Asked:** "lets add Tools section in the home page so that people can use it freely without account".
+- **Decided:** First release is the 13 browser-only in-app tools plus a new free invoice maker (owner's choice over "existing tools only"). The invoice maker asks for nothing and sends nothing to Khatario (owner's choice over phone capture or a required account). Public URLs under `/free-tools` because `/tools` is the signed-in app's path and root URLs can clash with business slugs. Each tool's body moves into `components/tools/` and is shared by the in-app and public pages. PDF by browser print, rejecting a client PDF library (blurry, new dependency) and the server PDF engine (public load and abuse). Invoice lines use the app's own `computeLineGst`. Found outdated statutory rates: GST calculator quick picks still offer 12 and 28 per cent, HSN data shows 12 per cent, and the TDS table predates the 194H and 194D cuts and the Income-tax Act, 2025 renumbering; all must be brought up to date before going public, and TDS stays private if its rates cannot be confirmed from an official source.
+- **Shipped:** nothing committed. Spec: `docs/superpowers/specs/2026-11-12-free-tools-design.md`. Roadmap card added.
+- **Open:** owner review of the spec, then the build plan. After deploy the owner adds the Free tools block to the published home page in the Site Builder.
+
+## 2026-11-12: Free tools build plan
+- **Asked:** "Approve, write plan".
+- **Decided:** 8 tasks: rates brought up to date first (GST quick picks to 0/5/18/40, HSN rates from CBIC notifications, TDS table from the Income Tax Department chart or TDS stays private), then the 13 tools moved into `components/tools/`, catalogue with public access and sitemap, hub and tool pages, invoice maker maths, invoice maker screen with browser print, home Site Builder block with header and footer links, final checks. Moved tools are checked by source-reading tests because Jest here cannot render `.tsx`. The invoice maker reuses `computeLineGst` and a test pins it to the app's result.
+- **Shipped:** nothing committed. Plan: `docs/superpowers/plans/2026-11-12-free-tools.md`. Roadmap card updated.
+- **Open:** owner review of the plan and choice of how to run it.
+- **Follow-up (same day):** decisions on the walk's open items: sending a WhatsApp reminder from the Parties list or a customer now asks first, and its request no longer sends `business_id`; plan locks show on screens opened from More; the chat send button is labelled "Send". Tap-to-save settings, attendance chips, quantity steppers and "Check buyers' low stock" stay as the website has them. Committed 8388f490 on local `main`, not pushed. Phone tests 2,154 pass with the 2 old failures; both walk passes 0 failures. Staging APK rebuilt.
+
+## 2026-11-12: Free tools built
+- **Asked:** "Run with subagents" on the free tools plan; mid-way, "leave GST checker".
+- **Decided:**
+  - Rates brought up to date before going public. GST calculator quick picks are 0, 5, 18 and 40. HSN rates were checked against CBIC notification 9/2025-Integrated Tax (Rate); 10 of the 20 codes now show no rate because the official rate depends on the item or a condition (the four garment codes, 0901, 1905, 9404, 9963, 9965, 9967), and 2106 is 5% "other than pan masala". The TDS table was rebuilt on the Income-tax Act, 2025 section 393 numbering with the old section in brackets (source: the Income Tax Department's TDS rates page on wm.incometaxindia.gov.in and the Finance Act, 2026); insurance commission is 2% per the Finance Act, 2026 although the department's chart still shows 5%, and the TDS page's note that a missing PAN means a lower rate was corrected to higher. TDS is public.
+  - Currency converter: the fake Refresh button and "Last updated" time are gone; rates are FBIL reference rates read on rbi.org.in for 12 November 2026 (USD, EUR, GBP, JPY, AED); SAR, CNY, AUD, CAD, SGD and CHF were removed for lack of an official rate. The rates are a snapshot and will age.
+  - The outdated `Most_Used_HSN_India.xlsx` download button was removed from the in-app HSN page (the file stays).
+  - `/data/hsn_master.json` made public in middleware (exact path), because the HSN finder was blank for signed-out visitors.
+  - Invoice maker print: the plan's recipe was replaced. `@page` A4 lives in the component only (the global rule had forced A4 on every in-app `window.print()` page), and everything except the invoice is removed from print with `display: none` under `body:has(.free-invoice-print-area)`; needs a current browser.
+  - Public tool pages stay light on dark-mode devices (`free-tool-light` wrapper). `free-tools` added to reserved business slugs.
+  - Owner: leave the GSTIN validator as it is (format, state code and PAN; no check-character test); its page says so.
+- **Shipped:** nothing committed. New: `app/free-tools/` (hub and `[slug]` pages), `components/tools/` (13 moved tools, `InvoiceMakerTool`, `InvoicePreview`, `FreeToolPageBody`, `registry`), `lib/tools/` (`catalogue`, `tool-page-seo`, `invoice-maker`, `gst-quick-rates`, `tds-rates`, `gstin`), `components/marketing/landing/LandingFreeTools.tsx`, `lib/marketing/free-tools-section.ts`, tests under `tests/lib/tools`. Changed: the 13 `app/(app)/tools/*/page.tsx`, `public/data/hsn_master.json`, `lib/tools/currency-converter.ts`, `middleware.ts`, `lib/auth/public-surfaces.ts`, `app/sitemap.ts`, `lib/marketing/static-paths.ts`, `app/globals.css`, Site Builder block list, config and default home, `LandingPage.tsx`, header and footer links, `lib/customer-surface/slug.ts`. Jest: 27 of 28 suites pass; `tests/lib/marketing-builder/config.test.ts` fails locally only because Git checks `config.tsx` out with CRLF (44 of 44 pass with line endings normalised). Typecheck clean. No migration.
+- **Open:**
+  - Not seen in a browser. Staging checklist (15 steps) at the end of `docs/superpowers/plans/2026-11-12-free-tools.md`; add: a tool page on a phone in dark mode, and the invoice PDF with 1 and about 30 items.
+  - Owner after deploy: add the Free tools block in `/admin/site-builder` and publish; decide on the "Made with Khatario free invoice maker" footer; check no business already uses the slug `free-tools`.
+  - Owner decisions: the invoice is headed "Tax Invoice" when a GSTIN is entered and has no "Authorised signatory" line; currency rates need refreshing from time to time.
+  - Follow-ups: `scripts/generate_hsn_master*.js` and `scripts/sync_comprehensive_hsn.js` would overwrite the corrected HSN file; `public/downloads/Most_Used_HSN_India.xlsx` still has old rates; `config.test.ts` should normalise line endings (or add `.gitattributes`).
+
+## 2026-11-12: Courier plugins (design started)
+- **Asked:** "dukaan.io uses this [plugin screen for Shiprocket]. can we also have this kind of thing?", then "what are the other couriers we have in india, we need to have those options also".
+- **Decided:**
+  - Build a generic plugin system (one `business_integrations` table, one adapter per courier), not a thin catalogue card for Shiprocket only, because several couriers are wanted.
+  - First batch, in order: Shiprocket (move the existing integration), Delhivery, one more aggregator (NimbusPost or iThink Logistics), one hyperlocal (Porter or Borzo). Other couriers appear as "Coming soon" cards.
+  - The existing `/settings/integrations` marketplace and `lib/integrations/catalog.ts` are the base; no second catalogue.
+- **Shipped:** nothing committed; no code or migration written.
+- **Open:** design shown in chat, awaiting owner approval; spec not yet written. Courier API terms were listed from memory and need checking per provider.
+
+## 2026-11-12: Courier plugins Phase 1 spec
+- **Asked:** "Yes, write spec" for the plugin framework with Shiprocket moved into it.
+- **Decided:**
+  - Five phases, one spec each: framework + Shiprocket; common courier contract with per-order courier choice and opt-in auto-booking; Delhivery; NimbusPost or iThink; Porter or Borzo.
+  - Phase 1 changes only where Shiprocket credentials are stored and edited (`business_integrations`, generated settings page, verify on save, disconnect). Booking, webhooks and returns code is not edited. Old `business_settings` columns stay until a later cleanup.
+  - The phone app keeps using the online-store API, which is kept compatible.
+  - Auto-booking is left out of Phase 1: booking needs a parcel weight and the 0.5 kg default would bill wrongly.
+- **Shipped:** nothing committed. Spec at `docs/superpowers/specs/2026-11-12-courier-plugins-phase-1-design.md`. No code; migration 476 is described, not written.
+- **Open:** owner review of the spec. Three owner decisions in its section 11: plan gate (design opens couriers to every plan; today saving Shiprocket needs `advanced_online_store`), the coming-soon list, and refusing disconnect while parcels are in flight. Implementation plan not written.
+
+## 2026-11-12: Courier plugins Phase 1 plan
+- **Asked:** "Approved, write plan" after reviewing the Phase 1 spec.
+- **Decided:**
+  - Spec approved as written, so its three owner decisions stand: courier plugins open to every plan, coming-soon cards for Delhivery, NimbusPost, iThink Logistics, Porter and Borzo, and disconnect refused while parcels are in flight.
+  - Ten tasks: migration 476, catalogue, provider registry + Shiprocket login check, service, re-pointing the two credential readers, plugin API, online-store API compatibility, plugin page, online-store page clean-up, docs and staging checklist.
+  - Secrets are stored exactly as typed (not trimmed); values are capped at 255 characters; choosing Shiprocket as checkout provider needs a live connection.
+- **Shipped:** nothing committed. Plan at `docs/superpowers/plans/2026-11-12-courier-plugins-phase-1.md`. No code or migration written.
+- **Open:** owner review of the plan and choice of execution method (subagent per task, or in-session).
+
+## 2026-11-12: Courier plugins Phase 1 built
+- **Asked:** run the approved plan: Shiprocket moved into a generic courier plugin system under Settings → Integrations.
+- **Decided:**
+  - R1: a connection's `config` keeps only string values, so a copied row with a NULL email reads as not connected (a blank email field at worst).
+  - R2: the online-store PATCH passes only the keys present in the body, and an empty password means "keep the stored one"; otherwise a phone save with a blank password would be refused.
+  - R3: choosing Shiprocket as checkout provider needs a live connection only when it changes from another stored value; re-sending the stored `shiprocket` is accepted so the page can still save a stale value (disconnect already resets it).
+  - R4: migration 476 applied to `kh_phase2_test` only, after checking the database name; the URL was never printed.
+  - R5: no plan gate on the plugin routes (spec section 11.1); the phone app and the old `business_settings` columns are untouched, and new code never reads those columns.
+- **Shipped:** committed on main, not pushed:
+  - 9f3879b3 migration 476 `business_integrations` with a copy of existing Shiprocket connections.
+  - 63156b38 catalogue: Shipping category, Shiprocket, coming-soon Delhivery, NimbusPost, iThink Logistics, Porter, Borzo; shared webhook token generator.
+  - 0b433ccd provider registry and a Shiprocket login check that leaves the token cache alone.
+  - 466daeee integrations service: save after verify, secrets stored as typed, token collision gives TOKEN_TAKEN, disconnect refused while parcels are in flight.
+  - c813e6b8 existing Shiprocket credential and webhook readers use the connection; help text points to Settings → Integrations → Shiprocket.
+  - dc6c9c48 plugin API routes `/api/integrations` and `/api/integrations/[id]`.
+  - 0e8a5c71, fc1cb626 online-store settings API serves and saves Shiprocket through the connection; login re-checked only when email or password changes.
+  - 8913b1d6 plugin page `/settings/integrations/shiprocket` (Overview, Setup, FAQ, Settings).
+  - 525b9e29 online-store page: Shiprocket form removed; "Delivered by" depends on the connection.
+  - This entry's commit: how-to text, staging checklist `docs/superpowers/plans/2026-11-12-courier-plugins-phase-1-staging-checklist.md`, roadmap cards.
+- **Open:**
+  - Migration 476 is written and applied only to `kh_phase2_test`, not to staging or production.
+  - Nothing was verified in a browser. Run the 15-step staging checklist above.
+  - Deploy order: migration 476 first, then code, then re-run the migration's copy INSERT once.
+  - Pre-existing failures: 6 tests in `tests/db/store-order-safety.db.test.ts` fail with 403 FEATURE_NOT_IN_PLAN on admin PATCH and collect_cash; this run never touched plan gating. The full `tests/db` run on `kh_phase2_test` also had 62 failing tests in 16 suites (mostly invoice-posting 403s and report scenarios), none in files this plan changed; the new integrations, Shiprocket booking and online-store Shiprocket DB suites pass. Not investigated.
+  - `npm run lint` cannot run: the repo has no ESLint config.
+  - Phone app plugin screens are not done (the phone keeps using the online-store API).
+  - Phase 2: common courier contract, per-order courier picker, opt-in auto-booking; then Delhivery, NimbusPost or iThink, Porter or Borzo.
