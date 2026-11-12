@@ -52,6 +52,7 @@ d('online-store settings: Shiprocket via integrations (real DB)', () => {
     provider: randomUUID(),
     stale: randomUUID(),
     blank: randomUUID(),
+    same: randomUUID(),
   };
   const ALL = Object.values(biz);
 
@@ -195,5 +196,41 @@ d('online-store settings: Shiprocket via integrations (real DB)', () => {
     const res = await PATCH(call(biz.stale, 'PATCH', { store_delivery_provider: 'shiprocket', store_tagline: 'stale ok' }));
     expect(res.status).toBe(200);
     expect((await settings(biz.stale)).store_tagline).toBe('stale ok');
+  });
+
+  test('the real payload: unchanged stored email (any case or spacing), no password, saves the tagline without calling verify', async () => {
+    await saveConnection(biz.same, 'shiprocket', { email: 'Same@Shop.test', password: 'pw-same' }, USER);
+    mockVerify.mockClear();
+    for (const email of ['Same@Shop.test', ' same@shop.TEST  ']) {
+      mockVerify.mockResolvedValue(REJECT); // would fail the save if it were called
+      const res = await PATCH(call(biz.same, 'PATCH', { store_shiprocket_email: email, store_tagline: `t ${email.trim()}` }));
+      expect(res.status).toBe(200);
+    }
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect((await settings(biz.same)).store_tagline).toBe('t same@shop.TEST');
+    expect((await loadSecrets(biz.same, 'shiprocket'))?.secrets.password).toBe('pw-same');
+  });
+
+  test('an unchanged email with a webhook token sets the token without verify', async () => {
+    mockVerify.mockClear();
+    const res = await PATCH(
+      call(biz.same, 'PATCH', { store_shiprocket_email: 'same@shop.test', store_shiprocket_webhook_token: `tok${tag}${'w'.repeat(24)}` }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect((await getConnection(biz.same, 'shiprocket'))?.webhookConfigured).toBe(true);
+  });
+
+  test('a changed email with no password still goes through verify', async () => {
+    mockVerify.mockClear();
+    mockVerify.mockResolvedValue(REJECT);
+    const bad = await PATCH(call(biz.same, 'PATCH', { store_shiprocket_email: 'other@shop.test', store_tagline: 'no' }));
+    expect(bad.status).toBe(400);
+    expect(mockVerify).toHaveBeenCalledTimes(1);
+    expect((await getConnection(biz.same, 'shiprocket'))?.config.email).toBe('Same@Shop.test');
+    mockVerify.mockResolvedValue(ACCEPT);
+    const ok = await PATCH(call(biz.same, 'PATCH', { store_shiprocket_email: 'other@shop.test' }));
+    expect(ok.status).toBe(200);
+    expect((await getConnection(biz.same, 'shiprocket'))?.config.email).toBe('other@shop.test');
   });
 });

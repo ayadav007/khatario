@@ -213,25 +213,34 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Shiprocket credentials live in the integrations connection. A rejected login stops the whole PATCH,
-  // before any other field is saved. An empty email or password means "keep what is stored".
-  const emailSent = store_shiprocket_email !== undefined && store_shiprocket_email !== null && store_shiprocket_email !== '';
-  const passwordSent = store_shiprocket_password !== undefined && store_shiprocket_password !== null && store_shiprocket_password !== '';
+  // before any other field is saved. The settings forms resend the stored email on every save, so the
+  // login is checked only for a new password or a changed email; an unchanged email is ignored.
+  const passwordSent = typeof store_shiprocket_password === 'string' && store_shiprocket_password !== '';
   const tokenSent = store_shiprocket_webhook_token !== undefined;
+  let shiprocketTouched = false;
   try {
-    if (emailSent || passwordSent) {
+    let connection = await getConnection(businessId, 'shiprocket');
+    const sentEmail = typeof store_shiprocket_email === 'string' ? store_shiprocket_email.trim() : '';
+    const storedEmail = (connection?.config.email ?? '').trim();
+    const emailNonString = store_shiprocket_email !== undefined && store_shiprocket_email !== null && typeof store_shiprocket_email !== 'string';
+    const emailChanged = emailNonString || (sentEmail !== '' && sentEmail.toLowerCase() !== storedEmail.toLowerCase());
+    if (passwordSent || emailChanged) {
       const values: Record<string, unknown> = {};
-      values.email = emailSent ? store_shiprocket_email : (await getConnection(businessId, 'shiprocket'))?.config.email;
+      values.email = sentEmail !== '' || emailNonString ? store_shiprocket_email : connection?.config.email;
       if (passwordSent) values.password = store_shiprocket_password;
       if (tokenSent) values.webhook_token = store_shiprocket_webhook_token;
       const result = await saveConnection(businessId, 'shiprocket', values, tenant.userId);
       if (!result.ok) {
         return NextResponse.json({ error: result.error, code: result.code }, { status: SAVE_FAIL_STATUS[result.code] });
       }
+      connection = result.connection;
+      shiprocketTouched = true;
     } else if (tokenSent) {
       const result = await setWebhookToken(businessId, 'shiprocket', store_shiprocket_webhook_token);
       if (!result.ok) {
         return NextResponse.json({ error: result.error, code: result.code }, { status: SAVE_FAIL_STATUS[result.code] });
       }
+      shiprocketTouched = true;
     }
 
     // Choosing Shiprocket at checkout needs a live connection; re-sending the value already stored is fine.
@@ -240,11 +249,8 @@ export async function PATCH(request: NextRequest) {
         `SELECT store_delivery_provider FROM business_settings WHERE business_id = $1`,
         [businessId],
       );
-      if (current?.store_delivery_provider !== 'shiprocket') {
-        const connection = await getConnection(businessId, 'shiprocket');
-        if (!connection?.connected) {
-          return NextResponse.json({ error: 'Connect Shiprocket under Integrations first' }, { status: 400 });
-        }
+      if (current?.store_delivery_provider !== 'shiprocket' && !connection?.connected) {
+        return NextResponse.json({ error: 'Connect Shiprocket under Integrations first' }, { status: 400 });
       }
     }
   } catch (err) {
@@ -355,7 +361,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (sets.length === 0) {
-    if (emailSent || passwordSent || tokenSent) {
+    if (shiprocketTouched) {
       // Only Shiprocket fields were sent; they were saved above, so there is nothing left for business_settings.
       const current = await queryOne(
         `SELECT store_subdomain, store_enabled, store_tagline,
