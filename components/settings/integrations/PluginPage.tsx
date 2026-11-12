@@ -94,13 +94,22 @@ export function PluginPage({ entry }: { entry: IntegrationCatalogEntry & { plugi
   const Icon = ICONS[entry.icon] ?? Truck;
   const { plugin } = entry;
 
-  const actions = connected ? (
-    canEdit ? (
-      <Button variant="secondary" onClick={() => setConfirming(true)}>Disconnect</Button>
-    ) : null
+  // Spec 8.2: a user who cannot update settings gets neither Connect nor Disconnect.
+  const actions = !canEdit ? null : connected ? (
+    <Button variant="secondary" onClick={() => setConfirming(true)}>Disconnect</Button>
   ) : (
     <Button onClick={() => goTab('settings')} disabled={loading}>Connect</Button>
   );
+  const tabId = (key: TabKey) => `plugin-${entry.id}-tab-${key}`;
+  const panelId = (key: TabKey) => `plugin-${entry.id}-panel-${key}`;
+  // Every panel stays mounted and inactive ones are hidden, so a typed password or a generated but
+  // unsaved webhook token in the Settings form survives a switch to another tab and back.
+  const panelProps = (key: TabKey) => ({
+    role: 'tabpanel' as const,
+    id: panelId(key),
+    'aria-labelledby': tabId(key),
+    hidden: tab !== key,
+  });
 
   return (
     <SettingsPageShell title={entry.title} description={entry.shortDescription} icon={Icon} actions={actions} width="form">
@@ -133,9 +142,11 @@ export function PluginPage({ entry }: { entry: IntegrationCatalogEntry & { plugi
         {TABS.map((t) => (
           <button
             key={t.key}
+            id={tabId(t.key)}
             role="tab"
             type="button"
             aria-selected={tab === t.key}
+            aria-controls={panelId(t.key)}
             onClick={() => goTab(t.key)}
             className={clsx(
               'px-4 py-2.5 text-base font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
@@ -149,19 +160,20 @@ export function PluginPage({ entry }: { entry: IntegrationCatalogEntry & { plugi
         ))}
       </div>
 
-      {tab === 'overview' && (
+      {/* Panel wrappers carry no display class, so the hidden attribute is never overridden. */}
+      <div {...panelProps('overview')}>
         <div className="space-y-4">
           {plugin.overview.map((p, i) => (
             <p key={i} className="text-base text-text-primary leading-relaxed">{p}</p>
           ))}
         </div>
-      )}
-      {tab === 'setup' && (
+      </div>
+      <div {...panelProps('setup')}>
         <ol className="list-decimal pl-6 space-y-3 text-base text-text-primary leading-relaxed">
           {plugin.setupSteps.map((s, i) => <li key={i}>{s}</li>)}
         </ol>
-      )}
-      {tab === 'faq' && (
+      </div>
+      <div {...panelProps('faq')}>
         <dl className="space-y-5">
           {plugin.faq.map((f, i) => (
             <div key={i}>
@@ -170,9 +182,9 @@ export function PluginPage({ entry }: { entry: IntegrationCatalogEntry & { plugi
             </div>
           ))}
         </dl>
-      )}
-      {tab === 'settings' && (
-        loading || !businessId ? (
+      </div>
+      <div {...panelProps('settings')}>
+        {loading || !businessId ? (
           <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary-500" /></div>
         ) : loadError ? (
           <p role="alert" className="text-sm text-error">{loadError}</p>
@@ -197,8 +209,8 @@ export function PluginPage({ entry }: { entry: IntegrationCatalogEntry & { plugi
               />
             )}
           </>
-        )
-      )}
+        )}
+      </div>
     </SettingsPageShell>
   );
 }
