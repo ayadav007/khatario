@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
-import { getPool, queryOne } from '@/lib/db';
+import { getPool } from '@/lib/db';
 import {
   InvoiceCancelError,
   SHIPROCKET_WEBHOOK_ACTOR,
@@ -11,7 +11,8 @@ import {
   canTransitionStoreOrder,
   type StoreOrderStatus,
 } from './fulfillment-rules';
-import { hashStoreWebhookToken, type StoreFulfillmentStatus } from './delivery/webhooks';
+import type { StoreFulfillmentStatus } from './delivery/webhooks';
+import { resolveBusinessForWebhookToken } from '@/lib/integrations/service';
 import { syncStoreOrderFulfilment, type FulfilmentChange } from '@/lib/fulfilment/service';
 import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
 import { releaseStoreOrderStock } from './checkout-stock';
@@ -237,12 +238,7 @@ export async function transitionStoreOrder(
 }
 
 export async function resolveBusinessIdForShiprocketToken(token: string): Promise<string | null> {
-  if (!token) return null;
-  const row = await queryOne<{ business_id: string }>(
-    `SELECT business_id FROM business_settings WHERE store_shiprocket_webhook_token_hash = $1`,
-    [hashStoreWebhookToken(token)],
-  );
-  return row?.business_id ?? null;
+  return resolveBusinessForWebhookToken('shiprocket', token);
 }
 
 export type ShiprocketTrackingOutcome =

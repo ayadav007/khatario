@@ -598,11 +598,15 @@ d('Phase 3.6A store order cancellation (real DB)', () => {
     const token = `Phase36ShiprocketToken${tag}`;
     await pool.query(`UPDATE store_orders SET awb = $2 WHERE id = $1`, [orderId, awb]);
     await pool.query(
-      `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_shiprocket_webhook_token_hash)
-       VALUES ($1, $2, true, $3)
-       ON CONFLICT (business_id) DO UPDATE
-         SET store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
-      [B, `p36${tag}`, hashStoreWebhookToken(token)],
+      `INSERT INTO business_settings (business_id, store_subdomain, store_enabled)
+       VALUES ($1, $2, true)
+       ON CONFLICT (business_id) DO NOTHING`,
+      [B, `p36${tag}`],
+    );
+    await pool.query(
+      `INSERT INTO business_integrations (business_id, provider, webhook_token_hash) VALUES ($1, 'shiprocket', $2)
+       ON CONFLICT (business_id, provider) DO UPDATE SET webhook_token_hash = EXCLUDED.webhook_token_hash`,
+      [B, hashStoreWebhookToken(token)],
     );
     const res = await shiprocketWebhook(
       new NextRequest('http://localhost/api/webhooks/store/shiprocket', {

@@ -14,6 +14,8 @@ const d = url ? describe : describe.skip;
 
 import { getPool, closePool } from '@/lib/db';
 import { hashStoreWebhookToken } from '@/lib/store/delivery/webhooks';
+import { loadShiprocketCreds } from '@/lib/store/delivery';
+import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import {
   disconnect,
   getConnection,
@@ -303,6 +305,16 @@ d('business_integrations (real DB)', () => {
     test('disconnect twice, or with nothing connected, is ok', async () => {
       expect(await disconnect(A, 'shiprocket')).toEqual({ ok: true });
       expect(await disconnect(D, 'shiprocket')).toEqual({ ok: true });
+    });
+
+    test('loadShiprocketCreds reads the connection, not the old columns', async () => {
+      await pool.query(
+        `UPDATE business_settings SET store_shiprocket_email = 'old@shop.test', store_shiprocket_password_enc = $2 WHERE business_id = $1`,
+        [D, encryptPaymentSecret('old')],
+      );
+      expect(await loadShiprocketCreds(D)).toBeNull();
+      await saveConnection(D, 'shiprocket', { email: 'new@shop.test', password: 'new' }, null, { verify: accept });
+      expect(await loadShiprocketCreds(D)).toEqual({ email: 'new@shop.test', password: 'new' });
     });
   });
 });

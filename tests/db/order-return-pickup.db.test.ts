@@ -190,8 +190,8 @@ d('return pickup booking (real DB)', () => {
     }
     for (const [biz, token] of [[B, TOKEN_B], [OTHER, TOKEN_OTHER]] as const) {
       await pool.query(
-        `INSERT INTO business_settings (business_id, store_shiprocket_webhook_token_hash) VALUES ($1, $2)
-         ON CONFLICT (business_id) DO UPDATE SET store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
+        `INSERT INTO business_integrations (business_id, provider, webhook_token_hash) VALUES ($1, 'shiprocket', $2)
+         ON CONFLICT (business_id, provider) DO UPDATE SET webhook_token_hash = EXCLUDED.webhook_token_hash`,
         [biz, hashStoreWebhookToken(token)],
       );
     }

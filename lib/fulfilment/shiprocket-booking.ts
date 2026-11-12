@@ -187,7 +187,7 @@ export async function bookFulfilmentWithShiprocket(
     return {
       ok: false,
       code: 'NOT_CONFIGURED',
-      error: 'Connect Shiprocket first: Settings → Online store → Delivery, add the Shiprocket API user.',
+      error: 'Connect Shiprocket first: Settings → Integrations → Shiprocket, add the Shiprocket API user.',
     };
   }
   const built = await buildShiprocketParcel(businessId, row);

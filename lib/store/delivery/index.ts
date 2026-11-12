@@ -1,5 +1,5 @@
 import { queryOne, queryRows } from '@/lib/db';
-import { decryptPaymentSecret } from '@/lib/payments/secret-encryption';
+import { loadSecrets } from '@/lib/integrations/service';
 import { quoteSelfDelivery, type DeliveryMode } from './self';
 import { createShiprocketProvider, type ShiprocketCreds } from './shiprocket';
 import type { DeliveryProvider, DeliveryProviderId, DeliveryQuoteResult } from './types';
@@ -111,19 +111,11 @@ function selfProvider(): DeliveryProvider {
 
 /** The merchant's Shiprocket API login, whether or not Shiprocket is the store's default provider. */
 export async function loadShiprocketCreds(businessId: string): Promise<ShiprocketCreds | null> {
-  const row = await queryOne<{
-    store_shiprocket_email: string | null;
-    store_shiprocket_password_enc: string | null;
-  }>(
-    `SELECT store_shiprocket_email, store_shiprocket_password_enc
-     FROM business_settings WHERE business_id = $1`,
-    [businessId],
-  );
-  if (!row?.store_shiprocket_email || !row.store_shiprocket_password_enc) return null;
-  return {
-    email: row.store_shiprocket_email,
-    password: decryptPaymentSecret(row.store_shiprocket_password_enc),
-  };
+  const loaded = await loadSecrets(businessId, 'shiprocket');
+  const email = loaded?.config.email;
+  const password = loaded?.secrets.password;
+  if (!email || !password) return null;
+  return { email, password };
 }
 
 export async function resolveDeliveryProvider(

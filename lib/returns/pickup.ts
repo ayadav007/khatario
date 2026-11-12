@@ -36,7 +36,7 @@ export type PickupDetails = {
 };
 
 const NOT_CONNECTED =
-  'Connect Shiprocket first: Settings → Online store → Delivery, add the Shiprocket API user.';
+  'Connect Shiprocket first: Settings → Integrations → Shiprocket, add the Shiprocket API user.';
 
 const LIVE_PICKUP: PickupStatus[] = ['booked', 'out_for_pickup', 'pickup_issue'];
 

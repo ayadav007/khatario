@@ -232,12 +232,17 @@ d('store order safety (real DB)', () => {
       await pool.query(`SELECT ensure_standard_account_heads($1)`, [biz]);
     }
     await pool.query(
-      `INSERT INTO business_settings (business_id, store_subdomain, store_enabled, store_shiprocket_webhook_token_hash)
-       VALUES ($1, $2, true, $3), ($4, NULL, false, $5)
+      `INSERT INTO business_settings (business_id, store_subdomain, store_enabled)
+       VALUES ($1, $2, true), ($3, NULL, false)
        ON CONFLICT (business_id) DO UPDATE
-         SET store_subdomain = EXCLUDED.store_subdomain, store_enabled = EXCLUDED.store_enabled,
-             store_shiprocket_webhook_token_hash = EXCLUDED.store_shiprocket_webhook_token_hash`,
-      [A, SUB, hashStoreWebhookToken(TOKEN_A), B, hashStoreWebhookToken(TOKEN_B)],
+         SET store_subdomain = EXCLUDED.store_subdomain, store_enabled = EXCLUDED.store_enabled`,
+      [A, SUB, B],
+    );
+    await pool.query(
+      `INSERT INTO business_integrations (business_id, provider, webhook_token_hash)
+       VALUES ($1, 'shiprocket', $2), ($3, 'shiprocket', $4)
+       ON CONFLICT (business_id, provider) DO UPDATE SET webhook_token_hash = EXCLUDED.webhook_token_hash`,
+      [A, hashStoreWebhookToken(TOKEN_A), B, hashStoreWebhookToken(TOKEN_B)],
     );
     await pool.query(
       `INSERT INTO items (id, business_id, name, unit, selling_price, tax_rate, current_stock, show_in_store, is_active)
