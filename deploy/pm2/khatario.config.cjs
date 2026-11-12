@@ -24,11 +24,18 @@ module.exports = {
       name: 'khatario',
       cwd: root,
       script: 'npm',
-      args: `run start:http -- -H 127.0.0.1 -p ${port}`,
+      // The hostname must be the word "localhost", not 127.0.0.1. Next's middleware always sees
+      // its own origin as "localhost", while the router uses the -H value; when the two differ,
+      // the store-subdomain rewrite to /store is taken for an external URL and proxied to
+      // https://localhost:<port> (nginx sends X-Forwarded-Proto https), which fails on this plain
+      // HTTP port and every storefront returns 500.
+      args: `run start:http -- -H localhost -p ${port}`,
       interpreter: 'none',
       env: {
         NODE_ENV: 'production',
         PORT: port,
+        // "localhost" resolves to ::1 first on the VPS; nginx's upstream is 127.0.0.1, so bind IPv4.
+        NODE_OPTIONS: '--dns-result-order=ipv4first',
       },
       max_memory_restart: '1536M',
       kill_timeout: 8000,
