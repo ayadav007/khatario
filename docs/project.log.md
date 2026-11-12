@@ -1952,3 +1952,13 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - `npm run lint` cannot run: the repo has no ESLint config.
   - Phone app plugin screens are not done (the phone keeps using the online-store API).
   - Phase 2: common courier contract, per-order courier picker, opt-in auto-booking; then Delhivery, NimbusPost or iThink, Porter or Borzo.
+
+## 2026-11-12: Courier plugins Phase 1 final review and fixes
+- **Asked:** run the Phase 1 plan with a subagent per task ("Subagent per task"), committing each task on main.
+- **Decided:**
+  - Final whole-change review (no critical findings) raised four fixes, all done: the phone's "choose Shiprocket" error now names the website and app paths; a post-deploy sync file picks up Shiprocket logins the old code saves while the new build runs; the plugin page keeps a typed password or unsaved token across tab switches; Shiprocket throttling or slowness reads as "could not reach Shiprocket", not a wrong password.
+  - Post-deploy step is `database/scripts/476-post-deploy-shiprocket-sync.sql`, run once with `node scripts/run-migration.js` after `pm2 reload` (documented under Migration 476 in `docs/SERVER_INFRASTRUCTURE.md`). Migration 476 itself was not edited.
+  - Parked for Phase 2: a token-only legacy row cannot be disconnected from the web without connecting first; disconnect does not lock against a parcel being booked at that moment.
+  - The 16 failing DB suites (invoice creation 403 from plan gating) are pre-existing: three were re-run at the starting commit 7f3b8d86 and failed the same 24 tests.
+- **Shipped:** a22ce622, bcf0d255 on main after the ten task commits (9f3879b3..8bb64f22). Not pushed.
+- **Open:** owner pushes and deploys to staging (migration 476 runs in deploy, then the sync file), then the 17-step checklist `docs/superpowers/plans/2026-11-12-courier-plugins-phase-1-staging-checklist.md`. Phone follow-up: the Shiprocket login screen is reachable only through Delivery zones until Shiprocket is chosen (needs a `phone/` change).
