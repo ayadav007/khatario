@@ -80,8 +80,7 @@ interface StoreSettings {
   store_about_md?: string | null;
   store_contact_md?: string | null;
   store_hide_khatario_badge?: boolean;
-  store_shiprocket_email?: string | null;
-  shiprocket_webhook_configured?: boolean;
+  shiprocket_configured?: boolean;
   store_promo_sheet?: StorePromoSheetConfig | null;
   store_cart_reminder_enabled?: boolean;
   store_cart_reminder_hours?: number;
@@ -98,14 +97,6 @@ const TABS: Array<{ id: EditorTab; label: string; icon: LucideIcon }> = [
 
 /** The phone preview and "Edit store design" only matter on the tabs that change how the store looks. */
 const DESIGN_TABS: EditorTab[] = ['appearance', 'promo'];
-
-const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-
-function generateWebhookToken(length = 40): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join('');
-}
 
 export default function OnlineStoreSettingsPage() {
   const { business, user } = useAuth();
@@ -140,10 +131,7 @@ export default function OnlineStoreSettingsPage() {
   const [hideBadge, setHideBadge] = useState(false);
   const [cartReminderOn, setCartReminderOn] = useState(false);
   const [cartReminderHours, setCartReminderHours] = useState('3');
-  const [shipEmail, setShipEmail] = useState('');
-  const [shipPassword, setShipPassword] = useState('');
-  const [shipWebhookToken, setShipWebhookToken] = useState('');
-  const [shipWebhookConfigured, setShipWebhookConfigured] = useState(false);
+  const [shiprocketConnected, setShiprocketConnected] = useState(false);
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
@@ -198,10 +186,7 @@ export default function OnlineStoreSettingsPage() {
         setCartReminderOn(data.store_cart_reminder_enabled === true);
         setCartReminderHours(String(data.store_cart_reminder_hours ?? 3));
         setStoreEngine(data.store_engine === true);
-        setShipEmail(data.store_shiprocket_email ?? '');
-        setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
-        setShipWebhookToken('');
-        setShipPassword('');
+        setShiprocketConnected(data.shiprocket_configured === true);
         setProductCount(typeof data.store_product_count === 'number' ? data.store_product_count : null);
         takeBaseline.current = true;
         setLoadVersion((v) => v + 1);
@@ -259,12 +244,12 @@ export default function OnlineStoreSettingsPage() {
     () =>
       JSON.stringify([
         subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
-        allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail,
+        allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours,
         sanitizeStorePromoSheet(promo), storeHoursFromDraft(hours),
       ]),
     [
       subdomain, enabled, tagline, minOrder, heroUrl, aboutMd, contactMd, privacyMd, refundMd, termsMd,
-      allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, shipEmail, promo,
+      allowCod, returnDays, deliveryProvider, hideBadge, cartReminderOn, cartReminderHours, promo,
       hours,
     ],
   );
@@ -277,7 +262,7 @@ export default function OnlineStoreSettingsPage() {
 
   const khataDirty = !!khata && JSON.stringify(khata) !== JSON.stringify(savedKhata);
   const settingsDirty =
-    (savedSnapshot !== null && snapshot !== savedSnapshot) || !!shipPassword || !!shipWebhookToken;
+    savedSnapshot !== null && snapshot !== savedSnapshot;
   const dirty = settingsDirty || khataDirty;
 
   const handleSave = useCallback(async () => {
@@ -310,9 +295,6 @@ export default function OnlineStoreSettingsPage() {
           store_hide_khatario_badge: hideBadge,
           store_cart_reminder_enabled: cartReminderOn,
           store_cart_reminder_hours: Math.min(72, Math.max(1, Math.round(Number(cartReminderHours)) || 3)),
-          store_shiprocket_email: shipEmail || null,
-          store_shiprocket_password: shipPassword || undefined,
-          store_shiprocket_webhook_token: shipWebhookToken || undefined,
           store_promo_sheet: {
             ...sanitizeStorePromoSheet(promo),
             version: nextPromoSheetVersion(savedPromo, sanitizeStorePromoSheet(promo)),
@@ -370,9 +352,6 @@ export default function OnlineStoreSettingsPage() {
     hideBadge,
     cartReminderOn,
     cartReminderHours,
-    shipEmail,
-    shipPassword,
-    shipWebhookToken,
     promo,
     savedPromo,
     khata,
@@ -958,7 +937,27 @@ export default function OnlineStoreSettingsPage() {
               <StoreHoursCard value={hours} onChange={setHours} />
 
               <SetupGroup icon={Truck} title="Delivery and returns" testId="store-setup-delivery">
-                <SetupRow label="Delivered by" htmlFor="store-delivery-provider">
+                <SetupRow
+                  label="Delivered by"
+                  htmlFor="store-delivery-provider"
+                  hint={
+                    shiprocketConnected && deliveryProvider === 'shiprocket' ? (
+                      <>
+                        Connected.{' '}
+                        <Link href="/settings/integrations/shiprocket" className="text-primary-600 hover:underline">
+                          Manage under Integrations.
+                        </Link>
+                      </>
+                    ) : !shiprocketConnected ? (
+                      <>
+                        Connect Shiprocket under Integrations to use it for delivery.{' '}
+                        <Link href="/settings/integrations/shiprocket" className="text-primary-600 hover:underline">
+                          Open Shiprocket
+                        </Link>
+                      </>
+                    ) : undefined
+                  }
+                >
                   <select
                     id="store-delivery-provider"
                     className={setupSelectClass}
@@ -966,62 +965,11 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setDeliveryProvider(e.target.value)}
                   >
                     <option value="self">Own staff</option>
-                    <option value="shiprocket">Shiprocket</option>
+                    <option value="shiprocket" disabled={!shiprocketConnected && deliveryProvider !== 'shiprocket'}>
+                      Shiprocket
+                    </option>
                   </select>
                 </SetupRow>
-                {deliveryProvider === 'shiprocket' ? (
-                  <SetupBlock muted>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block text-xs text-text-secondary">
-                        Shiprocket email
-                        <input
-                          className="input mt-1 w-full"
-                          value={shipEmail}
-                          onChange={(e) => setShipEmail(e.target.value)}
-                        />
-                      </label>
-                      <label className="block text-xs text-text-secondary">
-                        API password
-                        <input
-                          type="password"
-                          className="input mt-1 w-full"
-                          placeholder="Leave blank to keep"
-                          value={shipPassword}
-                          onChange={(e) => setShipPassword(e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-3 text-xs text-text-secondary">
-                      <p className="font-medium text-text-primary">Tracking webhook token</p>
-                      <p className="mt-1">
-                        {shipWebhookConfigured
-                          ? 'A token is saved. Generate a new one only if you are replacing it in Shiprocket.'
-                          : 'Tracking updates are refused until a token is saved here and in Shiprocket (Settings → API → Webhooks).'}
-                      </p>
-                      <div className="mt-2 flex gap-2">
-                        <input
-                          readOnly
-                          data-testid="shiprocket-webhook-token"
-                          className="input w-full font-mono"
-                          placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
-                          value={shipWebhookToken}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShipWebhookToken(generateWebhookToken())}
-                        >
-                          Generate
-                        </Button>
-                      </div>
-                      {shipWebhookToken ? (
-                        <p className="mt-2 text-amber-700 dark:text-amber-300">
-                          Copy this token into Shiprocket, then save. It is not shown again.
-                        </p>
-                      ) : null}
-                    </div>
-                  </SetupBlock>
-                ) : null}
                 <SetupRow
                   label="Return window"
                   hint="Days after delivery a buyer can ask for a return from their account. 0 turns online returns off."
