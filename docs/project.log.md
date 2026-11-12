@@ -1633,3 +1633,64 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Staging was not deployed: the deploy runs migrations 467 to 470 on the staging database, which needs the owner's go-ahead.
 - **Shipped:** `main` pushed to `origin/main` (see the next entry or `git log origin/main` for the tip).
 - **Open:** deploy staging; then promote to production. Schedule III and Compare have never been opened in a browser: their staging checklists are at the end of `docs/superpowers/plans/2026-11-10-schedule-iii-pl-view.md` (11 items) and `2026-11-10-pl-compare-periods.md` (15 items).
+
+## 2026-11-12: main deployed to staging
+- **Asked:** "Yes, deploy staging".
+- **Decided:** staging database dumped first (`/var/backups/khatario/khatario_staging-pre-b31fb73a-20261112-0224.dump`, 40 MB, root-only). Deploy run with Node 24 first on PATH, as for production.
+- **Shipped:** staging went from 77bf59b3 to b31fb73a with `scripts/deploy-vps.sh` (log `/var/log/khatario-staging-deploy-20261112-0224.log`). Migrations 467 to 470 applied, 0 failed. `khatario-staging`, `todo-reminder-worker` and `kb-index-worker` online, no errors after the reload. Signed out: `/`, `/login`, `/about` and `demo-quick.staging.khatario.com` return 200; `/reports/profit-loss/schedule-iii` redirects to login and the compare API answers 401. Production `/login` 200. This entry is not committed.
+- **Open:**
+  - Nothing was checked signed in. Owner to test on staging: the Schedule III and Compare tabs (checklists at the end of their plans), customer receivable accounts, invoice History, Move to Khatario import, and the phone parity checklists.
+  - Help-doc re-index: the same 2 GST law sources fail on the Gemini embedding quota on staging too.
+  - Production is behind staging by everything after 77bf59b3 except the two fixes of this morning; promotion waits for the owner's staging check. Migration 469 writes a baseline revision for every invoice and adds triggers on invoices: run the production deploy in a quiet window.
+
+## 2026-11-12: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; `/guides` has 62 impressions, below the 100 trigger). The Site Builder Reset + Publish item is closed: the live home H1 is now "GST billing software for small shops.".
+- **Shipped:** one commit with `docs/seo/STATE.md` and `docs/seo/reports/2026-11-12.{json,md}` (subject starts "Search Console is unchanged at 68 impressions"). Nothing pushed or deployed. This log entry is left uncommitted because the file has the owner's uncommitted edits.
+- **Open:** the writer job has saved no draft in 5 runs since 11-06; production does not have `b52e28f4` (brand title, `/about`); no backlinks yet.
+
+## 2026-11-12: Production brought level with staging
+- **Asked:** "please make staging and production at the same level".
+- **Decided:** promoted exactly what the staging server runs (b31fb73a), not local `main`, which is ahead by phone-app and SEO commits that are not on GitHub. Production database dumped first (`/var/backups/khatario/khatario_prod-pre-86dca659-20261112-0419.dump`, 6.7 MB, root-only). Help-doc re-index skipped (`--skip-kb`).
+- **Shipped:** 86dca659 "Promote main to production" on `origin/production`, deployed (log `/var/log/khatario-prod-deploy-20261112-0419.log`). Migrations 467 to 470 applied, 0 failed. The production and staging clones have the same tree (ba9d41c1) and both databases record migrations 461 to 470. `khatario` kept `-H localhost` on 127.0.0.1:3100; no errors after the reload. `/`, `/login`, `/about` and `demo-quick.khatario.com` return 200; Schedule III redirects a guest to login; the compare API answers 401; staging `/login` 200. This entry is not committed.
+- **Open:**
+  - Nothing new was checked signed in on either server, so Schedule III, Compare, customer receivable accounts, invoice History and the import reached production untested in a browser.
+  - Local `main` is ahead of GitHub (phone app and SEO commits), with uncommitted phone work from another session.
+
+## 2026-11-12: Phone app parity Stage 7 (WhatsApp)
+- **Asked:** "Start Stage 7".
+- **Decided:** Task 41 split into 41a (contacts, groups, unsubscribes, send message, who to message, campaigns) and 41b (flows, saved replies, order verification). Campaigns parity moved from Task 40 to 41a. The pipeline was brought to the website board in Task 40, including the stage manager. Picture sending was built rather than left on the website. `/whatsapp/bot-rules` opens Flows, as the website redirects it, and the old phone bot-rules screen was removed. The flow editor stays on the website, opened inside the app. Every write route the new screens use was checked: all are scoped to the session business, so no server change was needed.
+- **Shipped:** commits 0c6cf6d3 (dashboard, leads, lead sources, pipeline), 95430140 (contacts, sending, campaigns), 51721411 (flows, saved replies, order verification) and 4c6e5934 (checklist steps 169-189) on local `main`, not pushed. Phone tests 2,038 pass with the 2 old failures; analyze at the 3-issue baseline. Staging APK built 12 Nov 10:06 (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`). `stillGeneric` now lists only `/suppliers/dashboard` and `/tools/todo`. This entry is not committed.
+- **Open:**
+  - Nothing was tried on a phone. The Stage 6 server commits (HR tenant fixes) are not on staging yet, so the Stage 6 HR checklist needs a push and a staging deploy first. Stage 7 needs only the APK.
+  - Server follow-ups: campaign button clicks are never recorded; WhatsApp order approve accepts any un-invoiced order of the business; no reply says whether the viewer is a lead supervisor.
+  - Stage 8 (supplier dashboard, to-do, remaining settings, website pages by design) and Stage 9 next.
+
+## 2026-11-12: Missing marketing pages, Trust pages spec
+- **Asked:** "for any reputed website home page, what are the pages should be there which khatario home page is missing?", then "please go ahead and plan to build them".
+- **Decided:** The missing pages are split into four phases, each with its own spec and plan: (1) Trust pages, (2) product pages and Download app, (3) industry, compare and free-tool pages, (4) public help centre and customer stories. Owner chose Trust pages first. Refund rule chosen by the owner: full refund within 7 days of a first payment, none on renewals, cancel any time and the plan runs to the end of the paid period (pro-rata and no-refund were rejected). Pages are plain static Next.js pages like `/about`; the admin site builder (home page only) and MDX were rejected. Company facts (legal name, address, phone, GSTIN, grievance officer, social links) live in one file and a blank value shows nothing. No contact form, because `/book-demo` already takes enquiries. Security page states only claims confirmed from code or server docs.
+- **Shipped:** nothing committed. Spec written: `docs/superpowers/specs/2026-11-12-trust-pages-design.md`. Roadmap card added under Now.
+- **Open:**
+  - Owner review of the spec, then the build plan.
+  - `/privacy` and `/terms` are live placeholders ("This policy is being prepared") until this is built.
+  - Before production: owner fills the company facts and has a lawyer or CA read Privacy, Terms and Refund.
+
+## 2026-11-12: Trust pages build plan
+- **Asked:** "Approve, write spec", then "Approve, write plan".
+- **Decided:** Spec approved as written. Plan has 10 tasks: company facts, public access and sitemap, legal layout with Refund, Privacy, Terms, Contact, Pricing, Security, footer, final checks. All page text lives as data under `lib/marketing/**` because Jest here runs in node and matches only `.test.ts`, so pages cannot be render-tested. Sitemap paths move to `lib/marketing/static-paths.ts` and a test checks every listed path has a page file. Security claims each carry an evidence file path and are dropped if unproven; fewer than four kept means stop and ask the owner. No commits in the plan unless the owner asks.
+- **Shipped:** nothing committed. Plan: `docs/superpowers/plans/2026-11-12-trust-pages.md`. Spec test line corrected from Vitest to Jest. Roadmap card updated.
+- **Open:** owner review of the plan and choice of how to run it (subagent per task, or in one session). Phases 2 to 4 have no spec yet.
+
+## 2026-11-12: Side branches merged into main
+- **Asked:** "please merge them and push to git" (the branches and worktree changes that were not on `main`).
+- **Decided:**
+  - Merged in a separate worktree (`.claude/worktrees/merge-local-branches`, branch `merge/local-branches`), because other sessions were editing the main checkout.
+  - `claude/busy-wu-4b7d55` (item batch/serial/valuation save, currency converter, PAN validator, business from the login on bank accounts and leave balances): merged; the only conflict was this log.
+  - `origin/fix/branch-gst-safety-on-main` (note series per GSTIN, GSTR-2B per GSTIN, inter-branch invoice at dispatch, inter-branch settlements): merged. Two import conflicts (credit and debit note routes) kept both sides. Its migrations were renumbered 465 to 467 → **471 to 473**, because `main` used those numbers for other changes; the three tests that read the files and the file headers were updated. `origin/fix/branch-gst-safety` is the older copy of the same work and was not merged.
+  - `claude/elated-austin-92a5fe` (phone item form): it built the same barcode, MRP, photo, category, supplier and pack fields that `main` built separately (7d6c5b55) and later moved to the design kit. `main`'s form was kept and the branch's own three files were not taken. What only the branch had was ported onto `main`'s form: current GST slabs only (12% is gone; the server refuses it on a new rate), selling price includes GST, GST UQC, net quantity, FSSAI, country of origin, sold by weight with PLU code and barcode mode. An item saved without a country is no longer given India on a phone edit.
+  - Not merged: the uncommitted files in worktrees `laughing-kilby-bab5fb` and `modest-tesla-a8cfe0`. They date from 17 and 18 October and `main` has since built the same things (Supplier Hub home, bank reconciliation screen, and `requireStrictSession` on the purchase order and purchase return lists, which is stricter than the worktree's change). Left where they are, not deleted.
+- **Shipped:** three merge commits on `main`, pushed (see `git log origin/main`). Checks on the merged tree: `tsc --noEmit` clean; on `kh_phase2_test`, the four branch GST suites (17 tests) and 14 neighbouring suites (invoice revisions, customer receivable accounts, GSTR-2B, GSTR-9, stock transfer challan, P&L, Schedule III) pass; phone `item_form_test.dart` 26 tests pass (7 new) and the analyzer is clean.
+- **Open:**
+  - `tests/db/post-sale-discount-credit-note.db.test.ts` fails 7 tests on the merged tree for a reason that is not the merge: it creates an invoice dated 2026-10-05, which is now more than 30 days back and needs backdate approval. The test needs a relative date.
+  - Nothing here is deployed. Staging needs a deploy, which runs migrations 471 to 473. Migration 471 drops the business-wide unique debit note number in favour of per-branch uniqueness; 472 attributes existing GSTR-2B imports to the business GSTIN (a branch's 2B uploaded earlier must be re-imported).
+  - The branch GST work and the ported phone fields have not been seen in a browser or on a device.
