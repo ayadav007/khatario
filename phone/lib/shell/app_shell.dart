@@ -665,7 +665,7 @@ class _AppShellState extends State<AppShell> {
           onSignOut: widget.onSignOut,
           onEditNav: _editNav,
         ),
-      AppTab.chats => ChatsInboxScreen(key: ValueKey('chats-${widget.session.businessId}'), session: widget.session),
+      AppTab.chats => ChatsInboxScreen(key: ValueKey('chats-${widget.session.businessId}'), session: widget.session, capabilities: _capabilities),
       AppTab.contacts => ContactsScreen(key: ValueKey('contacts-${widget.session.businessId}'), session: widget.session, embedded: true),
       AppTab.team => _recordTab('/employees'),
       AppTab.attendance => _recordTab('/employees/attendance'),

@@ -6,6 +6,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../chats/saved_replies_screen.dart';
 import '../parties/party_logic.dart' show partyDay;
 import 'appearance_screen.dart';
 import 'plan_billing_screen.dart';
@@ -276,6 +277,11 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> with 
           ),
           NavSetting(label: 'Message templates', value: 'Approved wording for invoices and updates', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/templates')),
           NavSetting(label: 'Inbox & team', value: 'Who sees which chats, saved replies', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/inbox')),
+          NavSetting(
+            label: 'Saved replies',
+            value: 'Ready answers your team inserts in a chat',
+            onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => SavedRepliesScreen(session: widget.session))),
+          ),
           NavSetting(label: 'AI agent', value: 'Answers questions and takes orders', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/ai-agent')),
           NavSetting(label: 'Updates for you', value: 'Evening summary on your phone', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/notifications')),
         ]),

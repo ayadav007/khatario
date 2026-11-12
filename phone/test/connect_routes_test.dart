@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/chats/campaigns_screen.dart';
-import 'package:khatario_phone/screens/chats/chat_outreach_screens.dart';
+import 'package:khatario_phone/screens/chats/flows_screen.dart';
 import 'package:khatario_phone/screens/chats/chat_thread_screen.dart';
 import 'package:khatario_phone/screens/chats/chats_inbox_screen.dart';
 import 'package:khatario_phone/screens/chats/connect_dashboard_screen.dart';
@@ -34,7 +34,7 @@ void main() {
       expect(nativeScreenFor(session, '/whatsapp/lead-sources'), isA<LeadSourcesScreen>());
       expect(nativeScreenFor(session, '/whatsapp/pipeline'), isA<PipelineScreen>());
       expect(nativeScreenFor(session, '/whatsapp/campaigns'), isA<CampaignsScreen>());
-      expect(nativeScreenFor(session, '/whatsapp/bot-rules'), isA<BotRepliesScreen>());
+      expect(nativeScreenFor(session, '/whatsapp/bot-rules'), isA<FlowsScreen>());
     });
 
     test('the inbox gets a page of its own, as the Chats tab gives it', () {
@@ -51,17 +51,15 @@ void main() {
       expect(nativeScreenFor(session, '/whatsapp/leads?status=open'), isA<LeadsScreen>());
     });
 
-    test('none of them falls back to the automatic list, and the rest of Connect stays listed', () {
+    test('none of them falls back to the automatic list, and no Connect link stays listed', () {
       for (final href in [
         '/whatsapp/dashboard', '/whatsapp/conversations', '/whatsapp/leads', '/whatsapp/pipeline', '/whatsapp/lead-sources',
-        '/whatsapp/campaigns', '/whatsapp/bot-rules',
+        '/whatsapp/campaigns', '/whatsapp/bot-rules', '/whatsapp/flows', '/whatsapp/saved-replies', '/whatsapp/orders',
       ]) {
         expect(stillGeneric.contains(href), isFalse, reason: href);
         expect(routeTier(session, href), RouteTier.native, reason: href);
       }
-      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')).toSet(), {
-        '/whatsapp/flows',
-      });
+      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')), isEmpty);
     });
   });
 

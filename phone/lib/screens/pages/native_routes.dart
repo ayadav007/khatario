@@ -93,7 +93,8 @@ import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
 import '../chats/campaign_report_screen.dart';
 import '../chats/campaigns_screen.dart';
-import '../chats/chat_outreach_screens.dart';
+import '../chats/flows_screen.dart';
+import '../chats/saved_replies_screen.dart';
 import '../chats/chat_thread_screen.dart';
 import '../chats/chats_inbox_screen.dart';
 import '../chats/connect_dashboard_screen.dart';
@@ -145,6 +146,15 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     if (query.path == '/whatsapp/conversations' && chat != null && chat.isNotEmpty) {
       return ChatThreadScreen(session: session, conversationId: chat, title: 'Chat');
     }
+    // The website redirects bot rules to `/whatsapp/flows?from=bot-rules`; `?new=1` opens New flow.
+    if (query.path == '/whatsapp/flows') {
+      return FlowsScreen(
+        session: session,
+        capabilities: capabilities,
+        fromBotRules: query.queryParameters['from'] == 'bot-rules',
+        openNew: query.queryParameters['new'] == '1',
+      );
+    }
     if (query.path == '/whatsapp/send-message' && query.queryParameters['tab'] == 'campaign') {
       return SendMessageScreen(session: session, capabilities: capabilities, startOnCampaign: true);
     }
@@ -156,12 +166,17 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
   if (href.startsWith(campaignPrefix) && href.length > campaignPrefix.length) {
     return CampaignReportScreen(session: session, campaignId: Uri.decodeComponent(href.substring(campaignPrefix.length)));
   }
+  // One flow's visual editor is a website page, opened inside the app.
+  const flowPrefix = '/whatsapp/flows/';
+  if (href.startsWith(flowPrefix) && href.length > flowPrefix.length) {
+    return WebsitePageScreen(session: session, href: href, title: 'Flow editor');
+  }
   switch (href) {
     case '/whatsapp/dashboard':
       return ConnectDashboardScreen(session: session);
     case '/whatsapp/conversations':
       // The inbox is built for the Chats tab, which supplies the Scaffold (Material) around it.
-      return Scaffold(backgroundColor: AppColors.bg, body: ChatsInboxScreen(session: session));
+      return Scaffold(backgroundColor: AppColors.bg, body: ChatsInboxScreen(session: session, capabilities: capabilities));
     case '/whatsapp/leads':
       return LeadsScreen(session: session);
     case '/whatsapp/pipeline':
@@ -180,8 +195,12 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
       return SendMessageScreen(session: session, capabilities: capabilities);
     case '/whatsapp/who-to-message':
       return WhoToMessageScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/flows':
+      return FlowsScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/saved-replies':
+      return SavedRepliesScreen(session: session);
     case '/whatsapp/bot-rules':
-      return BotRepliesScreen(session: session);
+      return FlowsScreen(session: session, capabilities: capabilities, fromBotRules: true);
     case '/hr/dashboard':
       return HrDashboardScreen(session: session);
     case '/employees/manager':

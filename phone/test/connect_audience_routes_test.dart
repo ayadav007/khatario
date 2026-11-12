@@ -45,7 +45,7 @@ void main() {
       expect((nativeScreenFor(session, '/whatsapp/who-to-message', capabilities: caps) as WhoToMessageScreen).capabilities, same(caps));
     });
 
-    test('none falls back to the automatic list or the website, and only flows stay listed', () {
+    test('none falls back to the automatic list or the website, and no Connect link stays listed', () {
       for (final href in [
         '/whatsapp/contacts', '/whatsapp/contacts/groups', '/whatsapp/unsubscribes', '/whatsapp/send-message', '/whatsapp/who-to-message', '/whatsapp/campaigns',
       ]) {
@@ -53,7 +53,7 @@ void main() {
         expect(isWebsiteOnlyHref(href), isFalse, reason: href);
         expect(routeTier(session, href), RouteTier.native, reason: href);
       }
-      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')).toSet(), {'/whatsapp/flows'});
+      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')), isEmpty);
     });
   });
 
@@ -65,11 +65,8 @@ void main() {
       expect(shell.contains("_recordTab('/whatsapp/contacts')"), isFalse);
     });
 
-    test('Broadcasts and New broadcast no longer exist; bot replies stay', () {
-      final outreach = File('lib/screens/chats/chat_outreach_screens.dart').readAsStringSync();
-      expect(outreach.contains('BroadcastsScreen'), isFalse);
-      expect(outreach.contains('New broadcast'), isFalse);
-      expect(outreach, contains('class BotRepliesScreen'));
+    test('Broadcasts, New broadcast and the old bot replies screen no longer exist; Flows replace them', () {
+      expect(File('lib/screens/chats/chat_outreach_screens.dart').existsSync(), isFalse);
       final inbox = File('lib/screens/chats/chats_inbox_screen.dart').readAsStringSync();
       expect(inbox.contains('BroadcastsScreen'), isFalse);
       expect(inbox, contains('CampaignsScreen('));
