@@ -163,7 +163,7 @@ npm run cap:android:production:install   # only after https://khatario.com serve
 | PostgreSQL | Staging `khatario` and production `khatario_prod`; migrations via `npm run db:migrate:pending` in that clone |
 | Redis | Shared process; production uses logical DB 1 so BullMQ queues do not mix |
 | OCR | Optional `:4000` — not running as of 2026-09-26; camera extract uses Google Vision + Groq |
-| Todo reminders | PM2 `todo-reminder-worker` (`pm2 start npm --name todo-reminder-worker -- run worker:todo`, then `pm2 save`). Delivers BullMQ jobs at the exact time and sweeps the DB every 30s for anything due that the queue missed. Without it no todo reminder is ever delivered. Production clone: set `PM2_WORKER_NAME` to a separate name |
+| Todo reminders | PM2 `todo-reminder-worker` (`pm2 start npm --name todo-reminder-worker -- run worker:todo`, then `pm2 save`). Delivers BullMQ jobs at the exact time and sweeps the DB every 30s for anything due that the queue missed. Without it no todo reminder is ever delivered. Production clone: `todo-reminder-worker-prod` (running since 2026-11-05; `PM2_WORKER_NAME=todo-reminder-worker-prod` is in `/var/www/khatario-prod/.env.production`, otherwise a production deploy restarts the staging worker with production env). Start a worker with `.env.production` sourced and Node 24 first on PATH (`export PATH=/root/.nvm/versions/node/v24.22.1/bin:$PATH; set -a; . ./.env.production; set +a; pm2 start npm --name <name> --cwd <app> -- run worker:todo`): the worker pulls in Baileys (ESM-only) through ts-node, which needs Node 22.12+; the system `node` is v18 and crash-looped it 90,739 times until 2026-10-29 |
 | Push notifications (FCM) | The same `todo-reminder-worker` process runs the push dispatcher (`lib/push/dispatch-loop.ts`: LISTEN on `push_jobs`, 10 s poll). It needs `FIREBASE_SERVICE_ACCOUNT_JSON` (raw or base64 service-account JSON) or `GOOGLE_APPLICATION_CREDENTIALS` in `.env.production`, then `pm2 restart todo-reminder-worker --update-env`. Without a credential every job is marked `failed: fcm_not_configured` and the in-app bell keeps working. Set `PUSH_DISPATCH_DISABLED=1` to turn the loop off. Firebase Console steps: `docs/qa/notification-audit/09-firebase-setup.md` |
 | WhatsApp workers | Tenant Baileys inbox — see `docs/WHATSAPP_INTEGRATION.md`. Not in PM2 yet |
 | Platform Meta Cloud API | Save credentials in `/admin` → WhatsApp templates (encrypted in DB). Tenant Cloud API: Settings → WhatsApp. `META_WA_*` env is optional fallback only |
@@ -315,6 +315,7 @@ QA on staging before production: ask a pricing question on `/book-demo` (answer 
 | Digitable / tenant-home on a Khatario host | Request hit the default SSL vhost — production `:443` cert/vhost missing |
 | 413 on extract | Wrong vhost `client_max_body_size` |
 | Staging data on khatario.com | Accidentally proxied production nginx to the staging port |
+| Every store subdomain 500 on production, `Failed to proxy https://localhost:3100/store ... EPROTO` in `khatario-error.log` | PM2 `khatario` was started with `-H 127.0.0.1`. Start it from `deploy/pm2/khatario.config.cjs` (`-H localhost`, IPv4 bind): `pm2 delete khatario && pm2 start deploy/pm2/khatario.config.cjs && pm2 save`, with Node 24 first on PATH |
 | Login 500 on production | Empty/wrong `khatario_prod` or JWT not loaded (`pm2 restart khatario --update-env`) |
 
 ---

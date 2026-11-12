@@ -872,7 +872,7 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 
 ## 2026-11-03: Typography audit (IBM Plex direction)
 - **Asked:** comprehensive typography audit vs IBM Plex Sans / Noto Devanagari / Fraunces (marketing sparingly); document first; implement only approved corrections.
-- **Decided:** no font swap yet � product is Inter-first today; wait for owner approval of P1�P3. Storefront multi-font stays separate from accounting UI. Existing `lib/typography.ts` / `type-*` tokens should be grown into, not redesigned.
+- **Decided:** no font swap yet � product is Inter-first today; wait for owner approval of P1�P3. Storefront multi-font stays separate from accounting UI. Existing `lib/typography.ts` / `type-*` tokens should be grown into, not redesigned.
 - **Shipped:** audit canvas only (`typography-audit.canvas.tsx`). Nothing committed; no app font code changed.
 - **Open:** owner chooses phases and: default to IBM Plex; keep/drop DM Sans & Source Sans presets; load Noto Devanagari; PDF Arial?Plex same PR or later; Flutter fonts same change or follow-up.
 
@@ -1112,6 +1112,171 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Media older than about 30 days that nobody opened cannot be fetched; asking the phone to re-upload (Baileys `updateMediaMessage`) is not built.
   - Campaign images and the media library still store base64 (one copy per campaign/file, small).
 
+## 2026-11-05: VPS disk cleanup, 74 GB → 55 GB used
+- **Asked:** "now lets work on cleanup, please cleanup as much as possible".
+- **Decided:** removed only what Khatario or the system owns and can be rebuilt; anything belonging to Digitable, open-webui or unknown Docker volumes is left for the user to decide (the infra doc says to leave other apps alone).
+  - Removed: `.next/cache/webpack` in staging and production (8.8 GB, build-only), npm cache (3.1 GB), unused Chrome 148 from the Puppeteer cache (Khatario's Puppeteer 24.32 uses 143, kept), 13 disabled snap revisions, apt cache. 12.6 GB freed.
+  - Staging DB: ran `scripts/whatsapp-media-out-of-db.ts --apply --vacuum` (copied up under a temporary name, then deleted so `git pull` will not conflict). 470 one-to-one media written to `storage/whatsapp-media` (296 MB), 5,199 group media cleared, 27 unreadable data URLs cleared; table 7.9 GB → 15 MB, DB `khatario` 8.4 GB → 138 MB. 7.4 GB freed.
+  - All 12 PM2 apps online afterwards; staging and production `/login` return 200.
+- **Shipped:** nothing committed; server cleanup only. Staging still runs `77bf59b3`, so until `b330d67a` is deployed new WhatsApp media is still written as base64.
+- **Open:** user to decide: `digitable-api-out.log` 8.6 GB (repeated outbox-relay debug lines), `open-webui` Docker volume 1.1 GB, five `repo_*` volumes 170 MB from 2025, Selenium cache 400 MB, PM2 log rotation. `todo-reminder-worker` has restarted 91,065 times (crash loop, 194 MB error log), not investigated. `/root/.local/share/pnpm` 1.3 GB left (pnpm not installed; may be hard-linked into node_modules).
+
+## 2026-11-05: Digitable log emptied, PM2 log rotation on the VPS
+- **Asked:** "Yes, log + rotation" (empty `digitable-api-out.log`, set up PM2 log rotation).
+- **Decided:** emptied the log in place with `truncate -s 0` so the running process keeps its file handle (8.6 GB → 0). Installed `pm2-logrotate` 3.0.1 for every PM2 app: max 50 MB per log, 5 compressed copies kept, daily rotation at midnight, size checked every 5 minutes; `pm2 save` run. Docker volumes, open-webui and the Selenium cache left alone (not asked).
+- **Shipped:** server change only; nothing committed. Disk 55 GB → 46 GB used (48%). 13/13 PM2 processes online (12 apps plus pm2-logrotate); staging and production `/login` return 200.
+- **Open:** `todo-reminder-worker` crash loop (91,065 restarts) still not investigated; its 194 MB error log will be rotated and compressed by the next check.
+
+## 2026-11-05: Cloudflare edge rules (rate limits, scanner and attack-pattern blocks)
+- **Asked:** configure Cloudflare as a real wall: edge rate limits on login/registration/password reset, bot rules on high-value pages, WAF rules for SQL injection, XSS and path traversal.
+- **Decided:**
+  - Rules live in `scripts/cloudflare-edge-rules.mjs` (dry run by default, `--apply` to write, `--print` offline) so they are reviewable and re-runnable; it replaces only rules tagged `[khatario]` and keeps hand-made dashboard rules.
+  - Sized for the Free plan (5 custom rules, 1 rate-limit rule, 10 s windows, no regex, no body inspection): webhook skip; scanner-probe block; URL attack-pattern block; scraping-library / empty-UA block on pages; 10 requests per 10 s per IP on every login, reset and OTP route. 10/10 s leaves room for shop staff behind one mobile-carrier NAT IP and still stops a 200/min stuffing run.
+  - Nothing on `/api/*` is challenged (Capacitor and Flutter apps can't solve challenges; cron curls through Cloudflare). HeadlessChrome not blocked (Playwright, Lighthouse). `/.well-known/` and HEAD requests exempt.
+  - Rejected: Bot Fight Mode on Free (can't be skipped per path, would break payment/WhatsApp webhooks and the apps).
+- **Shipped:** nothing committed, nothing applied to Cloudflare (no API token in the repo). New `scripts/cloudflare-edge-rules.mjs`, `deploy/cloudflare/README.md`. `--print` runs; all expressions under the 4,096-char limit. Not validated against the Cloudflare API yet.
+- **Open:** user to create a Zone WAF Edit token and run the dry run, then `--apply`. After: watch Security > Events for 24 h, run staging login e2e, test a payment webhook and a WhatsApp message. Origin is still reachable directly by VPS IP, which bypasses every edge rule; locking 80/443 to Cloudflare ranges needs planning because `*.staging.khatario.com` stores are DNS-only.
+
+## 2026-11-05: todo-reminder-worker crash loop investigated
+- **Asked:** "Yes, investigate it" (91,065 PM2 restarts on `todo-reminder-worker`).
+- **Decided (findings, nothing changed):**
+  - The loop is over. 90,739 crashes, all `ERR_REQUIRE_ESM`: the worker runs through ts-node as CommonJS and `lib/workers/todoReminderWorker.ts` → `sweepDueTodoReminders` → `todoReminderService` → `lib/whatsapp.ts` → `lib/baileys-hybrid.ts` requires Baileys, which is ESM-only. The last crash was 2026-10-29 15:50, when the process was restarted (push notifications deploy) under Node 24.22.1, which can `require()` ES modules. Stable since; the restart count is a lifetime total.
+  - Fragile: it only works on Node 22.12 or newer. The VPS default `node` on PATH is v18.20.8; PM2 uses nvm v24 because the interpreter path is saved in its dump. Starting it from a shell where `node` is v18 brings the loop back.
+  - Staging is fine: no due, unsent reminders in `khatario`.
+  - Bigger gap: the only reminder worker runs from `/var/www/khatario` with `DATABASE_URL` pointing at `khatario` (staging). There is no production worker, so production todo reminders and FCM push dispatch (same process, `lib/push/dispatch-loop.ts`) are not delivered. There is no `kb-index-worker-prod` either. Could not confirm production's pending reminders: reading the production DB was blocked by the session's permission rules.
+- **Shipped:** nothing.
+- **Open:** start `todo-reminder-worker-prod` from `/var/www/khatario-prod` with its `.env.production` loaded and `PM2_WORKER_NAME` set (needs the user's go-ahead: production change); optionally make the worker independent of Node 24 (load Baileys lazily, or pin the PM2 interpreter in deploy).
+
+## 2026-11-05: production todo reminder worker started
+- **Asked:** "Yes, start prod worker".
+- **Decided:**
+  - Started `todo-reminder-worker-prod` from `/var/www/khatario-prod` under Node 24.22.1 with `.env.production` sourced: `DB_NAME=khatario_prod`, Redis DB 1 (staging worker uses DB 0, so they never take each other's BullMQ jobs). `pm2 save` run. Online, 0 restarts, empty error log after its first sweeps; staging and production `/login` 200.
+  - Added `PM2_WORKER_NAME=todo-reminder-worker-prod` to production `.env.production` (backup `.env.production.bak-20261105-worker-name`). Without it `scripts/deploy-vps.sh` falls back to `todo-reminder-worker` and a production deploy restarts the staging worker with production env.
+  - Firebase is not configured on production, so push jobs there are marked `failed: fcm_not_configured`; the in-app bell still works.
+- **Shipped:** server change; `docs/SERVER_INFRASTRUCTURE.md` updated (not committed).
+- **Open:** reminders that came due while production had no worker are sent once, late (count unknown: production DB reads are blocked in this session). `kb-index-worker-prod` still missing. Making the worker independent of Node 24 not done.
+
+## 2026-11-06: SEO daily run (Job 1)
+- **Asked:** scheduled daily rank and optimise run.
+- **Decided:** optimised no page because no playbook trigger was met (no visible query; `/guides` at 61 impressions, trigger 100). Added the first article to the script's inspected URLs so its index status shows in the reports. Ran `node --check` instead of `tsc` on that script, since `tsconfig.json` does not include `.mjs`.
+- **Shipped:** see the commit "Search Console reports now track the first article…": `scripts/seo/gsc-report.mjs`, `docs/seo/STATE.md`, `docs/seo/reports/2026-11-06.{json,md}`. Nothing pushed or deployed. This log entry is left uncommitted because the file holds the owner's other uncommitted entries.
+- **Open:** GSC still 0 clicks, 62 impressions, no queries. First article and `/book-demo` are indexed. Home page body is still the old Site Builder document (owner: Reset + Publish). Friday writer run had saved no draft at the time of this run. `/blog` and `/book-demo` inspections list no user canonical although the live tag is correct: watch only.
+
+## 2026-11-07: SEO daily run (Job 1)
+- **Asked:** scheduled daily rank and optimise run.
+- **Decided:** optimised no page because no playbook trigger was met (no visible query; `/guides` at 61 impressions, trigger 100). Changed the audit's robots check to flag only a block on `*`, Googlebot or Bingbot, because the Cloudflare-managed block in the live robots.txt would have raised a false high issue in Sunday's audit. Left the Cloudflare AI-bot setting alone: it does not affect search and is the owner's choice.
+- **Shipped:** see the commit "The first article and the first India impressions show up in Search Console…": `scripts/seo/site-audit.mjs`, `docs/seo/STATE.md`, `docs/seo/reports/2026-11-07.{json,md}`. Nothing pushed or deployed. This log entry is left uncommitted because the file has the owner's uncommitted edits.
+- **Open:** GSC 0 clicks, 64 impressions, no queries; first India and mobile impressions are provisional. Writer run of 11-06 is stuck "running" with no draft; owner to stop it. Home page body is still the old Site Builder document (owner: Reset + Publish). The unapplied Cloudflare edge rules would block `curl/` on pages, which affects the daily health checks.
+
+## 2026-11-08: Why Khatario is not found on Google
+- **Asked:** "check why khatario is still not searchable in google".
+- **Decided:** not a technical block. Live checks: `/`, the article, robots.txt and sitemap all return 200, no `noindex` or `X-Robots-Tag`, canonical correct, `User-agent: *` allowed (the Cloudflare block only names AI and some other bots). A Google search for `khatario` (gl=in) is auto-corrected to "khataro" (a Gujarati truck slang word); with "Search instead for khatario", khatario.com takes results 1 to 7 (home, accounting, signup, guides, inventory, themes, blog). So the pages are indexed and rank for the exact name, but Google treats the brand as a typo because it has almost no searches and no outside mentions. The home Organization JSON-LD has no `sameAs` links. Google's result title for home drops "Khatario". A further search hit Google's CAPTCHA, so other queries were not checked.
+- **Shipped:** nothing committed; this entry only.
+- **Open:** brand signals: business profiles and listings (Google Business Profile, LinkedIn, X, YouTube, Play Store, G2/Capterra/SoftwareSuggest), then `sameAs` in the Organization JSON-LD; put "Khatario" first in the home title; owner's Site Builder Reset + Publish of home is still pending.
+
+## 2026-11-09: SEO daily run (Job 1)
+- **Asked:** scheduled daily rank and optimise run.
+- **Decided:** optimised no page because no playbook trigger was met (no visible query; `/guides` at 62 impressions, trigger 100).
+- **Shipped:** 8b7914d0 "Search Console now shows 67 impressions…": `docs/seo/STATE.md`, `docs/seo/reports/2026-11-09.{json,md}`. Nothing pushed or deployed. This log entry is left uncommitted because the file has the owner's uncommitted edits.
+- **Open:** GSC 0 clicks, 67 impressions, no queries. Writer failed twice today on `ENOTFOUND`; a third attempt started 09:48 UTC had not finished at this run, so no draft is confirmed. Home page body is still the old Site Builder document (owner: Reset + Publish).
+
+## 2026-11-10: Dashboard Cash Flow card reads the cash and bank ledgers
+- **Asked:** "when suppose owner adds cash to business, does this cashflow considers those amount for the claculation?", then "we need to fix this issue. please go through the complete app and check which all accounts it should touch and then please fix this."
+- **Decided:**
+  - Cause: `GET /api/dashboard/cash-flow` took the opening balance from the ledger but summed Incoming from `payments` (receivable) and Outgoing from `payments` (payable) plus cash `expenses`. Anything posted another way was missed: capital, drawings, loans, journals, salary and tax payments, asset purchases, and counter cash sales or fully paid bills whose cash sits on the invoice or purchase voucher (finding F5 in `docs/PHASE_4_1_PAYMENT_LIFECYCLE_AUDIT.md`).
+  - The card now reads `ledger_entry_lines` of the cash and bank ledgers. Lines of one voucher on one date are netted across those ledgers, so a contra is neither in nor out. Reversed lines and their reversals are left out, which keeps the Phase 4.4 rule that a reversed payment drops out of totals. Opening-balance vouchers count as opening, as in the Cash Flow report. One known gap: a payment entered in one fiscal year and reversed in the next is left out of both years, so that year-end figure differs from the ledger by that amount.
+  - Each movement is named after the largest line on the other side of its voucher (sales and customer receipts, capital, loans, purchases and supplier payments, expenses, salaries, taxes, drawings, loan repayments, assets, refunds, other). Shown in the card's hover breakdown.
+  - One definition of "cash and bank ledger" in `lib/accounting/cash-accounts.ts`, used by the card and by `GET /api/reports/cash-flow`: 1101, 1102, 2112 (bank OD), any ledger linked from `bank_accounts`, and asset ledgers named cash or bank. It leaves out the GST electronic cash/credit ledgers (1130 to 1133) and credit-card or gateway clearing accounts, matching `settlementKind`. This changes the report: it used to count "Electronic Cash Ledger" as cash because the name contains "cash", so a GST deposit showed no cash going out.
+  - Fiscal-year dates are now plain strings; the old `toISOString()` shifted 1 April to 31 March on a server in IST.
+  - `lib/accounting/contra.ts` `listCashBankAccounts` still has its own rule that would list the electronic cash ledger as a contra account. Not changed.
+- **Shipped:** nothing committed. `app/api/dashboard/cash-flow/route.ts`, `lib/reports/dashboard-cash-flow.ts` (new), `lib/accounting/cash-accounts.ts` (new), `app/api/reports/cash-flow/route.ts`, `components/dashboard/CashFlowChart.tsx`, `tests/lib/reports/dashboard-cash-flow.test.ts` (new), `tests/db/dashboard-cash-flow.db.test.ts` (new), `tests/db/phase3e-identity-fallback.db.test.ts` (its cash markers are now posted to the ledger; cleanup also removes leftovers of a stopped run). No migration.
+- **Open:** not checked in a browser; check on staging after deploy. `tests/db/phase4-4-payment-reversal.db.test.ts`: 25 of 26 passed, and the one failure moved between the two concurrent-reversal tests on two runs (`PAYMENT_POSTING_ALREADY_REVERSED` returned where `PAYMENT_ALREADY_REVERSED` is expected); that code was not touched here. The phase3e test asks for `fiscal_year=2026` with today's date, so it will fail from April 2027.
+
+## 2026-11-10: Cash Flow card change committed
+- **Asked:** "Commit the working tree changes with a sensible message."
+- **Decided:** committed only the eight files of the Cash Flow change, staged by name. Left out the files from other work (`docs/SERVER_INFRASTRUCTURE.md`, `lib/services/invoice-extract/learningAggregation/index.ts`, `deploy/cloudflare/`, `scripts/cloudflare-edge-rules.mjs`, the hero image) and this log, which holds the owner's uncommitted entries from 11-05 onward.
+- **Shipped:** 12614df4 "The dashboard Cash Flow card now reads the cash and bank ledgers…" on main. Corrects "nothing committed" in the entry above. Not pushed or deployed.
+- **Open:** staging check after deploy, as listed above.
+
+## 2026-11-10: Customer receivable accounts by category (design, in progress)
+- **Asked:** "can we define customers or identify customers based on the foregn cistomer, domestic customers etc. and their accounts should be updated", and that sub-accounts in the chart of accounts cannot be nested further.
+- **Decided:** each customer category gets its own receivable account under 1103 and that customer's documents post there (owner chose this over a report-only category and over Tally-style one ledger per customer, which would touch every posting and report that assumes one control account). When an existing customer is moved, the balance is transferred on that day rather than re-posting history, so earlier balance sheets and locked periods stay untouched. Scope assumed and not yet confirmed: owner-defined categories, customers only, no foreign currency.
+- **Shipped:** nothing committed; no code changed. Design presented in chat, not yet approved; no spec file yet.
+- **Open:** the nested sub-account failure is not reproduced. `assertValidParentAccount` and `ParentAccountPicker` allow any depth, so the screen and error are needed. Reports find receivable lines with `account_code LIKE '1103%'` (`lib/reports/party-ledger-docs.ts`, party statement route) and the balance sheet with an exact `1103` match; both must read the whole receivable subtree.
+
+## 2026-11-10: Customer receivable accounts by category, spec written
+- **Asked:** "Approve design" for the design in the entry above.
+- **Decided:** the category is the account itself (a sub-account of Accounts Receivable picked on the customer), not a separate Categories list, which would be a second thing to keep in step with the chart. One rule replaces the recalculated transfer described in chat: every receivable line written after a move goes to the customer's current account, including the mirror line of a reversal, so the old account is settled once by the transfer and never touched again. This works because document corrections reverse and re-post rather than delete (`lib/ledger-reversal.ts`) and a customer's opening balance is posted once. Receivable lines are found by the control account plus everything under it (plus legacy `1103…` codes), not by `LIKE '1103%'`, because user-created sub-accounts have free codes. Spec follows the existing `docs/superpowers/specs/` convention.
+- **Shipped:** nothing committed. New file `docs/superpowers/specs/2026-11-10-customer-receivable-accounts-design.md`; roadmap card added under Next. No code, no migration file yet (467 is named in the spec only).
+- **Open:** owner review of the spec, in particular the changed transfer rule and assumption 6 (a parent account row shows only its own entries; the combined figure is on the balance sheet and aging). Then the implementation plan. The nested sub-account failure is still not reproduced.
+
+## 2026-11-10: Schedule III view of the Profit & Loss (feasibility, design and plan)
+- **Asked:** "our profit and loss report is our own format and it does not follow schedule 3 format is that right? can you draw down the schedule 3 format for me and check how our data can be fit in there. dont code, just work on feasibility." Then "Write the plan", with "make sure we are not changing anything in our current p&L report, we should have a separate tab for schedule3 view".
+- **Decided:**
+  - Confirmed: the report follows the Zoho Books layout (sections from `accounts.pl_section`, gross and operating profit). Schedule III groups expenses by nature and has neither sub-total.
+  - A second tab, Schedule III (Division I), reads the same ledger. The tabs come from a new nested `layout.tsx`, so the existing page, API, PDF, Excel and drill-down files are not edited; the plan lists them as protected and checks `git diff` on them.
+  - Profit for the period must equal the Standard net profit. A unit test asserts it over every seeded account code on both inventory models and both views, and the API returns the difference for an on-screen "Agrees with the Standard Profit & Loss" line.
+  - Line per account: owner's choice, else a fixed table for seeded codes, else the nearest parent, else a default from the Standard section. Bank charges default to Other expenses, freight inward sits in Purchases, discount received in Other income.
+  - Perpetual books: purchases are the net debits to the stock accounts (1104, 1160, 1161, 1162) from `purchase`, `purchase_return` and `debit_note` vouchers; Changes in inventories is the balancing figure against 5104, not the stock balance change, so a write-off to 5106 is not counted twice. Periodic books reuse the existing stock schedule.
+  - Left out for now: PDF and Excel in this layout, note numbers, products and services split of sales, earnings per share, Ind AS, the non-corporate format, the phone app, hiding the tab for non-companies (no entity-kind field exists).
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/specs/2026-11-10-schedule-iii-pl-view-design.md` (new), `docs/superpowers/plans/2026-11-10-schedule-iii-pl-view.md` (new), roadmap card under Next. Migration 467 is described in the plan, not written.
+- **Open:** owner review of the spec and plan, and the three default placements in spec section 9. The plan's test values were worked by hand and not run. Callers of the purchase-return posting can pass their own voucher type; only `purchase_return` (default) and `debit_note` were found.
+
+## 2026-11-10: Customer receivable accounts by category, plan written
+- **Asked:** "Approve spec".
+- **Decided:** migration number is 468, because the Schedule III P&L plan written the same day takes 467. The move is its own endpoint (`POST /api/customers/[id]/receivable-account`, with a dry run for the confirmation amount) instead of a field on the customer update, so the update route stays a plain field write. Posting locks the customer row `FOR KEY SHARE` and the move takes `FOR UPDATE`; `FOR SHARE` in posting was rejected because two invoices for one customer would deadlock when each updates `current_balance`. Reports get an `is_receivable` flag from their loaders instead of matching account codes, since sub-accounts have free codes. Spec updated for all four.
+- **Shipped:** nothing committed. New file `docs/superpowers/plans/2026-11-10-customer-receivable-accounts.md` (13 tasks); spec and roadmap card updated. No code, no migration file.
+- **Open:** owner reads the plan and chooses how to run it. Found while tracing: `tests/db/account-hierarchy-integrity.db.test.ts` already creates three levels of sub-accounts through the API, so the "cannot nest further" report is on a screen, not in the route; Task 1 tries it on localhost and otherwise asks the owner for the screen and message. `ledger_entry_lines.voucher_type` has no check constraint, so `receivable_transfer` needs none.
+
+## 2026-11-10: Schedule III tab for the Profit & Loss built (not committed)
+- **Asked:** "Use subagents" to build the plan `docs/superpowers/plans/2026-11-10-schedule-iii-pl-view.md`.
+- **Decided:**
+  - Built on main in the main checkout with no commits, because commits were not asked for. Each task had its own implementer and reviewer; a final review of the whole change ran on the most capable model, followed by one fix wave and a scoped re-review.
+  - Task 2 review: the rule that drops 5101/5102 on periodic books now uses the view-aware section, as the Standard report does. The plan's literal wording would have counted purchases twice in a branch view when 5101 sits in the inter-branch section.
+  - Final review, fixed: (1) periodic books could differ from the Standard report by one paisa because the three stock rows were rounded one by one; the closing-stock row is now the balancing figure. (2) Cost of materials consumed was short by the opening raw-material stock, because opening stock is posted inside the year; stock movement now leaves out `opening_stock` and `opening_balance` vouchers. (3) In a single-branch view, goods received from another branch (`inter_branch_receipt`) now count as purchases. (4) `debit_note` removed from the purchase voucher types; here it is a customer document. Spec section 6 amended for all four.
+  - The new API's access checks are a copy of the Standard route's, because that route may not be edited. The reviewer compared them check by check and found them identical.
+  - Left as they are, by ruling: no warning on the new tab when the period crosses 31 March or closing stock is not formalised; the two tabs keep separate dates; "Default" in the line picker does not name the default line; overrides are loaded twice per request; a period ending 28 Feb after a leap year leaves out 29 Feb of the earlier year; default dates use `toISOString()` as the Standard route does.
+- **Shipped:** nothing committed. New: `lib/accounting/schedule3-lines.ts`, `lib/reports/schedule3-pl.ts`, `lib/reports/pl-request-scope.ts`, `app/api/reports/profit-loss/schedule-iii/route.ts`, `components/reports/ProfitLossTabs.tsx`, `app/(app)/reports/profit-loss/layout.tsx`, `app/(app)/reports/profit-loss/schedule-iii/page.tsx`, `lib/accounting/schedule3-column.ts`, `components/accounts/Schedule3LineSelect.tsx`, `database/migrations/467_accounts_schedule3_line.sql` (applied to `kh_phase2_test` only), tests `tests/lib/accounting/schedule3-lines.test.ts`, `tests/lib/reports/schedule3-pl.test.ts`, `tests/db/schedule3-pl.db.test.ts`, `tests/db/accounts-schedule3-line.db.test.ts`. Changed: `app/api/accounts/[id]/route.ts`, `app/(app)/accounts/[id]/page.tsx`, `lib/mobile-route-title.ts`, `lib/breadcrumb-utils.ts`, `e2e/routes.json`, `tests/lib/nav-active.test.ts`, `tests/db/phase3c-identity-fallback.db.test.ts`. `git diff` on every Standard report file is empty. Unit: 9 suites, 66 tests pass. Real DB on `kh_phase2_test`: `schedule3-pl`, `accounts-schedule3-line`, `pl-tb-bs-agreement`, `account-hierarchy-integrity` pass.
+- **Open:**
+  - Not seen in a browser. Staging checklist is at the end of the plan (11 items); migration 467 needs owner approval before staging.
+  - `app/api/accounts/[id]/route.ts` holds this change and the customer receivable accounts session's edits together, so it cannot be committed for one without the other.
+  - `tests/db/phase3c-identity-fallback.db.test.ts` fails one case on `dashboard/charts` (`sales === 10`, line 466). The HEAD copy of that test file fails the same way on the current working tree, so it is not from this change; cause not looked into.
+  - Follow-ups not built: PDF and Excel in this layout, note numbers, sales split into products and services, pointing the Standard route at `resolvePlRequestScope` once it may be edited.
+
+## 2026-11-10: Schedule III tab, full test suite note
+- **Asked:** follow-on check before handing over the Schedule III build.
+- **Decided:** ran the whole jest suite on the working tree, which also holds another session's unfinished customer receivable accounts work. 23 suites fail: GST return helpers, work orders, PBAC (policy engine, warehouse policies, authorization, default-deny, settings bootstrap), capability normalizer and snapshot, Capacitor server URL, invoice golden benchmark, more-menu, and 11 `tests/db` suites that ran without the test-database setting. None of those test files references a file the Schedule III change touched, and the only existing modules it changed outside accounts (`lib/mobile-route-title.ts`, `lib/breadcrumb-utils.ts`) are imported only by layout components. Whether the failures are older or come from the other session's work was not established (no clean tree to compare, and stash is not allowed).
+- **Shipped:** nothing committed.
+- **Open:** someone should run the suite on a clean checkout of HEAD to see which of the 23 are older.
+
+## 2026-11-10: Customer receivable accounts by category, built and reviewed
+- **Asked:** "Native" (build the plan in this session, one reviewer at the end).
+- **Decided:** (1) A reversal cannot be written on a different account than its original: migration 324's trigger refuses it. The mirror stays on the old account and a correction transfer on the same date and branch (moves row of kind `correction`) carries it to the customer's current account. (2) Only lines a move carried away are corrected: on another receivable account and written before the customer's last move (`customerSweptLines`); a customer never moved is untouched, so a business with no categories behaves as before. (3) The transfer is posted per branch so branch balance sheets show the move. (4) `lib/accounting/receivable-accounts-schema.ts` keeps posting, reversals and the customer routes working if the code is deployed before migration 468. (5) The receivable set is the control account, 1103-coded accounts and everything under either, so mapping receivables to another account does not drop category accounts. (6) Foreign keys are SET NULL / CASCADE, not RESTRICT, so a tenant purge by cascade does not depend on delete order. (7) No browser check and no commit, as the owner prefers; `next lint` is not configured here. All rulings are in the plan workspace ledger `.superpowers/sdd/2026-11-10-customer-receivable-accounts/progress.md` (git-ignored).
+- **Shipped:** nothing committed. New: migration `468_customer_receivable_accounts.sql` (run on `kh_phase2_test` only), `lib/accounting/receivable-accounts.ts`, `receivable-accounts-schema.ts`, `customer-vouchers.ts`, `receivable-account-move.ts`, `lib/customers/receivable-account-options.ts`, `receivable-account-request.ts`, three routes under `app/api/customers/` (`receivable-accounts`, `receivable-account`, `[id]/receivable-account`), `components/customers/ReceivableAccountPicker.tsx`, `BulkReceivableAccountDialog.tsx`, tests `tests/db/customer-receivable-accounts.db.test.ts` (39), `tests/lib/accounting/receivable-accounts.test.ts`, `tests/lib/customers/receivable-account-options.test.ts`, and the staging checklist. Changed: customer posting in `lib/ledger-utils.ts`, `advances.ts`, `advance-service.ts`, `credit-notes/refund.ts`; `lib/ledger-reversal.ts`; `app/api/invoices/[id]/amend/route.ts`; aging, statement, balance sheet, cash flow and dashboard cash flow readers; `app/api/accounts/[id]/route.ts` (in-use guard); customer create, detail, list, edit and new screens; `components/reports/AgingReport.tsx`; user guide section 11. Final review by a fresh reviewer: 1 critical (date amendment after a move re-posted on the old account) and 4 of 5 important findings fixed with tests.
+- **Open:** (a) Owner decision: `postOpeningBalanceLedgerEntry` now posts its two lines in one transaction, because posted separately the first was refused by the voucher-balance trigger and `POST /api/customers` swallowed the error, so opening balances were not reaching the ledger on `kh_phase2_test`; whether staging and production behaved the same is not checked. Editing an opening balance (allowed before any invoice or payment) still does not touch the ledger, for customers and suppliers. (b) The "cannot nest sub-accounts further" report is not reproduced: the API accepts three levels and the create form shows no limit; it is step 1 of the staging checklist. (c) `tests/db/phase4-4-payment-reversal.db.test.ts` "concurrent reversals with different keys" failed 3 of 7 runs (`PAYMENT_POSTING_ALREADY_REVERSED` where `PAYMENT_ALREADY_REVERSED` is expected); the flake predates this work, but reversals now run extra queries, which may change how often it shows. (d) Pre-existing failures, identical on a clean worktree of `b4f761e5`: 60 tests in 15 `tests/db` suites (October-dated fixtures now refused as backdated more than 30 days, duplicate invoice numbers, revoked sessions and others); and 7 tests in 6 `tests/lib` suites in modules this change does not import (not run on a clean worktree). (e) Fourteen minor review findings are deferred and listed in the ledger, among them: the edit page moves the account before saving the other fields, the list keeps ticks across filters, and the transfer date is the database's `CURRENT_DATE`.
+
+## 2026-11-10: Correction to the entry above
+- **Decided:** the concurrent-reversal test in `tests/db/phase4-4-payment-reversal.db.test.ts` failed in 3 of 6 runs during this work, not 3 of 7.
+- **Shipped:** nothing committed.
+- **Open:** as listed in the entry above.
+
+## 2026-11-10: Editing an opening balance re-posts the ledger
+- **Asked:** "Yes, re-post it" to "Should editing a customer's opening balance also update the ledger?"
+- **Decided:** one function, `setPartyOpeningBalance` (`lib/accounting/account-rules.ts`), called by the customer and supplier update routes when the amount or side changes. The ledger is changed before the row, so a refusal leaves the row unchanged (`OPENING_BALANCE_LEDGER_FAILED`). The voucher keeps its first date. It is replaced, except for a customer who has been moved to another receivable account: there the old line was settled by the transfer, so only the difference is posted on the current account; replacing it would reopen the old account. `current_balance` is left alone: no trigger maintains it on `kh_phase2_test`, and the customer create path does not set it from the opening balance, which predates this work.
+- **Shipped:** nothing committed. `lib/accounting/account-rules.ts`, `app/api/customers/[id]/route.ts`, `app/api/suppliers/[id]/route.ts`; five more tests in `tests/db/customer-receivable-accounts.db.test.ts` (44 pass); spec section 4.2a and staging checklist section 8.
+- **Open:** `PUT /api/suppliers/[id]` cannot run on `kh_phase2_test` (its UPDATE names `suppliers.notes`, a column that database does not have), so the supplier case is tested through the function and the route wiring is covered by the typecheck only; check it on staging. Whether the customers list shows the opening balance in its balance figure is not checked.
+
+## 2026-11-10: Compare periods on the Profit & Loss (research and design)
+- **Asked:** "we want people to be able to compare two period's P&L. i think Tally has this feature, can you do some research on this?", then "Write the design".
+- **Decided:**
+  - Research: Tally compares with side-by-side columns (Auto Column for monthly, quarterly and so on; New Column for one extra column); its help documents a variance column for budgets and scenarios, and none was found for plain periods. Zoho Books has "Compare With" previous periods or years with a number of periods; users have asked it for change columns. A hand-picked second date range on Tally's P&L was not confirmed from its help pages.
+  - A third tab, Compare, in the Standard layout. Rejected: a "Compare with" control on the Standard page (it would edit the page and API the owner wants untouched) and Tally-style automatic columns as the first step (the need stated is two periods; the API takes a list of periods so they can come later).
+  - Every column is `buildProfitAndLoss` for that period, so a column cannot disagree with the Standard tab. The new code only works out the dates, lines accounts up by id and computes the change.
+  - Compare with: previous period (whole months when the period is whole months, else the same number of days), same period last year (month-end maps to month-end), or one custom period; up to three earlier periods for the first two. Change in rupees and per cent shown only when two periods are on screen.
+  - Not included: PDF and Excel, automatic columns, the Schedule III layout, branches side by side, budgets.
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/specs/2026-11-10-pl-compare-periods-design.md` (new), roadmap card under Next.
+- **Open:** owner review of the spec, in particular the five choices in its section 9. Depends on the Schedule III change being committed first (tabs, layout file, `resolvePlRequestScope`). Speed of two to four builder runs per request is not measured.
+
 ## 2026-11-10: Invoice history plan (Tally-style edit log)
 - **Asked:** "does tally allow the editing of created invoice? please do thorough checks", then "i want khatario to have all the fields editable which tally allows and it should be captured in the history of that invoice. do you think it is the right approach?", then "Yes, plan history".
 - **Decided:**
@@ -1121,6 +1286,63 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Diffs are computed in TypeScript when History is read. Customer link views and the public token are excluded from snapshots. Keep the GSTR-1 lock (credit/debit notes after filing) rather than Tally's amendment route.
 - **Shipped:** nothing committed; no code changed. `docs/superpowers/plans/2026-11-10-invoice-revision-history.md` (new).
 - **Open:** owner review of the plan, then implementation. Migration 469 backfills a baseline revision for every invoice; time it on a staging copy. Flutter History screen and the "edit amounts on final invoices" work are later plans.
+
+## 2026-11-10: Phone app vs website coverage audit
+- **Asked:** "check my complete app compare which page in android need to be built and it is pending to be built compared to web version. even if it is built, is it built fully or half build with no proper formatting."
+- **Decided:** audit only, by reading code (no APK run). "Android app" taken as the Flutter app in `phone/`. Every website route falls in one of four tiers on the phone: its own screen, the automatic read-only list (`RecordPage`), the website shown inside the app, or not reachable.
+- **Shipped:** nothing committed; no code changed.
+- **Open:** findings are in the session reply, not in a doc. Main ones: about 60 More-menu links open the automatic read-only list (all sales documents other than invoices, books, most reports, most HR, most WhatsApp); `/pricing/price-list` and `/items/cleanup` call APIs that do not exist; supplier, expense and journal forms are old-style and carry a fraction of the website fields; the item form lacks barcode, MRP, category, brand, batch/serial and images. `docs/plan/PHONE_APP.md` still says 0 screens are live. Nothing was checked on a device.
+
+## 2026-11-10: Customer receivable accounts committed
+- **Asked:** "Commit the working tree changes with a sensible message."
+- **Decided:** committed only this feature's 50 files, staged by name, because other sessions' uncommitted work is in the same checkout (Schedule III Profit & Loss, invoice revisions, Cloudflare rules, the hero image, `docs/SERVER_INFRASTRUCTURE.md`, `lib/services/invoice-extract/learningAggregation/index.ts` and others). `app/api/accounts/[id]/route.ts` holds both this feature's guard and the Schedule III changes: only the guard (36 added lines) was staged, by building the index entry from HEAD plus those blocks; the Schedule III part is still uncommitted in the working file. `docs/project.log.md` and `docs/roadmap.md` were left out, as in the Cash Flow commit, because they hold other sessions' and the owner's uncommitted entries. Before committing, the staged tree was typechecked on its own in a separate copy: 0 errors.
+- **Shipped:** 3f1331e8 "Customers can be recorded in a category account under Accounts Receivable…" on main. Corrects "nothing committed" in the three entries above. Not pushed or deployed; migration 468 applied nowhere but `kh_phase2_test`.
+- **Open:** staging deploy with migration 468 first, then the staging checklist. The plan workspace `.superpowers/sdd/2026-11-10-customer-receivable-accounts/` (git-ignored) is kept: its `progress.md` lists every ruling and the fourteen deferred review findings.
+
+## 2026-11-10: Compare periods on the Profit & Loss (implementation plan)
+- **Asked:** "Write the plan", after reading the Compare design.
+- **Decided:**
+  - Five tasks, no migration: date rules and change arithmetic in a file with no imports (so the page can use it too), lining up builder results by account, the API, the tab and page, final checks.
+  - The page imports only types from the server module and takes its arithmetic from the import-free file, so no database code reaches the browser.
+  - Each period is built with `financialYear: null`, as the Standard page does, so a column equals the Standard API for the same dates; a real-database test asserts this for the consolidated view and for one branch.
+  - Bad input (malformed or reversed dates, unknown mode, count outside 1 to 3, custom with one date) returns 400 before any report query.
+  - Spec adjusted in one place: the inter-branch sentence does not name an amount, because several periods have no single amount.
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/plans/2026-11-10-pl-compare-periods.md` (new), spec edited, roadmap card updated.
+- **Open:** owner review of the plan and the choice of how to build it. The plan's test values were worked by hand and not run. It needs the Schedule III change in the tree (tabs, layout file, `resolvePlRequestScope`).
+
+## 2026-11-10: Phone app parity plan
+- **Asked:** "everything has to be fixed, so i want you to create a detailed plan which you can follow end to end."
+- **Decided:**
+  - One plan, 45 tasks in 10 stages, each stage ending in a staging APK. Stage 0 builds five shared pieces (route table with a coverage test, document list, document detail, form kit, table report) so the roughly 60 remaining screens are specs on shared screens rather than hand-built one by one. Rejected: one plan per module, because every module needs the same five pieces first.
+  - A `stillGeneric` set plus a coverage test acts as a ratchet: each task removes its links, and the last task deletes the set. A Jest test fails when the website menu gains a link the phone does not know.
+  - Some pages stay on the website on purpose (visual editors, spreadsheet imports, yearly wizards, wide statutory tables); the list is in the plan's Scope section and needs the owner's yes before Stage 8.
+  - Report screens are written from recorded staging replies, not guessed keys.
+  - No server changes are planned: the two broken links use APIs that already exist (`/api/pricing/resolve`, `/api/items/merge`).
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/plans/2026-11-10-phone-app-parity.md` (new); roadmap card under Next repointed; note added at the top of `docs/plan/PHONE_APP.md`.
+- **Open:** owner review of the plan and of the "Stays on the website" list; choice of execution method; approval to commit as tasks finish. Tasks in Stages 2 to 8 name files, endpoints and behaviour but leave request body keys to be copied from each web page when the task is built. Endpoint lists come from `app/api/**/route.ts` exports and were not called.
+
+## 2026-11-10: Tally gap check against Khatario
+- **Asked:** "can you list down features or painpoint of customers which tally does not provide solution for", then yes to checking the list against Tally's current release notes and mapping it to Khatario.
+- **Decided:**
+  - Three items from the first list are no longer Tally gaps and should not be used in marketing: purchase-bill scanning (Docs by Ira, TallyPrime 7.1, June 2026), cloud backup (TallyDrive auto backup, 7.0, Dec 2025) and bank automation (Connected Banking, 145+ banks, 6.0).
+  - Tally is ahead of Khatario on portal-connected compliance: no e-invoice (IRN) generation, live bank feed, in-app bank payments, public API or Tally data import was found in Khatario by file and route search.
+  - Khatario was checked by route and file names only, not by running the features.
+- **Shipped:** nothing committed; no code changed. No roadmap card moved.
+- **Open:** owner to decide whether e-invoice (IRN), Tally import, public API, marketplace settlement reconciliation, KOT/tables and a field-sales app become roadmap cards. Tally's scheduled-reminder and phone-invoicing status was not confirmed from an official page; TallyPrime 7.2's date and full notes were not read.
+
+## 2026-11-10: Tally gap cards added to the roadmap
+- **Asked:** "Add cards" (the six Khatario gaps from the Tally check).
+- **Decided:** all six go under Later, marked "Not designed", because none has a spec or an agreed priority. Rejected: Next, which holds work already designed or built.
+- **Shipped:** nothing committed. `docs/roadmap.md`: six cards under Later (e-invoice IRN, Tally data import, public API, marketplace settlement reconciliation, restaurant tables and KOT, field-sales app).
+- **Open:** owner to order the six and pick which gets a spec first.
+
+## 2026-11-10: Tally gaps: e-invoice blocked, five moved to Next
+- **Asked:** "currently we do not have sandox for e-invoicing, so we canot do that, but we should do rest".
+- **Decided:**
+  - E-invoice (IRN) stays under Later, marked blocked until an e-invoicing sandbox exists.
+  - The other five move to Next and are designed one at a time, each with its own spec and plan, in this order: Tally data import, public API, restaurant tables and KOT, marketplace settlement reconciliation, field-sales app. Tally import is first because it removes the main cost of switching. The order is the agent's proposal, not yet confirmed by the owner.
+- **Shipped:** nothing committed; no code changed. `docs/roadmap.md` cards moved.
+- **Open:** design of Tally data import started (questions to the owner); the other four not started.
 
 ## 2026-11-10: Invoice history built (edit log)
 - **Asked:** "Native" (build the invoice history plan in this session).
@@ -1134,6 +1356,19 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - `tests/db/phase2a-invoice-s01-s08.db.test.ts` and `tests/db/post-sale-discount-credit-note.db.test.ts` fail on hard-coded October dates (back-date rules), not on this change.
   - Not checked in a browser. Staging steps after deploying 469: create an invoice, edit the draft, finalize, amend with a reason, record a payment, cancel; History shows six entries with the right changes, reason and user; "View this version" on version 1 shows the original lines; opening the customer link adds no entry; the phone app's History still lists entries.
   - Time the baseline backfill on a staging copy before production. Writes made after the first COMMIT in `POST /api/invoices` (none known) would show as System.
+
+## 2026-11-10: Compare tab for the Profit & Loss built (not committed)
+- **Asked:** "Use subagents" to build the plan `docs/superpowers/plans/2026-11-10-pl-compare-periods.md`.
+- **Decided:**
+  - Built on main with no commits, as commits were not asked for. Each task had its own implementer and reviewer; a final review of the whole change ran on the most capable model, followed by one fix wave and a scoped re-review.
+  - Final review, fixed: (1) typing a year in a date field passed through years such as 0202, the compared period went far out of range, the API returned 500 and the page became an error screen with no controls. Dates before 1900 are now refused with a 400, the page sends nothing while a date is incomplete, waits 0.4 seconds after the last change, and shows failures other than "no access" in place of the table with the controls kept. (2) An inactive parent account with entries in one period only gave a wrong "Total for" in the other period, or listed its sub-account at top level; a sub-account now sits under its parent whenever any period shows it there, and a parent's total is its own amount plus its sub-accounts'. (3) On periodic books a comparison is refused when only some periods have a stock schedule. (4) A nil change shows `–` in both change cells. Spec sections 4 and 6 amended.
+  - Left as they are, by ruling: on periodic books the closing-stock note repeats for each column; section totals and profit rows are not clickable here, though they are on the Standard tab; a nil profit shows `–`; the default landing comparison is financial-year-to-date against the previous equal-length period (the reviewer suggests asking whether "Same period last year" is a better default).
+- **Shipped:** nothing committed; no migration. New: `lib/reports/pl-compare-periods.ts`, `lib/reports/profit-loss-compare.ts`, `app/api/reports/profit-loss/compare/route.ts`, `app/(app)/reports/profit-loss/compare/page.tsx`, tests `tests/lib/reports/pl-compare-periods.test.ts`, `tests/lib/reports/profit-loss-compare.test.ts`, `tests/db/profit-loss-compare.db.test.ts`. Changed: `components/reports/ProfitLossTabs.tsx` (third tab), `lib/mobile-route-title.ts`, `lib/breadcrumb-utils.ts`, `e2e/routes.json`, `tests/lib/nav-active.test.ts`, `tests/db/phase3c-identity-fallback.db.test.ts`. `git diff` on every Standard report file is empty, and the Schedule III files are byte-identical to their reviewed state apart from the tab entry. Unit: `tests/lib/reports` and `tests/lib/nav-active.test.ts`, 9 suites and 77 tests pass. Real DB on `kh_phase2_test`: `profit-loss-compare`, `schedule3-pl`, `pl-tb-bs-agreement` pass. Type-check clean for the new files.
+- **Open:**
+  - Not seen in a browser. Staging checklist at the end of the plan, 15 items, including timing the request with four periods on the largest business.
+  - This change needs the Schedule III change (tabs, layout file, `resolvePlRequestScope`); both are uncommitted. The other session committed its receivable-accounts work in 3f1331e8 with only its own part of `app/api/accounts/[id]/route.ts`, so that file's remaining uncommitted edits are the Schedule III ones.
+  - Full jest suite on the working tree: 24 suites fail, none of them from this work (invoice revisions and audit coverage, GST return helpers, work orders, PBAC, capability normalizer and snapshot, Capacitor server URL, invoice golden benchmark, more-menu, and `tests/db` suites run without the test-database setting). `tests/db/phase3c-identity-fallback.db.test.ts` still fails its one `dashboard/charts` case.
+  - Owner question from the review: should the default "Compare with" be "Same period last year"?
 
 ## 2026-11-10: Invoice history review fixes
 - **Asked:** (continuation) final whole-change review of the invoice history build.
@@ -1150,14 +1385,251 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Shipped:** nothing committed. Migration 469 changed (drops `invoice_revisions_invoice_id_fkey` where an earlier draft created it). 110 tests across 14 suites pass; `tsc` clean.
 - **Open:** history of an invoice that no longer exists is kept in the table but not shown anywhere (the History tab needs the invoice). Commit and staging deploy as before.
 
-## 2026-11-08: Why Khatario is not found on Google
-- **Asked:** "check why khatario is still not searchable in google".
-- **Decided:** not a technical block. Live checks: `/`, the article, robots.txt and sitemap all return 200, no `noindex` or `X-Robots-Tag`, canonical correct, `User-agent: *` allowed (the Cloudflare block only names AI and some other bots). A Google search for `khatario` (gl=in) is auto-corrected to "khataro" (a Gujarati truck slang word); with "Search instead for khatario", khatario.com takes results 1 to 7 (home, accounting, signup, guides, inventory, themes, blog). So the pages are indexed and rank for the exact name, but Google treats the brand as a typo because it has almost no searches and no outside mentions. The home Organization JSON-LD has no `sameAs` links. Google's result title for home drops "Khatario". A further search hit Google's CAPTCHA, so other queries were not checked.
-- **Shipped:** nothing committed; this entry only.
-- **Open:** brand signals: business profiles and listings (Google Business Profile, LinkedIn, X, YouTube, Play Store, G2/Capterra/SoftwareSuggest), then `sameAs` in the Organization JSON-LD; put "Khatario" first in the home title; owner's Site Builder Reset + Publish of home is still pending.
+## 2026-11-10: Compare tab opens on "Same period last year"
+- **Asked:** which comparison the Compare tab should open with; the owner chose "Same period last year".
+- **Decided:** the page's starting choice is `previous_year`. With the default dates (1 April to today) "Previous period" compared against a stretch straddling the previous year end (20 Aug 2025 – 31 Mar 2026 on 10 Nov 2026). The API's own default when no `compare` is sent stays `previous_period`; the page always sends one, and the unit tests pin that API default.
+- **Shipped:** nothing committed. `app/(app)/reports/profit-loss/compare/page.tsx` (one line and a comment), spec section 4 and staging checklist item 2 updated. Type-check clean for the Compare files.
+- **Open:** not seen in a browser; covered by staging checklist item 2.
+
+## 2026-11-10: Move to Khatario import, design
+- **Asked:** whether a "migrate from Tally / Zoho / Vyapar" option is a good idea given "we cannot build for every app"; then "we should have each section as importable"; how column names that differ are handled; how invoice numbers are managed after importing.
+- **Decided:**
+  - One import organised per section (Accounts, Customers, Suppliers, Items, Unpaid sales bills, Unpaid purchase bills), the owner's idea. Rejected: a Tally-only importer and per-app readers, because most of the work is shared and app-specific code would multiply.
+  - The user uploads the old app's own Excel or CSV and matches columns; "Tally", "Vyapar", "Zoho Books" are saved column matches (data). Rejected for now: a Tally XML reader and a fixed Khatario template.
+  - Masters and opening figures only, any cut-over date, run by the business itself, opening figures only for a business with no transactions. Past invoices and purchases are not imported: they would post sales, GST and stock again and reach GSTR-1.
+  - Unpaid bills come in as opening bills in their own table, not as flagged invoices: 179 files read `invoices` and 89 read `purchases`, so a marker would need a filter in each.
+  - Each opening bill posts its own `opening_bill` ledger voucher, because ageing and statements are built from ledger vouchers (`lib/reports/party-ledger-docs.ts`). This replaces what was said in conversation (bills post nothing, party opening balance is their total); the trial balance effect is the same.
+  - Old bills keep their numbers; new invoices continue the old series or take a new prefix; the duplicate-number check also covers opening bills.
+  - Control accounts (receivable, payable, inventory, linked bank ledgers) take no opening balance from the Accounts import; their own sections feed them.
+  - Built as three plans: engine and masters; accounts and opening figures; opening bills and the Move to Khatario page.
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/specs/2026-11-10-move-to-khatario-import-design.md` (new); roadmap card under Next rewritten.
+- **Open:** owner review of the spec. Six points listed in the spec's section 14 were not read in full, the main one being whether profit and loss counts a mid-year opening voucher on income and expense accounts. App presets need real export files from the owner. The other four Tally gaps (public API, tables and KOT, marketplace reconciliation, field-sales app) are not designed.
+
+## 2026-11-10: Move to Khatario import, plan 1
+- **Asked:** "Approved, write plan" (the import spec).
+- **Decided:**
+  - Plan 1 covers the engine with Customers, Suppliers and Items: 11 tasks, one migration (470: `import_runs`, `import_run_records`, `import_column_matches`).
+  - Commit runs in batches of 200 driven by the browser, so progress shows and an interrupted import resumes from a saved position.
+  - Create logic for customers, suppliers and imported items moves out of the route handlers into service functions that the routes and the import both call.
+  - Undo has its own rule. The app's delete handlers for customers, suppliers and items are soft deletes with no "is it used" check, and customers have no delete handler in `app/api/customers/[id]/route.ts`. Undo soft-deletes a record only when no table references it, found from the database's foreign keys.
+  - Items keep the opening stock quantity field in plan 1 because today's item import has it. An item imported with opening stock is kept on undo; reversing opening stock belongs to plan 2.
+  - An invalid phone, email or PIN code does not block a row (imported without it, shown as a warning); an invalid GSTIN does.
+- **Shipped:** nothing committed; no code changed. `docs/superpowers/plans/2026-11-10-move-to-khatario-import-plan-1-engine-masters.md` (new); roadmap card updated.
+- **Open:** owner review of plan 1 and choice of how to build it. The app column presets in Task 3 are from memory of each app's export layout and are unverified until real export files are supplied. Plans 2 and 3 not written. The other four Tally gaps not designed.
+
+## 2026-11-10: Phone app parity, Stage 0 built (shared pieces)
+- **Asked:** "Yes, subagents" to building the parity plan with a fresh subagent per task.
+- **Decided:**
+  - No commits: the owner has not approved commits for this plan, so each task was reviewed from a file snapshot instead of a commit range. Work is in place on `main`.
+  - Added a third set, `websiteForNow`, beside `stillGeneric` and `websiteByDesign`, so a link that merely falls through to the website cannot pass the final coverage test.
+  - `isWebsiteOnlyHref` keeps the old set for now, so Stage 0 changes nothing a user can see; Task 44 switches it.
+  - `TableReportSpec` gained `countTiles` (tile keys drawn without a rupee sign); the plan text was updated.
+  - One fix pass after Task 5 also took eight reviewer findings marked minor (non-finite numbers, superseded "Show more", failed refresh keeping rows, capital-letter fields, back during save, a real double-tap test, empty state with sections, stale document after a failed reload), because every later screen builds on these files.
+- **Shipped:** nothing committed. New: `phone/lib/screens/pages/native_routes.dart`, `phone/lib/screens/docs/` (list, detail, logic), `phone/lib/ui/form_kit.dart`, `phone/lib/ui/toast.dart`, `phone/lib/screens/reports/table_report_screen.dart`, six test files under `phone/test/`, `tests/lib/phone-more-hrefs.test.ts`. Changed: `page_catalog.dart`, `record_page.dart`, `app_shell.dart`, `report_period.dart`. Full suite 310 pass, 18 fail; analyzer 4 issues.
+- **Open:** the 18 failures and 4 analyzer issues exist on the untouched sources too (golden images plus one in `banners_test.dart`); Task 12 regenerates goldens. Nothing was run on a device and no APK was built. Deferred reviewer notes are in `.superpowers/sdd/2026-11-10-phone-app-parity/progress.md` (git-ignored). Next is Task 6; commits still need the owner's yes.
 
 ## 2026-11-10: Brand signals so Google stops reading "Khatario" as a typo
 - **Asked:** "Yes, make them": the site changes from the 2026-11-08 diagnosis (the owner has no YouTube, LinkedIn or Instagram yet and is not starting Google Ads now). The owner also saw Khatabook first for "khatario billing app".
 - **Decided:** home title now starts with the brand ("Khatario Billing App: GST Bills, Stock & WhatsApp Invoices for Shops"). One shared Organization node (`lib/marketing/brand-structured-data.ts`) for home and `/about`, with `alternateName`, description, support email and `sameAs` from `KHATARIO_PROFILE_URLS` (empty until listings exist; add each URL there). WebSite and SoftwareApplication get `alternateName` too. New `/about` page with AboutPage JSON-LD, using only facts the site already states (no founder, company name or address: none are in the repo; the owner can add them). HR left out of the page because `HR_LAUNCHED` is false. `/about` added to the sitemap, footer, middleware public paths, `isPublicMarketingSurface` and reserved business slugs. Billing hero subhead default now says "With the Khatario billing app…"; the H1 keeps its keyword text. The live hero comes from the published Site Builder document, so the subhead change shows only after Reset + Publish; the title and JSON-LD show on deploy because the published document sets no title.
 - **Shipped:** nothing committed. `app/page.tsx`, `app/about/page.tsx` (new), `lib/marketing/brand-structured-data.ts` (new), `app/sitemap.ts`, `components/marketing/landing/LandingFooter.tsx`, `lib/product-lines.ts`, `middleware.ts`, `lib/auth/public-surfaces.ts`, `lib/customer-surface/slug.ts`, `tests/lib/auth/public-surfaces.test.ts`. `tsc` clean; public-surfaces and slug tests pass. Not checked in a browser.
 - **Open:** staging check: `/about` loads signed out with header and footer, footer link works, `/sitemap.xml` lists `/about`, home `<title>` and JSON-LD (Rich Results Test). After production deploy: Site Builder Reset + Publish home, Request indexing for `/` and `/about`. Free listings (G2, Capterra, SoftwareSuggest, Techjockey, IndiaMART, Crunchbase), then add their URLs to `KHATARIO_PROFILE_URLS`.
+
+## 2026-11-10: Move to Khatario import, plan 1 built
+- **Asked:** build plan 1 (engine with Customers, Suppliers and Items) task by task with a fresh implementer and a reviewer per task; commits on main in the main checkout, files staged by name, nothing pushed.
+- **Decided:**
+  - GSTIN `27AAAPA1234A1ZT` replaces the plan's `27AAAPA1234A1Z5` in tests (the plan's value fails the checksum the services enforce).
+  - `ReadFileResult` gains `rowNumbers` so the user's own row numbers survive dropped blank and total rows. CSV delimiter is chosen over the first 20 non-empty lines. `relax_quotes` is on so names like 5" pipe do not fail a file.
+  - Column matching assigns in tiers (saved, preset, alias, values), earliest column winning only within a tier.
+  - Export instruction lists end with the brief's exact sentence.
+  - `tax_rate` is a choose-once value, not a type error.
+  - Phone duplicates are fixed in the import layer by digit-only comparison of stored phones; services and `normalizePhoneOrNull` unchanged because `POST /api/customers` behaviour is frozen.
+  - Sections gain `undoRecords(ctx, ids[])` and record-usage gains `findReferencesMany`: one locked transaction per batch of up to 200.
+  - Problem rows live in their own table `import_run_problems` (in migration 470, edited in place since only the test DB had it) because a jsonb append grows quadratically at 10,000 rows.
+  - First commit gates on stored `preview_ready` plus in-memory checks, not a full re-classify (nginx 120 s timeout). A record created between preview and commit is still caught per row.
+  - A crash between a save and its bookkeeping is accepted: no duplicate, but the record is not undoable.
+  - A run is reachable only through its own section URL (404 otherwise), so rights on one module cannot commit or undo another module's run.
+  - `/import` stays out of `MODULE_ROUTE_PREFIXES`; every import API route checks permission itself.
+  - Preview stores its full problem list in `import_runs.preview_problems` and the problem-rows route serves it for draft runs, so Download problem rows works on Preview.
+  - `e2e/routes.json`, `lib/breadcrumb-utils.ts`, `lib/mobile-route-title.ts` were edited for the import page titles but left unstaged, because they hold another session's uncommitted Schedule III work.
+- **Shipped:** commits 5dda0477 feat(import) value readers and state names; 14cf4888 fix tax rate, state name and phone detection readers; ea7aaac0 feat read xlsx and csv uploads; f432b45f, c64e11cd fixes to the file reader; 52be4996 feat presets and column guessing; 7f2d8644 fix tiered column matching and export step wording; b0e838cd refactor(customers) create customer as a service; 6af9ff4e refactor(suppliers) create supplier as a service; dbc1d5e6 refactor(items) imported item create as a service; 861975a2 feat customers, suppliers and items sections; fcf5e2b1 fix phone matching and batched undo; 163d82d4 feat import runs with preview, batched commit and undo; c0150987, 0ce0859d fixes (problem rows table, cheaper commit gate, saved skips, stuck runs, partial-undo status); f78e8867 feat import API routes; e0f2b335 fix one security preamble for import routes; a5967a01 feat import wizard on the three list pages; 1ced0e68 fix problem rows from preview, clearer pause and undo text. Migration 470 written and applied only to `kh_phase2_test`. New `docs/superpowers/plans/2026-11-10-move-to-khatario-import-plan-1-staging-checklist.md`. Final check: `npx jest tests/lib/import` 5 suites, 74 tests pass; database tests (import-run, import-routes, import-sections, customer-services, supplier-services, item-services) 6 suites, 81 tests pass; `tests/security/customers-create-route.test.ts` 4 pass. Not pushed.
+- **Open:** owner approval to apply migration 470 on staging, then deploy and run the checklist. App presets and export instructions are unverified against real Tally, Vyapar and Zoho Books exports. The three title files above are uncommitted. Nothing was checked in a browser. Deferred minor review notes are in `.superpowers/sdd/2026-11-10-move-to-khatario-import-plan-1-engine-masters/progress.md` (git-ignored). A pre-existing failure in the phase3c dashboard chart assertion is unrelated. Plans 2 and 3 not started.
+
+## 2026-11-10: Phone app parity, Stage 1 built (repair what is built)
+- **Asked:** continue the parity plan with subagents after "yes" to committing.
+- **Decided:**
+  - The controller commits each task to `main` after its review passes, staging files by name; nothing is pushed.
+  - Where the plan and the website differ, the website wins: no automatic duplicate detection (no endpoint); the supplier form has the website's fields, not the plan's longer list; expenses follow the website's bill-with-lines shape; batch/serial tracking stays off the item form because the item routes do not read it.
+  - Where a website tool is wrong, the phone is correct: the currency converter and the PAN check.
+  - Each task got one fix round after review: blanked supplier fields refused with a message; an untouched expense edit no longer moves the expense to another account; journal entries over 30 days back ask for the reason the server needs; the PAN holder type is read from the fourth letter; the restyle kept password fields uncapitalised and fixed the More menu test fixture.
+  - Screenshot tests refreshed for screens other commits had changed (home, theme, login, widgets) were accepted after checking the images.
+- **Shipped:** 3a709779, a4ecbc1c, 99ee5a8e, 308c4c2b, 7d6c5b55, 5311ad1a, 185326a3 and the Stage 1 device checklist (`docs/superpowers/plans/2026-11-10-phone-app-parity-staging-checklist.md`). APK built: `phone/build/app/outputs/flutter-apk/app-owner-release.apk` (staging). Phone tests: 509 pass, 2 fail (promotion pop-up screenshot; a test expecting a space after the rupee sign), down from 18 failing before the plan.
+- **Open:** nothing tried on a device yet; the owner runs the checklist on staging. Website issues found: the item form's batch/serial/valuation settings are ignored by the item routes; the website currency converter and PAN check give wrong answers; phone settings screens send `business_id` in bodies. Next is Stage 2 (Task 14).
+
+## 2026-11-10: Khatario 35 s intro video with presenter Shalini (in progress)
+- **Asked:** a 35 s 16:9 product intro for Indian shop owners: the problem, Shalini (the user's AI presenter photo) introducing Khatario, the dashboard, GST invoicing, inventory, purchases, receivables and payables, a close with khatario.com; subtitles, music, Indian English female voice; only real Khatario screens.
+- **Decided:**
+  - Built in HyperFrames at `videos/khatario-intro/` following the user's script verbatim (`SPEC.md`). No storyline options, because the user gave the script.
+  - One HeyGen talking-photo take of Shalini speaking the whole script: its audio is the narration for the full film, and its picture shows only in the intro and the close, so the voice and lip-sync stay consistent.
+  - Product shots are real screenshots of the seeded demo shop: the repo's marketing screens, plus new captures by `videos/khatario-intro/tools/capture-screens.mjs` (items, purchases, receivables and payables aging).
+  - Logo orange in the reveals is the wordmark's own colour; the brief's chilli orange goes on the rings and the CTA. The end-card tagline is set on screen, so subtitles skip that line.
+  - Test DB `kh_phase2_test`: the demo seed had left three empty duplicate demo-owner accounts (phone 9000000001), which blocked login with MULTIPLE_ACCOUNTS. They were set `is_active = false` and the seed was rerun. Its expenses step now fails because POST /api/expenses requires an idempotency key, so the seed needs updating. Signup also creates a new business on every run, which is how the duplicates appeared.
+- **Shipped:** nothing committed. New files under `videos/khatario-intro/` (scenes, tools, SPEC.md, assets).
+- **Open:** HeyGen sign-in (`npx hyperframes auth login`) is needed for Shalini's video and voice, the two shop shots and the music. After that: retime scenes and subtitles to the word timings, add SFX, review, render. Shalini's source photo is only 527x393.
+
+## 2026-11-10: Phone app parity, Stage 2 built (sales documents)
+- **Asked:** "Start Stage 2".
+- **Decided:**
+  - The website wins where the plan differed: quotations convert through `POST /api/invoices/[id]/convert-to-tax-invoice` (the plan's estimates route reads a legacy table); challan "settle" is "Record return"; credit and debit notes cannot be edited (the server refuses); no refund, no reminders history, no recurring next-date change, because the server has none.
+  - Edits that go through a `PUT` that rewrites lines wait for the document to load and send back every field the phone does not show; orders the phone cannot total are sent to the website.
+  - New credit notes, debit notes, sales orders and purchase orders start with the next number the website would use.
+  - Work order "Create invoice" creates the final invoice after a warning, instead of the website's pre-filled invoice form.
+  - Credit approval approve and reject take the business from the session (the routes required it in the body); a mismatching body value is still refused. This is the one server change so far.
+  - Drive C: is full; Flutter runs with TEMP and TMP on `D:\tmp\flutter-temp`.
+- **Shipped:** 4212e474, 487d1f67, 709ad65f, ae2f3531, f974ead5 and the Stage 2 checklist. APK built (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`, staging). Phone tests 724 pass, 2 old failures; Jest test for the credit approval routes passes.
+- **Open:** deploy f974ead5 to staging before testing credit approvals from the phone. Nothing tried on a device. Website issues found: the credit-note Edit link leads nowhere; the reminders History tab calls a missing route. C: needs space freed. Next is Stage 3 (Task 20).
+
+## 2026-11-11: Phone app parity, Stage 3 built (stock)
+- **Asked:** "Start Stage 3".
+- **Decided:**
+  - The website wins where the plan differed: no category rename and no low-stock, movement or expiry report screens (the website has none); Stock Summary stays the item table, and the website's stock dashboard page is not ported.
+  - Stock-changing actions ask first, name what changes, and send once. Adjustments save each item with its own retry-safe key; a stock count's Finish waits until every typed quantity has saved and refuses a cleared box.
+  - Batch and serial details on transfers follow the website (none sent); serial-tracked items cannot be adjusted on the phone.
+  - Closing stock sends the financial year as `2026-2027`, the form the server stores; the shared report screen now pages with Show more.
+  - The new-bill screenshot test pins its date, so it no longer fails when the day changes.
+  - Each task got one fix round after review: a paused scheme stayed active after an edit; Closing Stock silently stopped at 50 rows; two stock-count finish gaps.
+- **Shipped:** 00be7df1, 8987951d, 6d033178, 96012edb, 16b556ed and the Stage 3 checklist. APK built (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`, staging). Phone tests 987 pass, 2 old failures.
+- **Open:** nothing tried on a device; report screens were written from the server code, not recorded replies, so check each report on staging. Website issues found: editing a paused scheme reactivates it; creating a stock transfer is not protected against a repeated save. 67 menu links still open the plain list. C: is nearly full (Flutter runs with temp on D:). Next is Stage 4 (Task 26).
+
+## 2026-11-11: WhatsApp outreach plan and online store walkthrough video
+- **Asked:** act as marketer for a first WhatsApp reach-out to a bought, all-India list of wholesalers, retailers and service businesses; then "login to staging.khatario.com for taking screenshots and create a walk through video" on how easy it is to create and customise an online shop.
+- **Decided:**
+  - Outreach: open with a question, not a pitch; segment by business type; English for the South and East, Hinglish elsewhere; offer is free setup with data import plus a 30-day trial and a 10-minute call (trial length and price not checked against the product); max three touches; separate number, 15-20 new chats a day, opt-out line in the first message because the list is bought.
+  - Video (owner's picks): storyline "Live in 3 steps", vertical 1080x1920, English on-screen text, music only, 41.5 s. Built in HyperFrames at `videos/khatario-online-store/` (`SPEC.md`). Step 1 uses the app's phone layout; steps 2 and 3 use the desktop layout because the theme editor is desktop-only and phone theme cards fill a screen each.
+  - Every screen is real staging UI (`tools/capture.mjs`). For the camera only: the staging promo banner and help bubble are hidden, `.staging.khatario.com` is shown as `.khatario.com`, and the "store off" start screen is the real page drawn from a settings reply with the store off (nothing saved). The Publish press is drawn; the draft theme was never published and the finished store is its preview link.
+  - Staging test shop Shalini Traders (E2E account) was tidied with the owner's go-ahead: store pop-up switched off (content kept), five categories and twenty demo grocery items added with the repo's `public/theme-demos` photos, the five old photo-less items taken out of the store and two un-featured, draft theme "Premium Grocery" added and edited (banner photo, heading, orange accent). `tools/tidy-store.mjs --undo` restores the pop-up and the old store items; before-state is in `work/staging-before.json`.
+  - Stock count SC-2026-0001 (open since 1 Nov, 0 counted, stock frozen) was cancelled on the owner's instruction so the demo items could get 40 units each by stock adjustment (reason STOCK_TAKE). It cannot be reopened.
+- **Shipped:** nothing committed. New folder `videos/khatario-online-store/` (scenes, tools, SPEC.md, screens). Music is the intro film's Jamendo track (CC BY 3.0, credit Soundrider/Dope).
+- **Open:** owner to watch the film and say what to change; sound levels were measured by the checker, not heard. A Hinglish cut and a 16:9 cut were not made. The live store on staging still shows the old Studio theme; publishing the Premium Grocery draft is the owner's call. Drive C: is at 0 MB free, which breaks tool output and may break renders. Product notes: the store lists items by stock only, so "allow sale when out of stock" items still show Out of stock; the theme editor refuses phones.
+
+## 2026-11-11: Hinglish cut of the online store walkthrough
+- **Asked:** "Yes, Hinglish cut".
+- **Decided:** same pictures, timing and sound as the English film; only the on-screen lines change (Latin-script Hinglish, for North and West India). `videos/khatario-online-store/tools/build-hinglish.mjs` holds the lines and generates the sibling project `videos/khatario-online-store-hinglish/`, so the English film stays the single source; rerun it after any change. Titles were kept to two words so they fit one line at the same size.
+- **Shipped:** nothing committed. Render: `videos/khatario-online-store/renders/khatario-online-store-9x16-hinglish.mp4`.
+- **Open:** the Hinglish wording has not been read by the owner; the app screens inside the film stay in English.
+
+## 2026-11-11: Phone app parity, Stage 4 built (books)
+- **Asked:** "Start Stage 4".
+- **Decided:**
+  - Accounts: "Delete" deactivates, as on the website; system accounts cannot be changed; edits send only changed fields so group and Schedule III line are kept; balances come from `/api/accounts/my-accounts`; the account ledger labels the server's signed figures Dr or Cr.
+  - Journals: no delete (the website only reverses; a delete loses the audit trail); edit is refused for locked, reversed, system and auto-reversing entries; per-line references are sent back on edit.
+  - Advances send the website's tax settings (the reviewer found the earlier values posted no different tax, but the stored row differed).
+  - Every action that posts asks first with the server's figure; depreciation names the asset and book value because the server cannot preview the amount, and disposal says when depreciation is posted first.
+  - Bank reconciliation matches to the server's suggestion or to entries ticked by hand, as on the website; the activity log filters by person on the server.
+- **Shipped:** 8efa1d6f, 0ebacbec, 79407122, 0e40017e and the Stage 4 checklist. APK built (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`, staging). Phone tests 1214 pass, 2 old failures.
+- **Open:** nothing tried on a device. Website and server issues found: journal edits drop per-line references; TDS pages send a year matching no saved financial year; the TDS certificate PDF route may fail; the TDS summary returns only the first quarter; the activity log drops the last day of a range; depreciation has no preview. Possible off-by-one-day dates if the server sends timestamps (check on staging). 57 menu links still open the plain list. C: is nearly full. Next is Stage 5 (Task 31).
+
+## 2026-11-11: Khatario reel in the Unolo-ad format, script and Flow prompts
+- **Asked:** sent a 44 s vertical Unolo ad ("can you not create a video like this?"), then "I'll generate in Flow".
+- **Decided:**
+  - The reference's look is about 13 generated live-action clips plus captions; this PC cannot generate footage, so the owner makes the clips in Google Flow and the edit is done here in HyperFrames. A paid generation API was the other option, not taken.
+  - New project `videos/khatario-reel/`: 1080x1920, about 38 s, ten shots, English. Shalini (the intro film's presenter image) speaks on camera in six shots using Flow's own generated voice; four are silent b-roll. Phone shots ask for a plain green screen so real Khatario screens can be pinned on.
+  - Claims kept to what the app does: GST invoices, WhatsApp bill sharing (seen in `public/marketing/screens/invoice-share.png`), stock following sales, receivables and payables, dashboard. No numbers or prices.
+- **Shipped:** nothing committed. `videos/khatario-reel/SPEC.md`, `videos/khatario-reel/FLOW_PROMPTS.md`.
+- **Open:** all ten clips still to be generated; no composition built yet. Unverified: Flow's Ingredients to Video in portrait with sound; the voice staying the same across clips (fallback is one narration track without lip sync); "Start free today" on the end card against the live signup offer; the spoken line "Every sale updates your stock, on its own" against the product. The pronunciation "kha-TAA-rio" in the prompts is a guess.
+
+## 2026-11-11: Khatario reel, first Flow clip checked and prompts reworked
+- **Asked:** "i ran first script, it created the video, but there was a big pause" between "do you know how much" and "your shop made today".
+- **Decided:** the clip in Downloads (`Woman_speaking_to_camera_d77837b1.mp4`) has a 0.5 s gap in the line (2.18-2.67 s), which the edit can cut. It is unusable for other reasons: 1280x720 landscape, 10 s, and set in the meeting room of Shalini's photo with no shop or bills, so Flow used the photo as the opening frame. `videos/khatario-reel/FLOW_PROMPTS.md` now has two steps per Shalini shot (a portrait still of her in the shop, then Frames to Video from that still), and each spoken line asks for one continuous sentence starting in the first second.
+- **Shipped:** nothing committed.
+- **Open:** the two-step route is untried; whether Flow's image step keeps her face and costs credits is unknown. `SPEC.md` media plan still says "given to Flow as the subject".
+
+## 2026-11-11: Phone app parity, Stage 5 built (reports)
+- **Asked:** "Start Stage 5".
+- **Decided:**
+  - The reports home shows the website overview's sales and purchase figures (`/api/reports/sales-summary`, `/purchase-summary`), and the More menu and the reports home now open links through one shared function.
+  - 23 sales, purchase and other reports were built on the shared table report screen, which gained a filters row so each report carries the website's filters (period grouping, status, channel, type, dates, purpose); credit risk rows open the party.
+  - GST: GSTR-1 (filed after a warning), 3B, 2B with native decisions and reconciliation, GSTR-1 vs 3B, alerts, cash ledger by branch, and e-way bills. GSTR-9 and file imports stay on the website.
+  - Server: the GSTR-2B decision and reconcile routes take the business from the session (a mismatch is still refused), and saving a decision now first checks the reconciliation belongs to that business. Before, a signed-in user who knew another business's reconciliation id could overwrite its decision.
+  - Statements share as PDFs through one viewer, and Profit & Loss drills into every row the website does.
+- **Shipped:** 12bba76e, fd2b01f3, e9bd4db4, 5825b3df and the Stage 5 checklist. APK built (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`, staging). Phone tests 1428 pass, 2 old failures; Jest tests for the GSTR-2B routes pass.
+- **Open:** deploy e9bd4db4 to staging before testing GSTR-2B. `recordDecision` itself still has no business check (the route guards it). Report screens were written from server code, not recorded replies; compare a few with the website on staging. 29 menu links still open the plain list (HR, WhatsApp and a few others). Next is Stage 6 (Task 35).
+
+## 2026-11-11: Staging build promoted to production
+- **Asked:** "check what is in staging and what is prduction missing and push all the staging to production".
+- **Decided:**
+  - "Staging" was read as what the staging server runs, not `main`. Staging ran 77bf59b3 (deployed 5 Nov); production ran 3b7f8209 (1 Nov). The gap was 108 commits and migrations 461 to 466. The 58 newer commits on `origin/main` (with migrations 468 to 470) and the 24 unpushed local commits have never run on staging, so they were left out.
+  - The promotion commit was built without a checkout (`git merge-tree` + `git commit-tree`), because the main checkout has uncommitted work. Its tree is identical to 77bf59b3.
+  - Production DB was dumped first: `/var/backups/khatario/khatario_prod-pre-45a6e57e-20261111-1647.dump` (6.5 MB, 477 tables, root-only).
+  - The deploy ran with Node 24 first on PATH, so `pm2 restart todo-reminder-worker-prod --update-env` could not bring back the Node 18 crash loop.
+- **Shipped:** 45a6e57e "Promote main to production" pushed to `origin/production` and deployed with `scripts/deploy-vps.sh` (log `/var/log/khatario-prod-deploy-20261111-1648.log`). Migrations 461 to 466 applied, 0 failed. `khatario` and `todo-reminder-worker-prod` online; `/`, `/login`, `/sitemap.xml` return 200; staging `/login` 200. Nothing committed on `main`.
+- **Open:**
+  - Production storefront subdomains return 500 (`demo-quick.khatario.com`; staging's returns 200). Not new: the same `Failed to proxy https://localhost:3100/store ... EPROTO` is in production's error logs since at least 7 Nov (57,205 on 9 Nov). Likely cause, not confirmed: production runs `next start` over HTTP behind nginx's `X-Forwarded-Proto https`, and the middleware's storefront rewrite goes out as `https://localhost:3100`; staging runs `server.js`.
+  - Help-doc re-index: 2 of 50 sources failed on the Gemini embedding quota (`gst-law/cgst-act.md`, `gst-law/cgst-rules.md`); the next deploy retries them.
+  - The production deploy restarted the staging `kb-index-worker` (no `PM2_KB_WORKER_NAME` in production's env; `kb-index-worker-prod` still does not exist). It came back online.
+  - `/about` and everything after 77bf59b3 reach production only after a staging deploy of `main` and another promotion.
+
+## 2026-11-11: Phone app parity, Stage 6 built (HR), with server security fixes
+- **Asked:** "ok, start stage 6".
+- **Decided:**
+  - Employees are added and edited on the phone; edits send only changed fields; plan-gated fields (reporting manager, PAN, Aadhaar, PF/ESI) are hidden exactly where the website hides them.
+  - Attendance history, check-in reviews, corrections, the shift roster, bulk shift assignment and leave (apply on behalf with server-counted days, cancel, delete, balances, calendar) are native.
+  - Pay: salary from the server's prefill (the ask names the form total and says the server adds pending encashment or overtime), payslips, advances, expenses with bill photos, commissions and targets.
+  - Manager approvals, recruitment (including submitting offers for approval and converting to an employee), exits, engagement, HR documents, HR reports (CSV, as the website) and tasks are native. No HR link opens the automatic list.
+  - Every route the phone writes to was checked before building. Ten pre-existing server holes were fixed, each with Jest tests:
+    - Adding an employee trusted the request's business id.
+    - The shift roster and bulk assignment accepted another business's staff and shifts; with auto-absent on, that could mark another business's employee absent.
+    - Salary payments and advances accepted another business's employee.
+    - Commissions were loaded and authorised by their own business, and the approver came from the request.
+    - Exit checklist tasks could be updated across businesses.
+    - Converting a candidate accepted another business's reporting manager, and interviews accepted any interviewer.
+    - Tasks accepted another business's assignee and named them in the list.
+  - A salary payment into a locked month is now refused before anything is saved.
+- **Shipped:** be77c385, 0253fe9a, 0ca79eba, 6320b88b, 4aaae3c1 and the Stage 6 checklist. APK built (`phone/build/app/outputs/flutter-apk/app-owner-release.apk`, staging). Phone tests 1743 pass, 2 old failures; tenant-scope Jest suites pass.
+- **Open:**
+  - Deploy these commits to staging before testing HR on the phone.
+  - Owner follow-ups:
+    - The employee routes don't check the HR plan.
+    - The salary payment POST isn't one transaction.
+    - Termination isn't limited to HR.
+    - The task routes have no permission check.
+  - `tests/lib/more-menu-for-user.test.ts` has one pre-existing failure.
+  - 13 menu links still open the plain list (WhatsApp, supplier dashboard, to-do).
+  - Next is Stage 7 (Task 40).
+
+## 2026-11-12: Production online stores fixed (500 on every store subdomain)
+- **Asked:** "Yes, fix it" (the storefront 500 found during the 11 Nov promotion).
+- **Decided:**
+  - Root cause, reproduced with Next 14.2.33's own `NextURL` and `relativizeURL`: PM2 started production with `-H 127.0.0.1`. The router builds its own origin from that value (`https://127.0.0.1:3100`, https because nginx sends `X-Forwarded-Proto https`), but middleware always sees the origin as `localhost`. The store-subdomain rewrite to `/store` therefore did not match, was treated as an external URL and proxied to `https://localhost:3100` on a plain HTTP port. The main site has no rewrite, so it was unaffected; staging starts through `server.js` without that host and was unaffected.
+  - Fixed in the start config, not in code: `deploy/pm2/khatario.config.cjs` now starts with `-H localhost` and `NODE_OPTIONS=--dns-result-order=ipv4first`. Plain `-H localhost` was rejected because it binds `::1` on the VPS and nginx's upstream is `127.0.0.1`; dropping `-H` was rejected because it would listen on every interface and the VPS has no firewall. No rebuild was needed.
+- **Shipped:** fb563df7 on `main` (not pushed, like the other local commits); the same change as a14a2a3b on `origin/production`, pulled on the VPS. `khatario` was deleted and started from the config, `pm2 save` run. `demo-quick.khatario.com` 200 (title QuickBasket), `khatario.com/` and `/login` 200, staging 200, port still bound to 127.0.0.1:3100, 0 restarts. `docs/SERVER_INFRASTRUCTURE.md` debugging table has the symptom (uncommitted).
+- **Open:**
+  - `.git/khatario-last-deploy` on production still says 45a6e57e; the next deploy only sees one extra config file as changed.
+  - Not checked: the middleware's token refresh calls `new URL('/api/auth/refresh', request.url)`, which on production is also `https://localhost:3100`. If that fetch fails the same way, API calls answer 503 `SESSION_REFRESH_UNAVAILABLE` whenever a token is due for rotation. Worth one test with an ageing session on production.
+
+## 2026-11-12: Production session refresh cannot reach itself (fix written, not deployed)
+- **Asked:** "Yes, check it" (whether production's session refresh fails the way the storefront rewrite did).
+- **Decided:**
+  - It does, by every link checked. Access tokens last 15 minutes; after that the middleware refreshes by calling `new URL('/api/auth/refresh', request.url)`. On production Next builds `request.url` as `https://localhost:3100/...` (protocol from nginx's `X-Forwarded-Proto https`), the middleware's `fetch` is plain Node fetch, and on the VPS a POST to `https://localhost:3100/api/auth/refresh` fails with `ERR_SSL_WRONG_VERSION_NUMBER` while the same call over `http` reaches the route (401 without a cookie). The browser app does not refresh on its own (only the notification stream does). So on production, 15 minutes after login, a page load goes to `/login` and an API call gets 503 `SESSION_REFRESH_UNAVAILABLE`. Staging is unaffected: its public vhost forwards `$scheme` (http).
+  - Not seen end to end. Production logs show no 503 from a khatario.com page in two weeks, but only 181 signed-in API calls in that time, so the logs neither confirm nor rule it out. A live probe with a server-signed token for a non-existent user was refused by the session's permission check and not retried another way.
+  - Fix: when the self-call cannot connect, the URL is https and the host is loopback, the middleware retries once over http. A public host is never retried, so the refresh cookie cannot travel unencrypted.
+- **Shipped:** nothing committed. `middleware.ts` and `tests/security/middleware-refresh-failure.test.ts` changed in the working tree; the new test failed before the fix; the four middleware security suites pass (53 tests).
+- **Open:** commit, cherry-pick onto `production` and deploy (a full build, about 15 minutes) need the owner's go-ahead. After deploy: log in on khatario.com, wait 16 minutes, open a page; it should stay signed in.
+
+## 2026-11-12: Session refresh fix deployed to production
+- **Asked:** "Yes, deploy it".
+- **Decided:** the help-doc re-index was skipped (`--skip-kb`): no docs changed, and the two GST law sources would only hit the Gemini quota again. No migrations were pending, so no database dump was taken.
+- **Shipped:** a23ad4f6 on `main` (not pushed); the same change as 2807cd2c on `origin/production`, deployed with `scripts/deploy-vps.sh --skip-kb` (log `/var/log/khatario-prod-deploy-20261112-0209.log`). The built middleware contains the retry; `khatario` kept `-H localhost` and the IPv4 bind through the reload; `/`, `/login` and `demo-quick.khatario.com` return 200, `/dashboard` redirects a guest to login, staging 200, no errors since the reload.
+- **Open:**
+  - Still not seen end to end: log in on khatario.com, wait 16 minutes, open a page; it should stay signed in.
+  - `main` has three local commits production already runs (fb563df7, a23ad4f6 as cherry-picks) plus 24 older unpushed ones; `origin/main`'s 58 commits and migrations 468 to 470 are still on neither server.
+  - The production deploy again restarted the staging `kb-index-worker` (no `PM2_KB_WORKER_NAME` in production's env).
+
+## 2026-11-12: Local work checked, committed and pushed to GitHub
+- **Asked:** "there may be many changes still locally sitting ... please check them all and push to git so that i can check in staging and then we will push in production".
+- **Decided:**
+  - Committed: the Schedule III and Compare periods tabs on Profit and loss with migration 467 (ac598264), the Cloudflare edge rules script (f661ec17), and the docs (specs, plans, roadmap, server notes, this log). Before committing: `tsc --noEmit` clean on the whole tree; 31 jest suites (reports, accounting, navigation, middleware security) pass. The `tests/db` suites were not re-run.
+  - Left out, on purpose: `phone/lib/screens/chats/*` and its tests (another session was editing them during this one); `videos/khatario-intro`, `khatario-online-store`, `khatario-online-store-hinglish`, `khatario-reel` (about 100 MB of media, nothing staging needs); `public/marketing/Khatario Hero section.png` (not referenced by any code); `lib/services/invoice-extract/learningAggregation/index.ts` (line endings only, no content change).
+  - Not merged: `claude/busy-wu-4b7d55` (item batch/serial save, currency, PAN, business_id fixes; 16 files) and `claude/elated-austin-92a5fe` (phone item form) each have one commit not on `main` and both conflict with `main`. Worktrees `laughing-kilby-bab5fb` (10 files), `modest-tesla-a8cfe0` (9) and `D:/MyApps/khatario-gst` (1) hold uncommitted changes. None of these was touched.
+  - Staging was not deployed: the deploy runs migrations 467 to 470 on the staging database, which needs the owner's go-ahead.
+- **Shipped:** `main` pushed to `origin/main` (see the next entry or `git log origin/main` for the tip).
+- **Open:** deploy staging; then promote to production. Schedule III and Compare have never been opened in a browser: their staging checklists are at the end of `docs/superpowers/plans/2026-11-10-schedule-iii-pl-view.md` (11 items) and `2026-11-10-pl-compare-periods.md` (15 items).
