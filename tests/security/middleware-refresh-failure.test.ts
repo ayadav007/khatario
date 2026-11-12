@@ -51,5 +51,31 @@ describe('middleware inline refresh failure', () => {
     const res = await middleware(apiRequest());
     expect(res.status).toBe(503);
     expect((await res.json()).code).toBe('SESSION_REFRESH_UNAVAILABLE');
+    // A public host is never retried over plain HTTP: the refresh cookie would travel unencrypted.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes over HTTP when nginx reports https but the app itself listens on plain HTTP', async () => {
+    // Production: `next start` on 127.0.0.1:3100 behind nginx, which sends X-Forwarded-Proto https,
+    // so Next reports the request as https://localhost:3100 although nothing speaks TLS there.
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.startsWith('https://')) throw new Error('ERR_SSL_WRONG_VERSION_NUMBER');
+      return new Response('{}', { status: 200, headers: { 'set-cookie': 'khatario_session=new; Path=/' } });
+    }) as typeof fetch;
+
+    const res = await middleware(
+      new NextRequest('https://localhost:3100/api/subscriptions/current', {
+        headers: { host: 'khatario.com', cookie: 'khatario_refresh=stale' },
+      }),
+    );
+    expect(calls).toEqual([
+      'https://localhost:3100/api/auth/refresh',
+      'http://localhost:3100/api/auth/refresh',
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie')).toContain('khatario_session=new');
   });
 });
