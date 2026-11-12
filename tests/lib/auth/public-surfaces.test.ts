@@ -51,4 +51,12 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/about', 'khatario.com')).toBe(true);
     expect(isPublicMarketingSurface('/aboutx', 'khatario.com')).toBe(false);
   });
+
+  it('keeps the trust pages public and near-miss app paths private', () => {
+    const host = 'staging.khatario.com';
+    for (const p of ['/contact', '/pricing', '/pricing/', '/refund-policy', '/security'])
+      expect(isPublicMarketingSurface(p, host)).toBe(true);
+    for (const p of ['/contacts', '/pricing-admin', '/security-settings', '/refund-policy-edit', '/invoices'])
+      expect(isPublicMarketingSurface(p, host)).toBe(false);
+  });
 });

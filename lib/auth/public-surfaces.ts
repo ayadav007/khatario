@@ -1,4 +1,5 @@
 import { isPublicBusinessEmployeePath } from '@/lib/employee-portal/reserved-slugs';
+import { TRUST_PAGE_PATHS } from '@/lib/marketing/static-paths';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
 
 /**
@@ -19,6 +20,8 @@ export function isPublicMarketingSurface(
   if (p.startsWith('/signup')) return true;
   if (p.startsWith('/book-demo')) return true;
   if (p === '/about') return true;
+  // Trust pages: exact match, one trailing slash allowed.
+  if (TRUST_PAGE_PATHS.includes(p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)) return true;
   if (p.startsWith('/terms')) return true;
   if (p.startsWith('/privacy')) return true;
   if (p.startsWith('/guides')) return true;

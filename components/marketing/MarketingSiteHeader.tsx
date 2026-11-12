@@ -388,7 +388,7 @@ export function MarketingSiteHeader({
                 ),
               )}
               {plainLink('/themes', 'Themes', !!pathname?.startsWith('/themes'))}
-              {plainLink('/#pricing', 'Pricing', false)}
+              {plainLink('/pricing', 'Pricing', pathname === '/pricing')}
               {topItem(
                 'resources',
                 'Resources',
@@ -518,7 +518,7 @@ export function MarketingSiteHeader({
             <div className="mt-4 grid grid-cols-2 gap-1 border-t border-slate-200 pt-3 dark:border-slate-700">
               {[
                 { href: '/themes', label: 'Themes' },
-                { href: '/#pricing', label: 'Pricing' },
+                { href: '/pricing', label: 'Pricing' },
                 ...RESOURCE_LINKS.map((l) => ({ href: l.href, label: l.label })),
               ].map((l) => (
                 <Link

@@ -9,6 +9,7 @@ import '../../api.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import 'website_page_logic.dart';
 import 'website_print_bridge.dart';
 
 /// Marks the phone app to the website, which then hides its own sidebar, top bar and bottom bar.
@@ -31,8 +32,7 @@ class WebsitePageScreen extends StatefulWidget {
 
 class _WebsitePageScreenState extends State<WebsitePageScreen> {
   WebViewController? _controller;
-  bool _loading = true;
-  bool _failed = false;
+  final _status = WebPageStatus();
 
   @override
   void initState() {
@@ -52,10 +52,7 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
   }
 
   Future<void> _open() async {
-    setState(() {
-      _loading = true;
-      _failed = false;
-    });
+    _status.retry();
     final uri = websiteUri(widget.href);
     try {
       await _copySessionCookies(uri);
@@ -67,21 +64,25 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
       // The web view cannot print; the website's print buttons are handed to the phone instead.
       await controller.addJavaScriptChannel(printChannelName, onMessageReceived: (m) => _onPrintMessage(m.message));
       await controller.setNavigationDelegate(NavigationDelegate(
+        onPageStarted: (_) => _status.started(),
+        onProgress: _status.progress,
         onPageFinished: (_) {
           controller.runJavaScript(websitePrintBridgeScript).catchError((_) {});
-          if (mounted) setState(() => _loading = false);
+          _status.finished();
         },
-        onWebResourceError: (error) {
-          if (error.isForMainFrame ?? true) {
-            if (mounted) setState(() => _failed = true);
-          }
-        },
+        onWebResourceError: (error) => _status.mainFrameError(isMainFrame: error.isForMainFrame),
       ));
       await controller.loadRequest(uri);
       if (mounted) setState(() => _controller = controller);
     } catch (_) {
-      if (mounted) setState(() => _failed = true);
+      _status.mainFrameError(isMainFrame: true);
     }
+  }
+
+  @override
+  void dispose() {
+    _status.dispose();
+    super.dispose();
   }
 
   void _toast(String message) {
@@ -123,13 +124,22 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
     if (mounted) openWebsiteInApp(context, widget.session, path, widget.title);
   }
 
-  Future<bool> _goBackInPage() async {
+  /// Back walks the page's history; with none left it closes the screen.
+  bool _backBusy = false;
+
+  Future<void> _onBack() async {
+    if (_backBusy) return;
+    _backBusy = true;
     final controller = _controller;
-    if (controller != null && await controller.canGoBack()) {
-      await controller.goBack();
-      return true;
-    }
-    return false;
+    try {
+      final action = controller == null ? WebBack.leaveScreen : await _status.back(_ControllerHistory(controller));
+      // After leaving, the guard stays on, so a second fast press cannot pop twice.
+      if (action == WebBack.leaveScreen && mounted) {
+        Navigator.of(context).pop();
+        return;
+      }
+    } catch (_) {}
+    _backBusy = false;
   }
 
   @override
@@ -137,10 +147,8 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
     final controller = _controller;
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        if (await _goBackInPage()) return;
-        if (context.mounted) Navigator.of(context).pop();
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onBack();
       },
       child: Scaffold(
         backgroundColor: AppColors.bg,
@@ -152,20 +160,28 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
                 widget.title,
                 trailing: KIconButton(icon: LucideIcons.refreshCw, tooltip: 'Reload', onTap: _open),
               ),
-              if (_loading && !_failed) LinearProgressIndicator(minHeight: 2, color: AppColors.brand),
+              ListenableBuilder(
+                listenable: _status,
+                builder: (context, _) => _status.showBar
+                    ? LinearProgressIndicator(minHeight: 2, value: _status.barValue, color: AppColors.brand, backgroundColor: AppColors.hairline)
+                    : const SizedBox(height: 2),
+              ),
               Expanded(
-                child: _failed
-                    ? ListView(children: [
-                        KEmptyState(
-                          icon: LucideIcons.cloudOff,
-                          title: 'Could not open this page',
-                          body: 'Check the internet connection and try again.',
-                          action: KButton(label: 'Try again', onPressed: _open, expand: false),
-                        ),
-                      ])
-                    : controller == null
-                        ? const KSpinner()
-                        : WebViewWidget(controller: controller),
+                child: controller == null
+                    ? ListenableBuilder(
+                        listenable: _status,
+                        builder: (context, _) => _status.failed ? _offline() : const KSpinner(),
+                      )
+                    : Stack(
+                        children: [
+                          Positioned.fill(child: WebViewWidget(controller: controller)),
+                          // Over the page, not instead of it, so Back can still return to it.
+                          ListenableBuilder(
+                            listenable: _status,
+                            builder: (context, _) => _status.failed ? Positioned.fill(child: _offline()) : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),
@@ -173,6 +189,31 @@ class _WebsitePageScreenState extends State<WebsitePageScreen> {
       ),
     );
   }
+
+  Widget _offline() => ColoredBox(
+        color: AppColors.bg,
+        child: ListView(children: [
+          KEmptyState(
+            icon: LucideIcons.cloudOff,
+            title: 'Could not open this page',
+            body: 'Check the internet connection and try again.',
+            action: KButton(label: 'Try again', onPressed: _open, expand: false),
+          ),
+        ]),
+      );
+}
+
+/// The platform web view's history, for [WebPageStatus.back].
+class _ControllerHistory implements WebHistory {
+  _ControllerHistory(this.controller);
+
+  final WebViewController controller;
+
+  @override
+  Future<bool> canGoBack() => controller.canGoBack();
+
+  @override
+  Future<void> goBack() => controller.goBack();
 }
 
 /// Opens [href] inside the app on the website, signed in.

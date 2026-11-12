@@ -7,6 +7,7 @@ import '../../session.dart';
 import '../../shell/shell_banners.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../pages/native_routes.dart';
 import 'more_navigation.dart';
 
 /// Copy of `app/(app)/more/page.tsx` at the mobile breakpoint. The sections come from the server.
@@ -144,6 +145,7 @@ class _MoreScreenState extends State<MoreScreen> {
                               icon: _sectionIcons[s.title] ?? LucideIcons.fileText,
                               tint: _sectionTints[s.title],
                               locked: item.isLocked,
+                              opensWebsite: rowOpensWebsite(widget.session, item.href),
                               onTap: () => widget.onNavigate(item.href, item.label),
                             ),
                         ],
@@ -390,8 +392,9 @@ class _MoreSection extends StatelessWidget {
 
 /// `MobileListRow` with an icon and no extra actions.
 class MobileListRow extends StatelessWidget {
-  const MobileListRow({super.key, required this.label, required this.icon, required this.onTap, this.locked = false, this.tint});
+  const MobileListRow({super.key, required this.label, required this.icon, required this.onTap, this.locked = false, this.tint, this.opensWebsite = false});
 
+  final bool opensWebsite;
   final String label;
   final IconData icon;
   final bool locked;
@@ -418,34 +421,40 @@ class MobileListRow extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.body.copyWith(fontWeight: FontWeight.w500, color: locked ? AppColors.ink2 : AppColors.ink),
-                      ),
-                    ),
-                    if (locked) ...[
-                      const SizedBox(width: 8),
-                      Semantics(
-                        label: 'Locked',
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(color: AppColors.dueSoft, borderRadius: BorderRadius.circular(999)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(LucideIcons.lock, size: 11, color: AppColors.due),
-                              const SizedBox(width: 3),
-                              Text('Upgrade', style: AppText.small.copyWith(fontSize: 10, color: AppColors.due)),
-                            ],
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body.copyWith(fontWeight: FontWeight.w500, color: locked ? AppColors.ink2 : AppColors.ink),
                           ),
                         ),
-                      ),
-                    ],
+                        if (locked) ...[
+                          const SizedBox(width: 8),
+                          Semantics(
+                            label: 'Locked',
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(color: AppColors.dueSoft, borderRadius: BorderRadius.circular(999)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(LucideIcons.lock, size: 11, color: AppColors.due),
+                                  const SizedBox(width: 3),
+                                  Text('Upgrade', style: AppText.small.copyWith(fontSize: 10, color: AppColors.due)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (opensWebsite) const KWebsiteHint(),
                   ],
                 ),
               ),

@@ -122,11 +122,14 @@ class KSectionHeader extends StatelessWidget {
 }
 
 class KTextButton extends StatelessWidget {
-  const KTextButton({super.key, required this.label, required this.onTap, this.color});
+  const KTextButton({super.key, required this.label, required this.onTap, this.color, this.icon});
 
   final String label;
   final VoidCallback? onTap;
   final Color? color;
+
+  /// Small icon before the label.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +140,13 @@ class KTextButton extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 32),
         child: Align(
           widthFactor: 1,
-          child: Text(label, style: AppText.label.copyWith(fontWeight: FontWeight.w600, color: color ?? AppColors.brand)),
+          child: icon == null
+              ? Text(label, style: AppText.label.copyWith(fontWeight: FontWeight.w600, color: color ?? AppColors.brand))
+              : Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 14, color: color ?? AppColors.brand),
+                  const SizedBox(width: AppSpace.xs),
+                  Text(label, style: AppText.label.copyWith(fontWeight: FontWeight.w600, color: color ?? AppColors.brand)),
+                ]),
         ),
       ),
     );
@@ -499,7 +508,28 @@ class KAvatar extends StatelessWidget {
   }
 }
 
-/// List row: leading, title over subtitle, trailing. At least 64px tall.
+/// The small globe and "Opens the website" under a row whose page stays on the website by design.
+/// One look everywhere: More menu, settings, reports, tools.
+class KWebsiteHint extends StatelessWidget {
+  const KWebsiteHint({super.key});
+
+  static const caption = 'Opens the website';
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(LucideIcons.globe, size: 12, color: AppColors.ink3),
+        const SizedBox(width: AppSpace.xs),
+        Flexible(child: Text(caption, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption.copyWith(color: AppColors.ink3))),
+      ],
+    );
+  }
+}
+
+/// List row: leading, title over subtitle, trailing. At least 64px tall. [opensWebsite] adds the
+/// [KWebsiteHint] under the subtitle.
 class KListRow extends StatelessWidget {
   const KListRow({
     super.key,
@@ -509,9 +539,11 @@ class KListRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.onLongPress,
+    this.opensWebsite = false,
     this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
   });
 
+  final bool opensWebsite;
   final String title;
   final String? subtitle;
   final Widget? leading;
@@ -539,6 +571,7 @@ class KListRow extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
                   ],
+                  if (opensWebsite) ...[const SizedBox(height: 2), const KWebsiteHint()],
                 ],
               ),
             ),

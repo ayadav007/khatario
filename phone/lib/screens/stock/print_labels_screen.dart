@@ -219,6 +219,7 @@ class _PrintLabelsScreenState extends State<PrintLabelsScreen> {
               'Print labels',
               trailing: KTextButton(
                 label: 'Design a template',
+                icon: LucideIcons.globe,
                 onTap: () => openWebsiteInApp(context, widget.session, '/settings/label-templates/new', 'Design a label template'),
               ),
             ),

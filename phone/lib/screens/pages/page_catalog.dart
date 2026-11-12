@@ -151,6 +151,10 @@ const websiteByDesign = <String>{
   '/privacy',
 };
 
+/// True for a link kept on the website on purpose. Rows for these carry the globe hint
+/// (`KWebsiteHint`). A query or fragment on the link does not matter.
+bool opensWebsiteByDesign(String href) => websiteByDesign.contains(href.split('?').first.split('#').first);
+
 /// Links that open the website today and are meant to get a phone screen. Later tasks delete entries.
 const websiteForNow = <String>{};
 
