@@ -27,6 +27,7 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: 'Blog', href: '/blog' },
       { label: 'Guides', href: '/guides' },
+      { label: 'Free tools', href: '/free-tools' },
       { label: 'Questions', href: '/#faq' },
     ],
   },

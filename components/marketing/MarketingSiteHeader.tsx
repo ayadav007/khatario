@@ -27,6 +27,7 @@ import {
   Wallet,
   X,
   type LucideIcon,
+  Wrench,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
@@ -101,6 +102,7 @@ const PRODUCT_MENUS: ProductMenu[] = [
 ];
 
 const RESOURCE_LINKS: MenuLink[] = [
+  { label: 'Free tools', text: 'GST calculator, invoice maker and more', icon: Wrench, href: '/free-tools' },
   { label: 'Blog', text: 'GST, billing and shop tips', icon: BookOpen, href: '/blog' },
   { label: 'Guides', text: 'Step-by-step how-tos', icon: HelpCircle, href: '/guides' },
   { label: 'Book a demo', text: 'See it on your own data', icon: PlayCircle, href: '/book-demo' },

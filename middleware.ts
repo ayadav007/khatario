@@ -74,6 +74,8 @@ function rewriteWithoutSpoofedIdentity(request: NextRequest, url: URL): NextResp
 }
 
 const PUBLIC_PATHS = new Set([
+  /** Data file fetched by the public free HSN finder (exact path only). */
+  '/data/hsn_master.json',
   '/login',
   '/signup',
   '/guides',
@@ -149,6 +151,7 @@ function isPublicPath(pathname: string): boolean {
   /** Design-only marketing / UI previews (noindex pages under app/preview). */
   if (pathname.startsWith('/preview/')) return true;
   if (pathname === '/themes' || pathname.startsWith('/themes/')) return true;
+  if (pathname === '/free-tools' || pathname.startsWith('/free-tools/')) return true;
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return true;
   if (pathname.startsWith('/pay/upi/')) return true;
   if (pathname.startsWith('/wa-shop/')) return true;

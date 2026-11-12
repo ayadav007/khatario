@@ -4,6 +4,7 @@ import { publicSiteUrl } from '@/lib/blog/site';
 import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
 import { marketingRobots } from '@/lib/marketing-builder/seo';
 import { MARKETING_STATIC_PATHS } from '@/lib/marketing/static-paths';
+import { FREE_TOOLS } from '@/lib/tools/catalogue';
 import { THEME_CATALOG } from '@/lib/store/engine/theme-catalog';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // One page per theme with a demo store (app/themes/[slug]).
   for (const theme of THEME_CATALOG) {
     if (theme.demo) pages.push({ url: `${base}/themes/${theme.slug}`, changeFrequency: 'weekly', priority: 0.6 });
+  }
+  // One page per free tool (app/free-tools/[slug]).
+  for (const tool of FREE_TOOLS) {
+    pages.push({ url: `${base}/free-tools/${tool.slug}`, changeFrequency: 'weekly', priority: 0.6 });
   }
   try {
     const posts = await listSitemapPosts();

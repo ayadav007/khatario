@@ -5,6 +5,7 @@ export const MARKETING_STATIC_PATHS: readonly string[] = [
   '/blog',
   '/guides',
   '/themes',
+  '/free-tools',
   '/privacy',
   '/terms',
   '/book-demo',

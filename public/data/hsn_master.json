@@ -1,44 +1,44 @@
 [
   {
     "code": "6109",
-    "desc": "T-shirts, singlets and other vests, knitted or crocheted",
-    "rate": "5",
+    "desc": "T-shirts, singlets and other vests, knitted or crocheted; GST is 5% if the sale value is up to Rs 2,500 per piece and 18% above that",
+    "rate": "",
     "category": "Garments"
   },
   {
     "code": "6204",
-    "desc": "Women’s or girls’ suits, ensembles, jackets, dresses, skirts, trousers, bib and brace overalls, breeches and shorts",
-    "rate": "12",
+    "desc": "Women’s or girls’ suits, ensembles, jackets, dresses, skirts, trousers, bib and brace overalls, breeches and shorts; GST is 5% if the sale value is up to Rs 2,500 per piece and 18% above that",
+    "rate": "",
     "category": "Garments"
   },
   {
     "code": "6203",
-    "desc": "Men’s or boys’ suits, ensembles, jackets, blazers, trousers, bib and brace overalls, breeches and shorts",
-    "rate": "12",
+    "desc": "Men’s or boys’ suits, ensembles, jackets, blazers, trousers, bib and brace overalls, breeches and shorts; GST is 5% if the sale value is up to Rs 2,500 per piece and 18% above that",
+    "rate": "",
     "category": "Garments"
   },
   {
     "code": "6105",
-    "desc": "Men’s or boys’ shirts, knitted or crocheted",
-    "rate": "5",
+    "desc": "Men’s or boys’ shirts, knitted or crocheted; GST is 5% if the sale value is up to Rs 2,500 per piece and 18% above that",
+    "rate": "",
     "category": "Garments"
   },
   {
     "code": "1905",
     "desc": "Bread, pastry, cakes, biscuits and other bakers’ wares",
-    "rate": "18",
+    "rate": "",
     "category": "Food & Groceries"
   },
   {
     "code": "2106",
-    "desc": "Food preparations not elsewhere specified (including namkeens, bhujia, etc.)",
-    "rate": "12",
+    "desc": "Food preparations not elsewhere specified (including namkeens, bhujia, etc.); other than pan masala",
+    "rate": "5",
     "category": "Food & Groceries"
   },
   {
     "code": "0901",
     "desc": "Coffee, whether or not roasted or decaffeinated",
-    "rate": "5",
+    "rate": "",
     "category": "Food & Groceries"
   },
   {
@@ -86,7 +86,7 @@
   {
     "code": "9404",
     "desc": "Mattress supports; articles of bedding and similar furnishing",
-    "rate": "18",
+    "rate": "",
     "category": "Furniture"
   },
   {
@@ -104,19 +104,19 @@
   {
     "code": "9963",
     "desc": "Accommodation, food and beverage services (Hotels/Restaurants)",
-    "rate": "5",
+    "rate": "",
     "category": "Services"
   },
   {
     "code": "9965",
     "desc": "Goods transport services (GTA)",
-    "rate": "5",
+    "rate": "",
     "category": "Services"
   },
   {
     "code": "9967",
     "desc": "Supporting and auxiliary transport services (Storage, Warehousing)",
-    "rate": "18",
+    "rate": "",
     "category": "Services"
   }
 ]

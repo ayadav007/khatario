@@ -22,6 +22,11 @@ describe('portal slug validation', () => {
     expect(isReservedBusinessSlug('login')).toBe(true);
   });
 
+  it('reserves free-tools for the public tools pages', () => {
+    expect(isReservedBusinessSlug('free-tools')).toBe(true);
+    expect(validatePortalSlugFormat('free-tools').ok).toBe(false);
+  });
+
   it('rejects too-short slugs', () => {
     const result = validatePortalSlugFormat('ab');
     expect(result.ok).toBe(false);

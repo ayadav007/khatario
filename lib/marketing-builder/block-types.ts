@@ -35,6 +35,7 @@ export const KHATARIO_BLOCKS = [
   'Industries',
   'ProductTour',
   'AiTools',
+  'FreeTools',
   'OnlineStore',
   'WhatsAppMarketing',
   'StaffManagement',

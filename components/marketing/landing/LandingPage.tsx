@@ -17,6 +17,7 @@ import { LandingSuite } from '@/components/marketing/landing/LandingSuite';
 import { LandingIndustries } from '@/components/marketing/landing/LandingIndustries';
 import { LandingProductTour } from '@/components/marketing/landing/LandingProductTour';
 import { LandingAiTools } from '@/components/marketing/landing/LandingAiTools';
+import { LandingFreeTools } from '@/components/marketing/landing/LandingFreeTools';
 import { LandingOnlineStore } from '@/components/marketing/landing/LandingOnlineStore';
 import { LandingWhatsAppMarketing } from '@/components/marketing/landing/LandingWhatsAppMarketing';
 import { LandingStaffManagement } from '@/components/marketing/landing/LandingStaffManagement';
@@ -46,6 +47,7 @@ export function LandingDefaultSections() {
       <LandingIndustries />
       <LandingProductTour />
       <LandingAiTools />
+      <LandingFreeTools />
       <LandingTemplateGallery />
       <LandingOnlineStore />
       <LandingWhatsAppMarketing />

@@ -59,4 +59,11 @@ describe('isPublicMarketingSurface', () => {
     for (const p of ['/contacts', '/pricing-admin', '/security-settings', '/refund-policy-edit', '/invoices'])
       expect(isPublicMarketingSurface(p, host)).toBe(false);
   });
+
+  it('keeps free tools public and nothing else', () => {
+    const host = 'staging.khatario.com';
+    for (const p of ['/free-tools', '/free-tools/', '/free-tools/gst-calculator', '/free-tools/invoice-maker'])
+      expect(isPublicMarketingSurface(p, host)).toBe(true);
+    for (const p of ['/free-toolsx', '/tools', '/tools/gst-calculator']) expect(isPublicMarketingSurface(p, host)).toBe(false);
+  });
 });

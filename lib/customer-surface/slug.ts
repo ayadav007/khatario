@@ -22,6 +22,7 @@ export const RESERVED_BUSINESS_SLUGS = new Set([
   'auth',
   'search',
   'tools',
+  'free-tools',
   'reports',
   'purchases',
   'suppliers',

@@ -75,6 +75,7 @@ import { LandingSuite, LANDING_SUITE_DEFAULTS } from '@/components/marketing/lan
 import { LandingIndustries, LANDING_INDUSTRIES_DEFAULTS } from '@/components/marketing/landing/LandingIndustries';
 import { LandingProductTour, LANDING_PRODUCT_TOUR_DEFAULTS } from '@/components/marketing/landing/LandingProductTour';
 import { LandingAiTools, LANDING_AI_TOOLS_DEFAULTS } from '@/components/marketing/landing/LandingAiTools';
+import { LandingFreeTools, LANDING_FREE_TOOLS_DEFAULTS } from '@/components/marketing/landing/LandingFreeTools';
 import { LandingOnlineStore, LANDING_ONLINE_STORE_DEFAULTS } from '@/components/marketing/landing/LandingOnlineStore';
 import {
   LandingWhatsAppMarketing,
@@ -1084,6 +1085,17 @@ export const marketingConfig: Config = {
       },
       defaultProps: LANDING_AI_TOOLS_DEFAULTS,
       render: renderAs(LandingAiTools),
+    },
+
+    FreeTools: {
+      label: 'Free tools',
+      fields: {
+        heading: text('Heading'),
+        intro: area('Intro'),
+        toolSlugs: list('Tools (up to 6)', { slug: text('Tool slug') }, (t) => String(t.slug ?? ''), { slug: '' }, 6),
+      },
+      defaultProps: LANDING_FREE_TOOLS_DEFAULTS,
+      render: renderAs(LandingFreeTools),
     },
 
     OnlineStore: {

@@ -26,6 +26,9 @@ describe('footer links', () => {
       { label: 'Security', href: '/security' },
     ]);
   });
+  it('links the free tools hub', () => {
+    expect(FOOTER_COLUMNS.find((c) => c.title === 'Learn')!.links).toContainEqual({ label: 'Free tools', href: '/free-tools' });
+  });
   it('has no duplicate labels inside a column', () => {
     for (const c of FOOTER_COLUMNS) {
       expect(new Set(c.links.map((l) => l.label)).size).toBe(c.links.length);

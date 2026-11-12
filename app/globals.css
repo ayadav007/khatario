@@ -2161,3 +2161,57 @@
     }
   }
 }
+
+/* Public free tool pages (FreeToolPageBody) stay light when the device is in dark mode.
+   app/layout.tsx adds html.dark, which turns the shared .card, .input and text-text-* styles dark
+   while fixed classes such as text-gray-900 stay dark. In-app /tools/* pages do not use this class. */
+.dark .free-tool-light {
+  color-scheme: light;
+  /* Light values copied from the :root block (the ones .dark changes). */
+  --color-background: #F8F3E9;
+  --color-surface: #ffffff;
+  --color-text-primary: #032B23;
+  --color-text-secondary: #3d5c56;
+  --color-text-muted: #6d8580;
+  --color-border: #e4ddd0;
+  color: var(--color-text-primary);
+}
+
+.dark .free-tool-light .card,
+.dark .free-tool-light .input {
+  background-color: #ffffff;
+}
+
+.dark .free-tool-light .card,
+.dark .free-tool-light .input:not(:focus) {
+  border-color: #e4ddd0;
+}
+
+/* Free invoice maker: print only the invoice sheet. Every rule is scoped to pages that contain it.
+   The A4 @page rule is added by the invoice maker itself while it is mounted, not here. */
+@media print {
+  /* Hide everything that is not the sheet, an ancestor of it, or inside it. Normal flow, so no blank pages. */
+  body:has(.free-invoice-print-area) :not(.free-invoice-print-area):not(:has(.free-invoice-print-area)):not(.free-invoice-print-area *) {
+    display: none !important;
+  }
+
+  .free-invoice-print-area {
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .free-invoice-print-area th,
+  .free-invoice-print-area td {
+    border-color: #cbd5e1 !important;
+    padding: 4px 6px !important;
+  }
+
+  /* Ancestors of the sheet (page wrapper, tool card) drop their frame, padding and background. */
+  body:has(.free-invoice-print-area) :has(.free-invoice-print-area) { margin: 0 !important; padding: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
+}

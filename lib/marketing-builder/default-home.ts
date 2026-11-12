@@ -14,6 +14,7 @@ export const HOME_SECTIONS = [
   'Industries',
   'ProductTour',
   'AiTools',
+  'FreeTools',
   'TemplateGallery',
   'OnlineStore',
   'WhatsAppMarketing',
