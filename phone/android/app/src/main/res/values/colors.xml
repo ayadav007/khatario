@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="khatario_background">#F8F3E9</color>
+    <!-- App icon background behind the logo (same cream as the website favicon). -->
+    <color name="ic_launcher_background">#FCF9F0</color>
     <!-- Tint for the notification small icon (brand dark green). -->
     <color name="khatario_notification_accent">#0F2E24</color>
 </resources>
