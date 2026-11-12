@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type { IntegrationCatalogEntry } from '@/lib/integrations/catalog';
+import { cardAction } from '@/lib/integrations/plugin-form';
 import type { IntegrationRowStatus } from '@/hooks/useIntegrationMarketplaceStatus';
 
 const ICON_MAP: Record<IntegrationCatalogEntry['icon'], LucideIcon> = {
@@ -57,41 +58,12 @@ export function IntegrationMarketplaceList({ items, statusById }: IntegrationMar
         const showActive = status.active && !entry.comingSoon;
         const entitled = status.entitled && !entry.comingSoon;
 
-        const navigate = () => {
-          if (entry.configureHref) router.push(entry.configureHref);
-        };
-
-        let primaryLabel = 'Connect';
-        let primaryVariant: 'primary' | 'secondary' = 'primary';
-        let onPrimary: (() => void) | undefined = navigate;
-        let primaryDisabled = !entry.configureHref || status.loading;
-
-        if (entry.comingSoon) {
-          primaryLabel = 'Coming soon';
-          primaryVariant = 'secondary';
-          primaryDisabled = true;
-          onPrimary = undefined;
-        } else if (!entitled) {
-          primaryLabel = 'Upgrade';
-          primaryVariant = 'secondary';
-          primaryDisabled = false;
-          onPrimary = () => router.push('/settings/subscription');
-        } else if (showActive) {
-          primaryLabel = 'Access';
-          primaryVariant = 'primary';
-          onPrimary = navigate;
-          primaryDisabled = !entry.configureHref;
-        } else if (entry.ctaVariant === 'try') {
-          primaryLabel = 'Try now';
-          primaryVariant = 'secondary';
-          onPrimary = entry.configureHref ? navigate : undefined;
-          primaryDisabled = !entry.configureHref;
-        } else if (entry.ctaVariant === 'access') {
-          primaryLabel = 'Open';
-          primaryVariant = 'primary';
-          onPrimary = navigate;
-          primaryDisabled = !entry.configureHref;
-        }
+        const action = cardAction(entry, { ...status, entitled });
+        const onPrimary = action.href ? () => router.push(action.href as string) : undefined;
+        const primaryVariant: 'primary' | 'secondary' =
+          action.label === 'Coming soon' || action.label === 'Upgrade' || action.label === 'Try now'
+            ? 'secondary'
+            : 'primary';
 
         return (
           <li
@@ -131,12 +103,12 @@ export function IntegrationMarketplaceList({ items, statusById }: IntegrationMar
             </div>
             <div className="shrink-0 flex sm:flex-col sm:items-end gap-2 sm:min-w-[10rem]">
               {onPrimary ? (
-                <Button variant={primaryVariant} size="lg" disabled={primaryDisabled} onClick={onPrimary}>
-                  {status.loading && !entry.comingSoon ? '…' : primaryLabel}
+                <Button variant={primaryVariant} size="lg" disabled={action.disabled} onClick={onPrimary}>
+                  {status.loading && !entry.comingSoon ? '…' : action.label}
                 </Button>
               ) : (
                 <Button variant="secondary" size="lg" disabled>
-                  {primaryLabel}
+                  {action.label}
                 </Button>
               )}
             </div>

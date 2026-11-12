@@ -61,6 +61,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/whatsapp/shop': 'WhatsApp shop',
   '/settings/help': 'Help & Support',
   '/settings/email': 'Email settings',
+  '/settings/integrations/shiprocket': 'Shiprocket',
 };
 
 /**

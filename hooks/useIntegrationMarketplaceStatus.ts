@@ -42,6 +42,8 @@ export function useIntegrationMarketplaceStatus() {
   const [whatsappLoading, setWhatsappLoading] = useState(true);
   const [emailReady, setEmailReady] = useState(false);
   const [emailLoading, setEmailLoading] = useState(true);
+  const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(true);
 
   const fetchWhatsapp = useCallback(async () => {
     if (!business?.id) {
@@ -98,6 +100,39 @@ export function useIntegrationMarketplaceStatus() {
     fetchEmail();
   }, [fetchEmail]);
 
+  const fetchPlugins = useCallback(async () => {
+    if (!business?.id) {
+      setConnectedProviders([]);
+      setPluginsLoading(false);
+      return;
+    }
+    setPluginsLoading(true);
+    try {
+      const res = await fetch(`/api/integrations?business_id=${business.id}`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const list: Array<{ provider?: string; connected?: boolean }> = Array.isArray(data.connections)
+          ? data.connections
+          : [];
+        setConnectedProviders(
+          list.filter((c) => c.connected && typeof c.provider === 'string').map((c) => c.provider as string)
+        );
+      } else {
+        setConnectedProviders([]);
+      }
+    } catch {
+      setConnectedProviders([]);
+    } finally {
+      setPluginsLoading(false);
+    }
+  }, [business?.id]);
+
+  useEffect(() => {
+    fetchPlugins();
+  }, [fetchPlugins]);
+
   const statusById = useMemo(() => {
     const map: Record<string, IntegrationRowStatus> = {};
     const baseLoading = featuresLoading || capLoading;
@@ -106,6 +141,13 @@ export function useIntegrationMarketplaceStatus() {
       const entitled = entryEntitled(entry, hasFeature, hasCapability);
       let active = false;
       let loading = baseLoading;
+
+      if (entry.plugin) {
+        loading = baseLoading || pluginsLoading;
+        active = connectedProviders.includes(entry.plugin.provider);
+        map[entry.id] = { active, entitled, loading };
+        continue;
+      }
 
       switch (entry.id) {
         case 'whatsapp-invoice-send':
@@ -136,6 +178,8 @@ export function useIntegrationMarketplaceStatus() {
     whatsappLoading,
     emailReady,
     emailLoading,
+    connectedProviders,
+    pluginsLoading,
   ]);
 
   return { statusById, refetchWhatsapp: fetchWhatsapp };

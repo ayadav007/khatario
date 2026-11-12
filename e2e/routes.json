@@ -206,6 +206,7 @@
   "/settings/hr-employee",
   "/settings/hr-exit",
   "/settings/integrations",
+  "/settings/integrations/shiprocket",
   "/settings/invoice",
   "/settings/label-templates",
   "/settings/label-templates/00000000-0000-4000-8000-000000000001",
