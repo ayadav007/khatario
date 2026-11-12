@@ -13,6 +13,12 @@ import { DeleteAction } from '@/components/common/DeleteAction';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
+import { Schedule3LineSelect } from '@/components/accounts/Schedule3LineSelect';
+import {
+  isAssignableSchedule3Line,
+  SCHEDULE3_LOCKED_CODES,
+  type Schedule3Line,
+} from '@/lib/accounting/schedule3-lines';
 import {
   effectivePlSection,
   plSectionFromGroup,
@@ -24,6 +30,7 @@ type AccountDetail = Account & {
   account_group_code?: string | null;
   account_group_type?: string | null;
   pl_section?: string | null;
+  schedule3_line?: string | null;
   current_balance?: number;
 };
 
@@ -37,6 +44,9 @@ export default function AccountDetailPage() {
   const [plSection, setPlSection] = useState<PlSection | ''>('');
   const [plSaving, setPlSaving] = useState(false);
   const [plMessage, setPlMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [s3Line, setS3Line] = useState<Schedule3Line | ''>('');
+  const [s3Saving, setS3Saving] = useState(false);
+  const [s3Message, setS3Message] = useState<{ ok: boolean; text: string } | null>(null);
 
   useMobileHeaderTitleOverride(account?.account_name);
 
@@ -59,6 +69,7 @@ export default function AccountDetailPage() {
         const fromGroup = plSectionFromGroup(a.account_type, a.account_group_code, a.account_group_type);
         const effective = effectivePlSection({ ...a, group_code: a.account_group_code, group_type: a.account_group_type });
         setPlSection(effective && effective !== fromGroup ? effective : '');
+        setS3Line(isAssignableSchedule3Line(a.schedule3_line) ? a.schedule3_line : '');
       } else {
         router.push('/accounts');
       }
@@ -90,6 +101,27 @@ export default function AccountDetailPage() {
       setPlMessage({ ok: false, text: e.message || 'Failed to save' });
     } finally {
       setPlSaving(false);
+    }
+  };
+
+  const saveSchedule3Line = async () => {
+    if (!account || !business?.id || !user?.id) return;
+    setS3Saving(true);
+    setS3Message(null);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}?business_id=${business.id}&user_id=${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule3_line: s3Line || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save');
+      setS3Message({ ok: true, text: 'Saved. The Schedule III tab uses the new line.' });
+      await fetchAccount();
+    } catch (e: any) {
+      setS3Message({ ok: false, text: e.message || 'Failed to save' });
+    } finally {
+      setS3Saving(false);
     }
   };
 
@@ -234,6 +266,30 @@ export default function AccountDetailPage() {
                 </div>
                 {plMessage && (
                   <p className={`text-sm mt-1 ${plMessage.ok ? 'text-green-700' : 'text-red-600'}`}>{plMessage.text}</p>
+                )}
+
+                {SCHEDULE3_LOCKED_CODES.has(account.account_code) ? (
+                  <p className="text-sm text-text-secondary mt-4">
+                    This account is placed by the system in the Schedule III view.
+                  </p>
+                ) : (
+                  <div className="mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                      <Schedule3LineSelect
+                        value={s3Line}
+                        onChange={(v) => { setS3Line(v); setS3Message(null); }}
+                      />
+                      <div className="pb-1">
+                        <Button type="button" variant="secondary" onClick={saveSchedule3Line} disabled={s3Saving}>
+                          {s3Saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Save line
+                        </Button>
+                      </div>
+                    </div>
+                    {s3Message && (
+                      <p className={`text-sm mt-1 ${s3Message.ok ? 'text-green-700' : 'text-red-600'}`}>{s3Message.text}</p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

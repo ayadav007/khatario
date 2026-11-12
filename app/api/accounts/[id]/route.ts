@@ -12,10 +12,18 @@ import {
 } from '@/lib/accounting/account-rules';
 import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS } from '@/lib/accounting/pl-sections';
 import { hasPlSectionColumn } from '@/lib/accounting/pl-section-column';
+import {
+  ASSIGNABLE_SCHEDULE3_LINES,
+  SCHEDULE3_LINE_LABELS,
+  SCHEDULE3_LOCKED_CODES,
+  isAssignableSchedule3Line,
+} from '@/lib/accounting/schedule3-lines';
+import { hasSchedule3LineColumn } from '@/lib/accounting/schedule3-column';
 import { getClientIP, getUserAgent, logActivity } from '@/lib/activity-logger';
 import { ReceivableAccountError, assertReceivableAccountChangeAllowed } from '@/lib/accounting/receivable-accounts';
 
 const plSectionLabel = (v: unknown) => (isPlSection(v) ? PL_SECTION_LABELS[v] : 'default');
+const schedule3Label = (v: unknown) => (isAssignableSchedule3Line(v) ? SCHEDULE3_LINE_LABELS[v] : 'default');
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +39,11 @@ const EDITABLE_FIELDS = new Set([
   'opening_balance',
   'opening_balance_type',
   'pl_section',
+  'schedule3_line',
 ]);
 // System accounts keep their P&L section (like Zoho's locked system accounts).
-const SYSTEM_EDITABLE_FIELDS = new Set(['description', 'sort_order', 'is_active']);
+// The Schedule III line is report-only, so a seeded account may be moved.
+const SYSTEM_EDITABLE_FIELDS = new Set(['description', 'sort_order', 'is_active', 'schedule3_line']);
 
 /**
  * GET /api/accounts/[id]
@@ -255,6 +265,34 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         }
       }
 
+      if (updates.schedule3_line === '') updates.schedule3_line = null;
+      if (updates.schedule3_line !== undefined) {
+        const line = updates.schedule3_line;
+        if (line !== null) {
+          if (!['income', 'expense'].includes(existing.account_type) || !isAssignableSchedule3Line(line)) {
+            return NextResponse.json(
+              {
+                error: `Schedule III line ${String(line)} is not valid for a ${existing.account_type} account. Use one of: ${ASSIGNABLE_SCHEDULE3_LINES.join(', ')}`,
+                code: 'INVALID_SCHEDULE3_LINE',
+              },
+              { status: 400 }
+            );
+          }
+          if (SCHEDULE3_LOCKED_CODES.has(existing.account_code)) {
+            return NextResponse.json(
+              { error: 'This account feeds the stock figures and cannot be moved to another Schedule III line.', code: 'SCHEDULE3_LINE_LOCKED' },
+              { status: 400 }
+            );
+          }
+        }
+        if (!(await hasSchedule3LineColumn())) {
+          return NextResponse.json(
+            { error: 'Changing the Schedule III line needs database migration 467.', code: 'SCHEDULE3_LINE_UNAVAILABLE' },
+            { status: 409 }
+          );
+        }
+      }
+
       if (updates.parent_account_id === '') updates.parent_account_id = null;
       if (updates.parent_account_id !== undefined) {
         try {
@@ -370,6 +408,8 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
             entity_type: 'account',
             description: changes.pl_section
               ? `Moved ${account.account_code} ${account.account_name} in Profit & Loss from ${plSectionLabel(changes.pl_section.from)} to ${plSectionLabel(changes.pl_section.to)}`
+              : changes.schedule3_line
+              ? `Moved ${account.account_code} ${account.account_name} in Schedule III to ${schedule3Label(changes.schedule3_line.to)}`
               : `Updated account ${account.account_code} ${account.account_name} (${Object.keys(changes).join(', ')})`,
             ip_address: getClientIP(ctx.request),
             user_agent: getUserAgent(ctx.request),
