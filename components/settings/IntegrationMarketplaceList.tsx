@@ -11,6 +11,7 @@ import {
   Smartphone,
   Building2,
   Mail,
+  Truck,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +26,7 @@ const ICON_MAP: Record<IntegrationCatalogEntry['icon'], LucideIcon> = {
   Smartphone,
   Building2,
   Mail,
+  Truck,
 };
 
 export interface IntegrationMarketplaceListProps {

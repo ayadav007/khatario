@@ -144,6 +144,12 @@ const SETTINGS_TAIL_GROUPS: SettingsNavGroup[] = [
       },
       smsLink,
       {
+        href: '/settings/integrations?category=shipping',
+        label: 'Shipping integrations',
+        searchKeywords: ['courier', 'shiprocket', 'delivery'],
+        accessModules: ['billing'],
+      },
+      {
         href: '/settings/integrations?category=crm',
         label: 'CRM integrations',
         accessModules: ['crm'],

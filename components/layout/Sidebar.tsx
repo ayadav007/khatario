@@ -974,6 +974,7 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/email': Mail,
       '/settings/payments': Wallet,
       '/settings/integrations?category=sms': Smartphone,
+      '/settings/integrations?category=shipping': Truck,
       '/settings/help': HelpCircle,
       '/settings/help/how-to': HelpCircle,
       '/settings/departments': Building,
