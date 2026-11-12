@@ -6,7 +6,6 @@ import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../pages/native_routes.dart';
 import '../pages/page_catalog.dart';
-import '../pages/record_page.dart';
 import '../pages/website_page_screen.dart';
 import 'tool_kit.dart';
 
@@ -49,10 +48,8 @@ class ToolsHubScreen extends StatelessWidget {
 
   void _open(BuildContext context, _Tool tool) {
     if (opensWebsiteByDesign(tool.href)) return openWebsiteInApp(context, session, tool.href, tool.title);
-    final screen = nativeScreenFor(session, tool.href);
-    final page = pageForHref(tool.href);
-    final Widget? next = screen ?? (page == null ? null : RecordPage(session: session, page: page));
-    if (next == null) return;
+    final next = nativeScreenFor(session, tool.href);
+    if (next == null) return openWebsiteInApp(context, session, tool.href, tool.title);
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => next));
   }
 

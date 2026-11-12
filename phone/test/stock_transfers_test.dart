@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/stock/stock_transfer_form_screen.dart';
 import 'package:khatario_phone/screens/stock/stock_transfer_logic.dart';
 import 'package:khatario_phone/screens/stock/stock_transfer_receive_screen.dart';
@@ -630,7 +629,6 @@ void main() {
       final (s, _) = _Srv().build();
       expect(nativeScreenFor(s, '/stock-transfers'), isA<StockTransfersScreen>());
       expect(nativeScreenFor(s, '/stock-transfers/new'), isA<StockTransferFormScreen>());
-      expect(stillGeneric.contains('/stock-transfers'), isFalse);
     });
   });
 }

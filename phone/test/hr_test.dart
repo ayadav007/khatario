@@ -604,9 +604,7 @@ void main() {
       expect(nativeScreenFor(s, '/employees/org-chart'), isA<OrgChartScreen>());
       expect(routeTier(s, '/employees/new'), RouteTier.native);
       expect(routeTier(s, '/employees/org-chart'), RouteTier.native);
-      expect(websiteForNow, isNot(contains('/employees/new')));
       expect(websiteByDesign, isNot(contains('/employees/new')));
-      expect(stillGeneric, isNot(contains('/employees/org-chart')));
     });
   });
 

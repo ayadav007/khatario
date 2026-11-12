@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/payments/payment_reconciliation_screen.dart';
 import 'package:khatario_phone/screens/sales/credit_approvals_logic.dart';
 import 'package:khatario_phone/screens/sales/credit_approvals_screen.dart';
@@ -583,9 +582,8 @@ void main() {
       expect(nativeScreenFor(s, '/payments/reconciliation'), isA<PaymentReconciliationScreen>());
     });
 
-    test('none is left in stillGeneric', () {
+    test('each one has a native screen', () {
       for (final h in ['/credit-approvals', '/recurring-invoices', '/invoices/recurring', '/payments/reminders', '/whatsapp/reminders', '/payments/reconciliation']) {
-        expect(stillGeneric.contains(h), isFalse, reason: h);
         expect(routeTier(s, h), RouteTier.native, reason: h);
       }
     });

@@ -6,7 +6,6 @@ import 'package:khatario_phone/screens/accounting/activity_logs_logic.dart';
 import 'package:khatario_phone/screens/accounting/activity_logs_screen.dart';
 import 'package:khatario_phone/screens/invoices/invoice_detail_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 
 import 'support/recorded_session.dart';
 
@@ -241,7 +240,6 @@ void main() {
     testWidgets('the route table opens the screen and the link is no longer generic', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/activity-logs'), isA<ActivityLogsScreen>());
-      expect(stillGeneric.contains('/activity-logs'), isFalse);
     });
   });
 }

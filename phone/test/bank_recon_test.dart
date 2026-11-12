@@ -554,7 +554,6 @@ void main() {
     testWidgets('the route table opens the screen and the link is no longer generic', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/bank/reconciliation'), isA<BankReconciliationScreen>());
-      expect(stillGeneric.contains('/bank/reconciliation'), isFalse);
       expect(websiteByDesign.contains('/bank/import'), isTrue);
     });
   });

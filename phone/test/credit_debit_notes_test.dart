@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/purchases/bill_form_numbers.dart';
 import 'package:khatario_phone/screens/purchases/bill_form_screen.dart';
 import 'package:khatario_phone/screens/sales/credit_debit_notes_screen.dart';
@@ -607,8 +606,6 @@ void main() {
       expect(nativeScreenFor(s, '/credit-notes'), isA<CreditDebitNotesScreen>());
       expect(nativeScreenFor(s, '/debit-notes'), isA<CreditDebitNotesScreen>());
       expect((nativeScreenFor(s, '/debit-notes') as CreditDebitNotesScreen).debit, isTrue);
-      expect(stillGeneric.contains('/credit-notes'), isFalse);
-      expect(stillGeneric.contains('/debit-notes'), isFalse);
     });
   });
 }

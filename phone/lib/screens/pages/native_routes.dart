@@ -111,7 +111,6 @@ import '../chats/unsubscribes_screen.dart';
 import '../chats/who_to_message_screen.dart';
 import '../../theme.dart';
 import 'page_catalog.dart';
-import 'record_page.dart';
 import 'website_page_screen.dart';
 
 /// Where a More link ends up on the phone.
@@ -125,11 +124,6 @@ enum RouteTier {
   /// The website page, opened inside the app.
   website,
 
-  /// The automatic read-only list (`RecordPage`). Listed in [stillGeneric] until it gets a screen.
-  generic,
-
-  /// Not a phone route at all.
-  none,
 }
 
 const _tabHrefs = {'/items', '/invoices', '/customers', '/suppliers', '/search', '/more', '/dashboard', '/notifications'};
@@ -395,8 +389,8 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
   };
 }
 
-/// Opens the phone screen for a website link, or its automatic read-only list. Returns false when
-/// the link has neither (the caller then opens a tab or the website).
+/// Opens the phone screen for a website link. Returns false when the link has none (the caller then
+/// opens a tab or the website). There is no automatic list: a link with no screen is a website link.
 bool openKnownScreen(BuildContext context, AppSession session, String href, String label) {
   final navigator = Navigator.of(context);
   final screen = nativeScreenFor(session, href);
@@ -404,30 +398,22 @@ bool openKnownScreen(BuildContext context, AppSession session, String href, Stri
     navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
     return true;
   }
-  // Kept on the website by design: never fall back to the automatic list for these.
-  if (opensWebsiteByDesign(href)) return false;
-  final page = pageForHref(href)?.withTitle(label);
-  if (page != null) {
-    navigator.push(MaterialPageRoute<void>(builder: (_) => RecordPage(session: session, page: page)));
-    return true;
-  }
   return false;
 }
 
-/// Opens any website link on the phone: its screen, its automatic list, or the website page inside
-/// the app, signed in. The More menu and the reports overview both come through here.
+/// Opens any website link on the phone: its screen, or the website page inside the app, signed in. The More menu and the reports overview both come through here.
 void openAppHref(BuildContext context, AppSession session, String href, String label) {
   if (!openKnownScreen(context, session, href, label)) openWebsiteInApp(context, session, href, label);
 }
 
-/// Which of the five homes a link has. Tabs and the website decisions come before screens, so a
+/// Which of the three homes a link has. Tabs and the website decisions come before screens, so a
 /// link listed in [websiteByDesign] reports `website` even where a small info screen answers it.
+/// A link with no screen at all (an old push link, say) is `website` too.
 RouteTier routeTier(AppSession session, String href) {
   if (_tabHrefs.contains(href)) return RouteTier.tab;
-  if (websiteByDesign.contains(href) || websiteForNow.contains(href)) return RouteTier.website;
+  if (websiteByDesign.contains(href)) return RouteTier.website;
   if (nativeScreenFor(session, href) != null) return RouteTier.native;
-  if (isWebsiteOnlyHref(href) || pageForHref(href) == null) return RouteTier.website;
-  return RouteTier.generic;
+  return RouteTier.website;
 }
 
 /// Whether a row's tap really opens the website: the link is kept there by design and no phone

@@ -8,7 +8,6 @@ import 'package:khatario_phone/screens/hr/employee_expenses_screen.dart';
 import 'package:khatario_phone/screens/hr/salary_advances_screen.dart';
 import 'package:khatario_phone/screens/hr/targets_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/statement_pdf.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 import 'package:khatario_phone/ui/kit.dart';
@@ -341,9 +340,6 @@ void main() {
       expect(nativeScreenFor(s, '/employees/expenses'), isA<EmployeeExpensesScreen>());
       expect(nativeScreenFor(s, '/employees/commissions'), isA<CommissionsScreen>());
       expect(nativeScreenFor(s, '/employees/targets'), isA<TargetsScreen>());
-      for (final h in ['/employees/salary/advances', '/employees/expenses', '/employees/commissions']) {
-        expect(stillGeneric.contains(h), isFalse, reason: h);
-      }
     });
   });
 }

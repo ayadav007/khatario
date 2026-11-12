@@ -10,7 +10,6 @@ import 'package:khatario_phone/screens/hr/attendance_reviews_screen.dart';
 import 'package:khatario_phone/screens/hr/attendance_screen.dart';
 import 'package:khatario_phone/screens/hr/shift_roster_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/ui/kit.dart';
 
@@ -759,8 +758,6 @@ void main() {
       expect(nativeScreenFor(s, '/hr/shifts/roster'), isA<ShiftRosterScreen>());
       expect(nativeScreenFor(s, '/hr/shifts/bulk-assign'), isA<BulkShiftAssignScreen>());
       expect(routeTier(s, '/hr/shifts/roster'), RouteTier.native);
-      expect(stillGeneric, isNot(contains('/hr/shifts/roster')));
-      expect(stillGeneric, isNot(contains('/hr/shifts/bulk-assign')));
     });
 
     testWidgets('attendance links to history and reviews and keeps one Open on website row for the rest', (t) async {

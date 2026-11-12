@@ -1,17 +1,27 @@
 # Khatario phone app — build plan
 
-> **Out of date (10 Nov 2026).** The counts below are from 12 Oct 2026. About 75 routes now have live phone screens. The work left is in `docs/superpowers/plans/2026-11-10-phone-app-parity.md`; the route lists per phase below are still correct.
+> **Updated 12 Nov 2026.** The parity pass is finished: every link in the More menu opens a phone screen, a bottom-bar tab, or the website on purpose. The phase lists further down are the original plan and are kept as history. How the pass went and what to reuse: "Parity pass (Nov 2026)" in `docs/design/PHONE_APP_HANDOFF.md`.
 
-Flutter app in `phone/`. The current APK is a prototype: 13 screens, sample shop **Gupta Kirana**, no server calls. Install id `com.khatario.phone` (the Capacitor app stays `com.khatario.app`).
+Flutter app in `phone/`, install id `com.khatario.phone` (the Capacitor app stays `com.khatario.app`). It calls the live APIs. The first prototype had 13 screens and sample data; that is long gone.
 
-Counted on 12 Oct 2026 from `app/(app)/**/page.tsx`.
-
-| | Screens |
+| | Count |
 |---|---|
-| Signed-in website | 288 |
-| Built on the phone, live data | 0 |
-| Prototype only | 13 |
-| Not ported | 4 (3 debug + `invoices/mock`) |
+| Links in the More menu (every one a link can show, all modules on, supplier business) | 153 |
+| Open their own phone screen | 139 |
+| Open a bottom-bar tab or the search screen | 5 |
+| Open the website inside the app, on purpose | 9 |
+| Open a plain list of fields | 0 |
+| Phone screens (public `*Screen` classes in `phone/lib`) | 283 |
+
+The nine website links are Bank import, Custom Report Builder, GSTR-9, leave year-end, leave balance import, the WhatsApp group extractor, Documentation, Contact Support and Privacy Policy. The last three have a small phone screen of their own; they are listed as website links because the website is where they live. Their rows show no globe.
+
+How these were counted (12 Nov 2026):
+
+- **Links:** the entries in `phone/test/fixtures/more_hrefs.dart`, the list of every href the server's More menu can produce (`lib/more-navigation.ts` and the nav files it reads). A test fails when the server menu gains a link missing there.
+- **Tiers:** `routeTier(session, href)` in `phone/lib/screens/pages/native_routes.dart`, run once over every entry. A link in `websiteByDesign` is `website`; a bottom-bar or search link is `tab`; a link with a phone screen from `nativeScreenFor` is `native`. `phone/test/route_coverage_test.dart` fails if any link lands anywhere else, or opens the website without being listed in `websiteByDesign`.
+- **Screens:** `grep -rhoE "^class [A-Za-z0-9_]*Screen" phone/lib`, public classes only, de-duplicated. 283 counting only public names; 317 with the private ones. One screen can serve several links (the credit note and debit note lists, for example), and one link can lead to several screens (list, detail, form), so the two numbers do not match.
+
+The website has 288 signed-in routes (counted 12 Oct 2026 from `app/(app)/**/page.tsx`). Marketing, admin and the customer-facing store stay websites.
 
 Each phase ends in a new APK. The server keeps tax, stock, and the ledger. Flutter calls the existing APIs. Posted edits and cancellations use the existing reversals, period locks, and GST locks. `business_id` and the acting user come from the session, never from the phone body.
 

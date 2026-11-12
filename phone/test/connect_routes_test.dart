@@ -11,7 +11,6 @@ import 'package:khatario_phone/screens/chats/leads_screen.dart';
 import 'package:khatario_phone/screens/chats/pipeline_logic.dart';
 import 'package:khatario_phone/screens/chats/pipeline_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 
 import 'support/recorded_session.dart';
 
@@ -56,10 +55,8 @@ void main() {
         '/whatsapp/dashboard', '/whatsapp/conversations', '/whatsapp/leads', '/whatsapp/pipeline', '/whatsapp/lead-sources',
         '/whatsapp/campaigns', '/whatsapp/bot-rules', '/whatsapp/flows', '/whatsapp/saved-replies', '/whatsapp/orders',
       ]) {
-        expect(stillGeneric.contains(href), isFalse, reason: href);
         expect(routeTier(session, href), RouteTier.native, reason: href);
       }
-      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')), isEmpty);
     });
   });
 

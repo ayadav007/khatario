@@ -727,7 +727,7 @@ void main() {
     expect(nativeScreenFor(s, '/pricing/schemes'), isA<SchemesScreen>());
     for (final href in ['/pricing/party-item', '/pricing/levels', '/pricing/schemes']) {
       expect(routeTier(s, href), RouteTier.native, reason: href);
-      expect(stillGeneric.contains(href) || websiteForNow.contains(href) || websiteByDesign.contains(href), isFalse, reason: href);
+      expect(websiteByDesign.contains(href), isFalse, reason: href);
     }
   });
 }

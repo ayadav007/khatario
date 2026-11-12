@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/more/more_navigation.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/financial_statements_screens.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/screens/reports/reports_home_logic.dart';
@@ -189,6 +188,5 @@ void main() {
   test('route: /reports is native and not generic', () {
     final (s, _) = fakeSession((_) => {});
     expect(nativeScreenFor(s, '/reports'), isA<ReportsHomeScreen>());
-    expect(stillGeneric.contains('/reports'), isFalse);
   });
 }

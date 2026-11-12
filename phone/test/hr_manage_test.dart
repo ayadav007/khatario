@@ -11,7 +11,6 @@ import 'package:khatario_phone/screens/hr/offer_submit_screen.dart';
 import 'package:khatario_phone/screens/hr/recruitment_candidate_screen.dart';
 import 'package:khatario_phone/screens/hr/recruitment_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/hr/employees_screen.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 import 'package:khatario_phone/ui/kit.dart';
@@ -643,9 +642,6 @@ void main() {
       expect(nativeScreenFor(s, '/employees/manager'), isA<ManagerScreen>());
       expect(nativeScreenFor(s, '/employees/recruitment'), isA<RecruitmentScreen>());
       expect(nativeScreenFor(s, '/hr/exits'), isA<ExitsScreen>());
-      for (final h in ['/hr/dashboard', '/employees/manager', '/employees/recruitment', '/hr/exits']) {
-        expect(stillGeneric.contains(h), isFalse, reason: h);
-      }
     });
   });
 }

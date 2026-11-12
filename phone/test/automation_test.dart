@@ -1,12 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
+import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/settings/more_settings.dart';
 
 import 'support/recorded_session.dart';
 
 void main() {
-  test('Workflow automation stays on the website: its page loads no list and has no server route to save to', () {
-    expect(isWebsiteOnlyHref('/settings/automation'), isTrue);
+  test('Workflow automation stays on the website: a small phone screen explains it and opens the website', () {
+    final (session, _) = recordedSession((o, b) => (200, <String, dynamic>{}));
+    expect(nativeScreenFor(session, '/settings/automation'), isNotNull);
   });
 
   testWidgets('the restore row says why it opens the website', (t) async {

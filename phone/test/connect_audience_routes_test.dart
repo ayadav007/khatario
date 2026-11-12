@@ -10,7 +10,6 @@ import 'package:khatario_phone/screens/chats/send_message_screen.dart';
 import 'package:khatario_phone/screens/chats/unsubscribes_screen.dart';
 import 'package:khatario_phone/screens/chats/who_to_message_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 
 import 'support/recorded_session.dart';
 
@@ -49,11 +48,8 @@ void main() {
       for (final href in [
         '/whatsapp/contacts', '/whatsapp/contacts/groups', '/whatsapp/unsubscribes', '/whatsapp/send-message', '/whatsapp/who-to-message', '/whatsapp/campaigns',
       ]) {
-        expect(stillGeneric.contains(href), isFalse, reason: href);
-        expect(isWebsiteOnlyHref(href), isFalse, reason: href);
         expect(routeTier(session, href), RouteTier.native, reason: href);
       }
-      expect(stillGeneric.where((h) => h.startsWith('/whatsapp')), isEmpty);
     });
   });
 

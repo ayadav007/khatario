@@ -6,7 +6,6 @@ import 'package:khatario_phone/format.dart';
 import 'package:khatario_phone/screens/accounting/assets_tds_logic.dart';
 import 'package:khatario_phone/screens/accounting/tds_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 
 import 'support/finders.dart';
@@ -492,7 +491,6 @@ void main() {
         expect(w, isA<TdsScreen>(), reason: href);
         expect((w! as TdsScreen).initialTab, tab, reason: href);
       }
-      expect(stillGeneric.contains('/tds'), isFalse);
     });
   });
 }

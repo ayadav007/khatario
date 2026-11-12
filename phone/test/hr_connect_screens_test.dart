@@ -11,7 +11,6 @@ import 'package:khatario_phone/screens/hr/salary_payments_logic.dart';
 import 'package:khatario_phone/screens/hr/salary_payments_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/pages/page_catalog.dart';
-import 'package:khatario_phone/screens/pages/record_page.dart';
 import 'package:khatario_phone/screens/pages/website_page_screen.dart';
 import 'package:khatario_phone/screens/whatsapp/order_verification_logic.dart';
 import 'package:khatario_phone/screens/whatsapp/order_verification_screen.dart';
@@ -23,23 +22,22 @@ void main() {
   final (session, _) = fakeSession((_) => <String, dynamic>{});
 
   test('HR and Connect pages open their own phone screens', () {
-    expect(dedicatedPageScreen(session, '/employees/attendance'), isA<AttendanceScreen>());
-    expect(dedicatedPageScreen(session, '/employees/leaves'), isA<LeavesScreen>());
-    expect(dedicatedPageScreen(session, '/employees/salary/payments'), isA<SalaryPaymentsScreen>());
-    expect(dedicatedPageScreen(session, '/whatsapp/orders'), isA<OrderVerificationScreen>());
+    expect(nativeScreenFor(session, '/employees/attendance'), isA<AttendanceScreen>());
+    expect(nativeScreenFor(session, '/employees/leaves'), isA<LeavesScreen>());
+    expect(nativeScreenFor(session, '/employees/salary/payments'), isA<SalaryPaymentsScreen>());
+    expect(nativeScreenFor(session, '/whatsapp/orders'), isA<OrderVerificationScreen>());
   });
 
   test('pages without a phone screen open the website, signed in, inside the app', () {
-    final page = pageForHref('/pricing/party-item')!;
-    expect(page.path.startsWith('/api'), isFalse);
+    expect(opensWebsiteByDesign('/docs'), isTrue);
+    expect(routeTier(session, '/docs'), RouteTier.website);
     expect(websiteUri('/pricing/party-item').path, '/pricing/party-item');
     expect(websiteUri('docs').path, '/docs');
   });
 
   test('/employees/new opens the phone form, not the website', () {
     expect(nativeScreenFor(session, '/employees/new'), isA<EmployeeFormScreen>());
-    expect(dedicatedPageScreen(session, '/employees/new'), isA<EmployeeFormScreen>());
-    expect(isWebsiteOnlyHref('/employees/new'), isFalse);
+    expect(nativeScreenFor(session, '/employees/new'), isA<EmployeeFormScreen>());
   });
 
   group('roll call', () {

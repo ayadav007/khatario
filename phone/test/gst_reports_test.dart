@@ -42,14 +42,13 @@ void main() {
   final now = DateTime.now();
 
   group('routing', () {
-    test('every GST href has a native screen and leaves stillGeneric', () {
+    test('every GST href has a native screen', () {
       final (s, _) = gstSession((_) => {});
       expect(gstReportHrefs, hasLength(7));
       for (final href in gstReportHrefs) {
         expect(gstReportScreen(s, href), isNotNull, reason: href);
         expect(nativeScreenFor(s, href), isNotNull, reason: href);
         expect(routeTier(s, href), RouteTier.native, reason: href);
-        expect(stillGeneric.contains(href), isFalse, reason: href);
       }
       expect(nativeScreenFor(s, '/reports/gst/gstr1'), isA<Gstr1Screen>());
       expect(nativeScreenFor(s, '/reports/gst/gstr3b'), isA<Gstr3bScreen>());
@@ -87,7 +86,6 @@ void main() {
       expect(routeTier(s, '/reports/gst/gstr9'), RouteTier.website);
       expect(websiteByDesign.contains('/reports/gst/gstr9'), isTrue);
       expect(nativeScreenFor(s, '/eway-bills'), isNotNull);
-      expect(websiteForNow.contains('/eway-bills'), isFalse);
       expect(routeTier(s, '/eway-bills'), RouteTier.native);
     });
   });

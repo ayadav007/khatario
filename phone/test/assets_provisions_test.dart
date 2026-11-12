@@ -6,7 +6,6 @@ import 'package:khatario_phone/screens/accounting/assets_tds_logic.dart';
 import 'package:khatario_phone/screens/accounting/fixed_assets_screen.dart';
 import 'package:khatario_phone/screens/accounting/provisions_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 
 import 'support/finders.dart';
@@ -573,7 +572,6 @@ void main() {
     testWidgets('the route table opens the fixed assets screen', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/fixed-assets'), isA<FixedAssetsScreen>());
-      expect(stillGeneric.contains('/fixed-assets'), isFalse);
     });
   });
 
@@ -804,7 +802,6 @@ void main() {
     testWidgets('the route table opens the provisions screen', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/provisions'), isA<ProvisionsScreen>());
-      expect(stillGeneric.contains('/provisions'), isFalse);
     });
   });
 }

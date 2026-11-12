@@ -10,7 +10,6 @@ import 'package:khatario_phone/screens/accounting/books_logic.dart';
 import 'package:khatario_phone/screens/accounting/ledger_screen.dart';
 import 'package:khatario_phone/screens/invoices/invoice_detail_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
@@ -619,8 +618,6 @@ void main() {
       expect(nativeScreenFor(s, '/accounts'), isA<AccountsScreen>());
       expect(nativeScreenFor(s, '/accounts/new'), isA<AccountFormScreen>());
       expect(nativeScreenFor(s, '/ledger'), isA<LedgerScreen>());
-      expect(stillGeneric.contains('/accounts'), isFalse);
-      expect(stillGeneric.contains('/ledger'), isFalse);
     });
   });
 }

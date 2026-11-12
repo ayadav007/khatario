@@ -22,7 +22,6 @@ import '../screens/pages/page_catalog.dart';
 import '../screens/pages/website_page_screen.dart';
 import '../screens/chats/chats_inbox_screen.dart';
 import '../screens/chats/contacts_screen.dart';
-import '../screens/pages/record_page.dart';
 import '../screens/expenses/expense_form_screen.dart';
 import '../screens/payments/payment_in_logic.dart';
 import '../screens/payments/payment_in_screen.dart';
@@ -555,8 +554,8 @@ class _AppShellState extends State<AppShell> {
     }
     // A page title from the catalogue ("Profit & Loss", "Quotations"…).
     final lower = w.toLowerCase();
-    final byTitle = appPages.where((p) => p.title.toLowerCase() == lower).firstOrNull;
-    if (byTitle != null) return page(byTitle.href);
+    final byTitle = hrefForMenuTitle(lower);
+    if (byTitle != null) return page(byTitle);
     _notBuilt(w);
   }
 
@@ -613,11 +612,11 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _recordTab(String href) {
-    final page = pageForHref(href);
-    if (page == null) {
+    final screen = nativeScreenFor(widget.session, href);
+    if (screen == null) {
       return const Center(child: Text('Nothing to show for this tab.'));
     }
-    return RecordPage(key: ValueKey(href), session: widget.session, page: page, embedded: true);
+    return KeyedSubtree(key: ValueKey(href), child: screen);
   }
 
   Widget _body() {

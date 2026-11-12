@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/tools/todo_logic.dart';
 import 'package:khatario_phone/screens/tools/todo_screen.dart';
 import 'package:khatario_phone/ui/kit.dart';
@@ -353,7 +352,6 @@ void main() {
     test('/tools/todo opens the to-do screen and is no longer generic', () {
       final (session, _) = recordedSession(_handler);
       expect(nativeScreenFor(session, '/tools/todo'), isA<TodoScreen>());
-      expect(stillGeneric, isEmpty);
     });
   });
 

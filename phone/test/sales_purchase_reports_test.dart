@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/invoices/invoice_detail_screen.dart';
 import 'package:khatario_phone/screens/items/item_detail_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/parties/customer_detail_screen.dart';
 import 'package:khatario_phone/screens/parties/supplier_detail_screen.dart';
 import 'package:khatario_phone/screens/purchases/purchase_section.dart';
@@ -209,7 +208,7 @@ Future<void> _tapRow(WidgetTester t, String href, String rowText) async {
 }
 
 void main() {
-  test('every sales, purchase and other report href has a spec, a native screen and leaves stillGeneric', () {
+  test('every sales, purchase and other report href has a spec, a native screen', () {
     final (s, _) = fakeSession((_) => {});
     final hrefs = [...salesReportHrefs, ...purchaseReportHrefs, ...otherReportHrefs];
     expect(salesReportHrefs.length, 11);
@@ -220,7 +219,6 @@ void main() {
       expect(_screen(s, href), isA<TableReportScreen>(), reason: href);
       expect(nativeScreenFor(s, href), isA<TableReportScreen>(), reason: href);
       expect(routeTier(s, href), RouteTier.native, reason: href);
-      expect(stillGeneric.contains(href), isFalse, reason: href);
     }
     expect(nativeScreenFor(s, '/reports/sales/unknown'), isNull);
   });

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/stock/insurance_claims_screen.dart';
 import 'package:khatario_phone/screens/stock/manufacturing_screen.dart';
 import 'package:khatario_phone/screens/stock/stock_holds_screen.dart';
@@ -949,8 +948,6 @@ void main() {
       expect(nativeScreenFor(session, '/manufacturing'), isA<ManufacturingScreen>());
       expect(nativeScreenFor(session, '/insurance-claims'), isA<InsuranceClaimsScreen>());
       for (final h in ['/stock-holds', '/manufacturing', '/insurance-claims']) {
-        expect(websiteForNow.contains(h), isFalse);
-        expect(stillGeneric.contains(h), isFalse);
         expect(routeTier(session, h), RouteTier.native);
       }
     });

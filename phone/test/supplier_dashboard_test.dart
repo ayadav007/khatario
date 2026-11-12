@@ -6,7 +6,6 @@ import 'package:khatario_phone/screens/hub/supplier_dashboard_logic.dart';
 import 'package:khatario_phone/screens/hub/supply_orders_screen.dart';
 import 'package:khatario_phone/screens/hub/supplier_dashboard_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/ui/kit.dart';
 
 import 'support/recorded_session.dart';
@@ -322,7 +321,6 @@ void main() {
         nativeScreenFor(session, '/suppliers/dashboard/thresholds'),
         isA<SupplierThresholdsScreen>(),
       );
-      expect(stillGeneric, isEmpty);
     });
   });
 

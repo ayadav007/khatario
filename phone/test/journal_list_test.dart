@@ -7,7 +7,6 @@ import 'package:khatario_phone/screens/accounting/journal_form_screen.dart';
 import 'package:khatario_phone/screens/accounting/journal_list_logic.dart';
 import 'package:khatario_phone/screens/accounting/journal_logic.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 import 'package:khatario_phone/ui/kit.dart';
@@ -648,10 +647,9 @@ void main() {
     });
 
     // ---- routes and the ledger -------------------------------------------------------------
-    testWidgets('the route table opens the journal list and stillGeneric no longer holds it', (t) async {
+    testWidgets('the route table opens the journal list', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/journal-entries'), isA<JournalEntriesScreen>());
-      expect(stillGeneric.contains('/journal-entries'), isFalse);
     });
 
     testWidgets('a journal row in an account ledger opens the phone journal, not the website', (t) async {

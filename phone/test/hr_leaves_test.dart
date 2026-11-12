@@ -9,7 +9,6 @@ import 'package:khatario_phone/screens/hr/leave_calendar_screen.dart';
 import 'package:khatario_phone/screens/hr/leave_form_screen.dart';
 import 'package:khatario_phone/screens/hr/leaves_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/reports/report_period.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 import 'package:khatario_phone/ui/kit.dart';
@@ -670,7 +669,6 @@ void main() {
       final s = hrSession(FakeHrApi((m, p, b) => null));
       expect(nativeScreenFor(s, '/employees/leaves/calendar'), isA<LeaveCalendarScreen>());
       expect(routeTier(s, '/employees/leaves/calendar'), RouteTier.native);
-      expect(stillGeneric, isNot(contains('/employees/leaves/calendar')));
     });
   });
 }

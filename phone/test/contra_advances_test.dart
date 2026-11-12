@@ -5,7 +5,6 @@ import 'package:khatario_phone/screens/accounting/advances_logic.dart';
 import 'package:khatario_phone/screens/accounting/advances_screen.dart';
 import 'package:khatario_phone/screens/accounting/contra_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 
 import 'support/finders.dart';
@@ -320,7 +319,6 @@ void main() {
     testWidgets('the route table opens the contra list', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/contra'), isA<ContraScreen>());
-      expect(stillGeneric.contains('/contra'), isFalse);
     });
   });
 
@@ -696,7 +694,6 @@ void main() {
     testWidgets('the route table opens the advances list', (t) async {
       final (session, _) = recordedSession(server);
       expect(nativeScreenFor(session, '/advances'), isA<AdvancesScreen>());
-      expect(stillGeneric.contains('/advances'), isFalse);
     });
   });
 }

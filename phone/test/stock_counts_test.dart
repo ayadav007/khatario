@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/api.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/screens/stock/stock_count_logic.dart';
 import 'package:khatario_phone/screens/stock/stock_count_screen.dart';
 import 'package:khatario_phone/screens/stock/stock_counts_screen.dart';
@@ -940,7 +939,6 @@ void main() {
     test('stock counts has a phone screen and is no longer a website link', () {
       final session = recordedSession((o, b) => (404, {})).$1;
       expect(nativeScreenFor(session, '/stock-counts'), isA<StockCountsScreen>());
-      expect(websiteForNow.contains('/stock-counts'), isFalse);
       expect(routeTier(session, '/stock-counts'), RouteTier.native);
     });
   });

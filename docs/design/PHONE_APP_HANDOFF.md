@@ -104,3 +104,60 @@ New screens should be built with `lib/ui/kit.dart` and the `AppColors` / `AppTex
 - New native settings in `lib/screens/settings/` (settings_kit, settings_hub_screen, business_settings, invoice_settings, payments_settings, items_orders_settings, more_settings), following docs/audits/SETTINGS_AUDIT.md.
 - `app_shell.dart` `_openFromMore` now sends every `/settings…` link through `settingsGroupForHref()` before the page catalogue, so the generic RecordPage/SettingsEditor is no longer used for settings.
 - New bills read `/api/settings/invoice-defaults` (due date, GST-inclusive, round-off, notes, terms); new items read its `lowStockAlert`.
+
+## Parity pass (Nov 2026)
+
+Done 10 to 12 Nov 2026 (commits `d8a6a4d7` to `adb5c57c`, then the Stage 9 close-out). Aim: every link in the More menu opens a designed phone screen, a bottom-bar tab, or the website on purpose. The plain list of fields that used to catch any link (`RecordPage`) is gone. Counts and how they were made: `docs/plan/PHONE_APP.md`. The device checklist is `docs/superpowers/plans/2026-11-10-phone-app-parity-staging-checklist.md`.
+
+### What was built, by stage
+
+- **Stage 0, shared pieces** (`d8a6a4d7`): one table from More link to screen, a document list, a document detail, form fields with a top toast, a table report.
+- **Stage 1, repair** (`3a709779` to `185326a3`): Price List and Units & Duplicates, the supplier form, expenses, the journal form, the item form (barcode, category, brand, MRP, photo), tools as a hub of calculators, and every old plain widget moved onto the kit.
+- **Stage 2, other sales** (`4212e474` to `f974ead5`): quotations, sales orders, delivery challans, work orders, credit and debit notes, credit approvals, recurring invoices, payment reminders, payment reconciliation.
+- **Stage 3, stock** (`00be7df1` to `16b556ed`): party pricing, price levels, schemes, adjustments and repacks, stock transfers, stock counts, held goods, manufacturing, insurance claims, item categories, label printing, stock reports.
+- **Stage 4, books** (`8efa1d6f` to `0e40017e`): chart of accounts, ledger, journals, contra, advances, fixed assets, provisions, TDS, bank reconciliation, activity log.
+- **Stage 5, reports** (`12bba76e` to `5825b3df`): reports home, 23 sales, purchase and other reports, GST returns, GST cash ledger, e-way bills, PDFs for the statements.
+- **Stage 6, people** (`be77c385` to `4aaae3c1`): employees and org chart, attendance, shift roster, leave, salary, advances, employee expenses, commissions, targets, HR dashboard, manager, recruitment, exits, engagement, HR documents, HR reports, tasks, performance.
+- **Stage 7, WhatsApp** (`0c6cf6d3` to `51721411`): CRM dashboard, leads, lead sources, pipeline, contacts, groups, unsubscribes, send message (text, picture, buttons), who to message, campaigns and reports, flows, saved replies, order verification.
+- **Stage 8, the rest** (`5c6ed962` to `adb5c57c`): supplier dashboard with Propose order, to-do, the small "Opens the website" hint and a better website screen (loading bar, offline state, Back that walks the page's history).
+- **Stage 9, close-out:** `RecordPage`, its field formatter and the list catalogue were deleted. A link with no phone screen (an old push link, a search hit) opens the website inside the app, signed in. `routeTier` now returns only `native`, `tab` or `website`, and `route_coverage_test.dart` fails for any More link outside those, or any website link not named in `websiteByDesign`.
+
+### Shared pieces to reuse
+
+- **`TableReportSpec` and `TableReportScreen`** (`lib/screens/reports/table_report_screen.dart`): a report is a spec (route, columns, filters, count tiles) plus one screen that pages, filters and shares. Add a report by writing a spec, not a screen.
+- **`openAppHref` and `nativeScreenFor`** (`lib/screens/pages/native_routes.dart`): the one table from website href to phone screen, and the one way to open any website link. Add a screen by adding its href there. `routeTier` reports which of three homes a link has; `rowOpensWebsite` says whether a tap really opens the website.
+- **`PayListPage`** (`lib/screens/hr/pay_widgets.dart`) and the document list and detail screens (`lib/screens/sales/`): the shared list and detail layouts for pay and document screens.
+- **`askSheet`** (`lib/screens/sales/doc_action_sheets.dart`) and **`showReasonSheet`** (`lib/ui/kit.dart`): the confirm and ask-for-a-reason sheets. Every destructive or ledger-changing action asks first, names what will change, and sends the reason the server records.
+- **`AuthedImage`** (`lib/ui/authed_image.dart`): loads an image from a signed-in API path (payment screenshots, photos). A plain network image cannot, because the path is relative and needs the session.
+- **`KWebsiteHint`** (`lib/ui/kit.dart`): the small globe and "Opens the website" under a row, shown only when the tap really opens the website (`rowOpensWebsite`), never on a row that has a phone screen.
+- **`Capabilities` gating** (`lib/capability.dart`): plan and role checks. Hide what the role cannot do; show a lock where the plan does not include it. The server still checks; the phone must not be the only guard.
+- **`websiteByDesign`** (`lib/screens/pages/page_catalog.dart`): the few pages kept on the website (designers, wizards, long forms). A link added there opens the website. Use it rarely and say why in the commit.
+
+### Server tenant-scope fixes made along the way
+
+The phone now calls many routes the website used only through its own forms. Each time a route trusted a business id from the client, or took a record id without checking its business, it was fixed in the same task, with Jest tests. The website is unchanged for honest callers.
+
+- Credit approvals approve and reject, GSTR-2B decision and reconcile, employee create, supplier dashboard, thresholds and analytics: the business comes from the session; a mismatch is still refused.
+- GSTR-2B decision: ownership check before the write.
+- Shift roster change, roster absent, bulk shift assignment and the roster read: another business's employee or shift is a 404.
+- Salary payment, salary advance, commissions approve, pay and cancel: another business's employee is a 404; the approver comes from the session; a locked period is refused before a salary payment is saved.
+- Exit checklist update, convert candidate to employee (reporting manager), interviewer on an interview: scoped to the business.
+- Tasks: a task cannot be assigned to another business's employee, and the assignee name is not read across businesses.
+- Merged from the website-fix branch: item batch, serial and valuation settings are saved; bank accounts and leave balances take the business from the login.
+
+### Open owner follow-ups
+
+From the ledger's owner notes and the checklist's "Known and separate":
+
+- Push links with a query string (`/orders?view=returns&return=…`, `/settings/online-store/orders?khata=pending`) and `/purchase-orders/<id>` open the website; they could map to the phone's orders and purchase screens.
+- There is no route to fetch a single stock transfer (F-019).
+- Server: `recordDecision` in `lib/gst/gstr2b-reconciliation.ts` has no business check of its own (the route checks first).
+- Server: a salary payment is still not saved in one step; a failure after it is saved can leave it without a journal entry.
+- Server: the `/api/tasks` routes have no permission check; starting an exit is not limited to HR; the employee routes do not check the HR plan for manager, PAN, Aadhaar and PF/ESI fields; supply-order proposals ignore `allow_low_stock_access`; approving a WhatsApp order accepts any un-invoiced order of the business.
+- Server: campaign button clicks always show 0 (`button_clicked_id` is never written); a stock transfer has no repeat-save protection; the journal edit drops each line's own reference; depreciation has no preview.
+- Website: the currency converter applies rates backwards and the PAN validator reads the holder type from the wrong letters (the phone is correct); the credit-note Edit link and the payment reminders History tab lead nowhere; editing a paused scheme makes it active; the TDS pages send a year no saved financial year matches, and the TDS certificate PDF route may ask for missing columns; the activity log drops the last day of a range; Workflow automation saves nothing because there is no workflows backend.
+- Phone: `settings_router.dart` still sends `business_id` in some request bodies (the server must ignore it; they should be removed). The old party-price screen in that file is dead code.
+- Phone: work order "Create Invoice" posts the final invoice straight away; the stock dashboard page (reorder, ageing, velocity) and the Profit & Loss earnings rows are website-only; owner-side poll voting, template delete, onboarding tasks and portal invites are website-only.
+- Dates: `entry_date` may arrive as a UTC timestamp and be shown a day early; check on staging.
+- Not yet done: the Stage 9 walk on a device with an owner and a restricted staff account (steps 201 to 224 of the checklist), a staging deploy of the server changes above, and a production deploy.
+- Tests: the full phone suite has two known failures that are older than this pass: `banners_test.dart` "banner styles and promotion modal" and `invoices_golden_test.dart` "payment status and amounts match the website".

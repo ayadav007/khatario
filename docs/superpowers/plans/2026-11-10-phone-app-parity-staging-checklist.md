@@ -298,6 +298,40 @@ Deploy first: the supplier dashboard reads changed on the server (they no longer
 199. Inside a website page, follow a link, then press Back → you return to the first page; Back again leaves the screen.
 200. Turn on airplane mode and open a website page → the offline message with Try again; turn it off and tap Try again → the page loads.
 
+## Stage 9: close-out walk (the automatic list is gone)
+
+Stage 9 removes the plain read-only list that used to catch any More link without a screen. Every link now opens its phone screen, a bottom-bar tab, or the website inside the app (the ones kept there by design show a small globe and "Opens the website"). A link with no screen, such as an old push notification, opens the website too.
+
+Walk every More section twice: first with a staging **owner** account, then with a **restricted staff** account (give it only a few permissions, for example sales and payments but no reports, HR or settings). The sections come from the server's More menu, in this order: Supplier (supplier businesses only), Sales, Purchases, Inventory, Accounting, Reports, HR & Employees (or Staff on a small plan), Connect (or WhatsApp on a billing-only plan), Tools, Settings & data, Support. Tap every row in each section. For each row, note what opened: a phone screen, a tab, or the website. Nothing should show a plain list of records with raw field names, "Overview" cards of raw keys, or "Could not load this page".
+
+### Owner account
+201. Supplier: sign in as a supplier business. Supplier Hub, Supplier Dashboard, My Catalog and Orders from Buyers each open a phone screen.
+202. Sales: every row opens a phone screen or a tab (Invoices, Customers). Open a few to the end: Quotations, Sales Orders, Delivery Challans, Credit Notes, Orders, Recurring invoices, Payment reminders.
+203. Purchases: Suppliers opens its tab; Supplier Hub, Incoming Bills, Supplier Orders, New Arrivals, All Purchases, Order List, Purchase Orders, Purchase Returns and Expenses each open a phone screen.
+204. Inventory: Items opens its tab; Party Pricing, Price Levels, Schemes, Price List, Print Labels, Warehouses, Stock Transfers, Adjustments, Stock Counts, Held & Others' Goods, Manufacturing, Insurance Claims, Units & Duplicates, Stock with Parties, Stock Summary and Closing Stock each open a phone screen.
+205. Accounting: Chart of Accounts, Journal Entries, Contra, Inter-branch balances, Advances, Recurring invoices, Fixed assets, Bank reconciliation, Ledger, Payments In, Payments Out, Reconciliation, Provisions and TDS/TCS each open a phone screen. Bank import shows the globe and opens the website.
+206. Reports: Overview and every sales, purchase, stock and GST report open a phone screen. Custom Report Builder and GSTR-9 show the globe and open the website; each loads with the bar along the top.
+207. HR & Employees: the HR dashboard, All Employees, Attendance, Leaves, Salary, Advances, Expenses, Commissions, Tasks, Recruitment, Exits, Documents and Reports each open a phone screen. Leave year-end and leave balance import open the website.
+208. Connect: Dashboard, Conversations, Leads, Pipeline, Lead sources, Campaigns, Contacts, Send message, Who to message, Flows, Saved replies and Order verification each open a phone screen. Bot rules opens Flows.
+209. Tools: All Tools shows the grid; every calculator and checker opens its screen; To Do List opens the to-do screen; Image Reducer, BG Remover and Group Extractor show the globe and open the website.
+210. Settings & data: Settings opens the hub; open one row in every group (Account, Team & permissions, Plan, Sales & billing, Online store, Inventory, People, WhatsApp, Integrations, System, Help). Rows kept on the website (Store design studio, Templates designer, Workflow automation, Restore from a backup) say so.
+211. Support: Documentation, Contact Support and Privacy Policy each open a phone screen.
+212. Open a notification in the bell list whose link has no phone screen, or search for a record type with no screen → the website page opens inside the app, signed in. No plain list.
+213. Write down any row that opened a plain list, an empty screen or an error. Each is a new task, not part of this one.
+
+### Restricted staff account
+214. Sign in as the staff account. The More menu shows only the sections the account may use; sections with no allowed rows (Reports, HR & Employees, Settings & data, say) are missing, not empty.
+215. Supplier section: not shown for a customer-side business.
+216. Sales: only the rows the role allows. Rows the plan locks show a lock; they still open, and saving there asks you to upgrade.
+217. Purchases and Inventory: rows outside the role are missing. Open each row that is left → its phone screen loads, and any action the role cannot do (delete, approve, adjust stock) is hidden or refused with the server's message, not a crash.
+218. Accounting and Reports: if the role has no reports permission, no report row appears. If it has some, each opens its phone screen.
+219. HR & Employees: a staff account sees only its own tools (own attendance, leave, payslips), never the pay run, recruitment or exits.
+220. Connect and Tools: Connect rows follow the role; Tools rows (calculators) always open. Locked rows (To Do List, Group Extractor on a lower plan) show the lock.
+221. Settings & data: if the role has no settings permission, the row is missing. If it has, the hub opens but only the groups the role may use.
+222. Support: Documentation, Contact Support and Privacy Policy are shown to every account and open.
+223. From the staff account, if a push notification links outside the role → the screen opens but the server refuses its data with a message; nothing crashes and no other business's data shows.
+224. Compare the two walks: every row the owner saw and the staff did not is explained by a missing permission or a locked plan. Note any row where it is not.
+
 ## Known and separate
 - The website's own item form sends batch tracking, serial tracking and valuation method, but the item save routes ignore them.
 - The website's currency converter applies rates backwards, and its PAN validator reads the holder type from the wrong letters. The phone gives the correct answers.

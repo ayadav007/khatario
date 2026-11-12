@@ -9,7 +9,6 @@ import 'package:khatario_phone/screens/hr/hr_reports_screen.dart';
 import 'package:khatario_phone/screens/hr/performance_screen.dart';
 import 'package:khatario_phone/screens/hr/tasks_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
-import 'package:khatario_phone/screens/pages/page_catalog.dart';
 import 'package:khatario_phone/session.dart';
 import 'package:khatario_phone/ui/form_kit.dart';
 
@@ -225,12 +224,10 @@ void main() {
       expect(nativeScreenFor(s, '/employees/tasks/new'), isA<TaskFormScreen>());
     });
 
-    test('no HR link is left in stillGeneric', () {
+    test('each HR link has a native screen', () {
       for (final h in ['/hr/engagement', '/hr/documents', '/hr/reports', '/employees/performance', '/employees/tasks']) {
-        expect(stillGeneric.contains(h), isFalse, reason: h);
         expect(routeTier(s, h), RouteTier.native, reason: h);
       }
-      expect(stillGeneric.where((h) => h.startsWith('/hr') || h.startsWith('/employees')), isEmpty);
     });
   });
 }
