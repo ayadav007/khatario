@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { CheckCircle, XCircle, Info, CreditCard, AlertCircle } from 'lucide-react';
+import { validatePan } from '@/lib/tools/pan-validator';
 
 export default function PANValidatorPage() {
   const [pan, setPan] = useState('');
@@ -19,105 +20,12 @@ export default function PANValidatorPage() {
   } | null>(null);
 
   const validatePAN = (panNumber: string) => {
-    // Remove spaces and convert to uppercase
-    const cleanedPAN = panNumber.trim().toUpperCase();
-    
-    // PAN format: 5 letters + 4 digits + 1 letter (e.g., ABCDE1234F)
-    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-    
-    if (!cleanedPAN) {
-      return { isValid: false, error: 'Please enter a PAN number' };
-    }
-    
-    if (!panRegex.test(cleanedPAN)) {
-      return { 
-        isValid: false, 
-        error: 'Invalid format. PAN should be in format: ABCDE1234F (5 letters, 4 digits, 1 letter)' 
-      };
-    }
-    
-    // Extract PAN type from first 3 letters
-    const firstThree = cleanedPAN.substring(0, 3);
-    const panTypeMap: Record<string, string> = {
-      'AAA': 'Individual',
-      'AAB': 'Individual',
-      'AAC': 'Individual',
-      'AAD': 'Individual',
-      'AAE': 'Individual',
-      'AAF': 'Individual',
-      'AAG': 'Individual',
-      'AAH': 'HUF (Hindu Undivided Family)',
-      'AAL': 'LLP (Limited Liability Partnership)',
-      'AAM': 'AOP (Association of Persons)',
-      'AAN': 'AOP (Association of Persons)',
-      'AAO': 'AOP (Association of Persons)',
-      'AAP': 'AOP (Association of Persons)',
-      'AAQ': 'AOP (Association of Persons)',
-      'AAR': 'AOP (Association of Persons)',
-      'AAS': 'AOP (Association of Persons)',
-      'AAT': 'AOP (Association of Persons)',
-      'AAU': 'AOP (Association of Persons)',
-      'AAV': 'AOP (Association of Persons)',
-      'ABK': 'Body of Individuals',
-      'ABL': 'Body of Individuals',
-      'ABM': 'Body of Individuals',
-      'ABN': 'Body of Individuals',
-      'ABO': 'Body of Individuals',
-      'ABP': 'Body of Individuals',
-      'ABQ': 'Body of Individuals',
-      'ABR': 'Body of Individuals',
-      'ABS': 'Body of Individuals',
-      'ABT': 'Body of Individuals',
-      'ACB': 'Company',
-      'ACC': 'Company',
-      'ACD': 'Company',
-      'ACE': 'Company',
-      'ACF': 'Company',
-      'ACG': 'Company',
-      'ACH': 'Company',
-      'ACI': 'Company',
-      'ACJ': 'Company',
-      'ACK': 'Company',
-      'ACL': 'Company',
-      'ACM': 'Company',
-      'ACN': 'Company',
-      'ACO': 'Company',
-      'ACP': 'Company',
-      'ACQ': 'Company',
-      'ACR': 'Company',
-      'ACS': 'Company',
-      'ACT': 'Company',
-      'ACU': 'Company',
-      'ACV': 'Company',
-      'ACW': 'Company',
-      'ACX': 'Company',
-      'ACY': 'Company',
-      'ACZ': 'Company',
-    };
-    
-    const panType = panTypeMap[firstThree] || 'Individual/Other';
-    
-    // Extract 5th character (status)
-    const fifthChar = cleanedPAN[4];
-    const statusMap: Record<string, string> = {
-      'A': 'Association of Persons',
-      'B': 'Body of Individuals',
-      'C': 'Company',
-      'F': 'Firm',
-      'G': 'Government',
-      'H': 'HUF (Hindu Undivided Family)',
-      'L': 'Local Authority',
-      'J': 'Artificial Judicial Person',
-      'P': 'Individual',
-      'T': 'AOP (Trust)',
-    };
-    
-    const entityType = statusMap[fifthChar] || 'Unknown';
-    
+    const result = validatePan(panNumber);
+    if (!result.isValid) return { isValid: false, error: result.error };
     return {
       isValid: true,
-      type: panType,
-      details: `Entity Type: ${entityType} | Format: ${cleanedPAN.substring(0, 5)}${cleanedPAN.substring(5, 9)}${cleanedPAN.substring(9)}`
+      type: result.holderType,
+      details: `Holder type is read from the 4th character (${result.pan![3]}) | PAN: ${result.pan}`,
     };
   };
 
@@ -204,7 +112,7 @@ export default function PANValidatorPage() {
                   </div>
                   {validationResult.type && (
                     <div className="text-sm text-green-800 mb-2">
-                      <strong>Type:</strong> {validationResult.type}
+                      <strong>Holder type:</strong> {validationResult.type}
                     </div>
                   )}
                   {validationResult.details && (

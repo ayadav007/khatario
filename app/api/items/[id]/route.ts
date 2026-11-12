@@ -265,6 +265,28 @@ export async function PATCH(
       );
     }
 
+    // Batch / serial tracking and valuation method (lib/items/item-tracking). Columns change only
+    // when the body names one of them, and a switch that would strand stock is refused.
+    const { resolveItemTracking, currentTracking, checkTrackingChange } = await import('@/lib/items/item-tracking');
+    const trackingBefore = currentTracking(existingItem as any);
+    const tracking = resolveItemTracking(body, trackingBefore, {
+      itemType: item_type || 'goods',
+      isBundle: rawBundleActive,
+    });
+    if (!tracking.ok) {
+      return NextResponse.json({ error: tracking.error, code: tracking.code }, { status: tracking.status });
+    }
+    const patchTracking =
+      tracking.provided ||
+      tracking.value.track_batch !== trackingBefore.track_batch ||
+      tracking.value.track_serial !== trackingBefore.track_serial;
+    if (patchTracking) {
+      const trackingError = await checkTrackingChange(getPool(), businessId, itemId, trackingBefore, tracking.value);
+      if (trackingError) {
+        return NextResponse.json({ error: trackingError.error, code: trackingError.code }, { status: trackingError.status });
+      }
+    }
+
     // Validate barcode if provided
     let normalizedBarcode: string | null = null;
     let finalBarcodeType: string | null = null;
@@ -467,6 +489,17 @@ export async function PATCH(
           extra.push(v.store_returnable);
           idx += 1;
         }
+      }
+      if (patchTracking) {
+        parts.push(`, track_batch = $${idx}`);
+        extra.push(tracking.value.track_batch);
+        idx += 1;
+        parts.push(`, track_serial = $${idx}`);
+        extra.push(tracking.value.track_serial);
+        idx += 1;
+        parts.push(`, valuation_method = $${idx}`);
+        extra.push(tracking.value.valuation_method);
+        idx += 1;
       }
       if (seoPatched) {
         parts.push(`, seo_title = $${idx}`);
