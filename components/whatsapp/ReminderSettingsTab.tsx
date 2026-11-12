@@ -31,6 +31,8 @@ type OverdueRule = {
 interface ReminderSettings {
   payment_due: DueRule | null;
   overdue: OverdueRule | null;
+  /** On unless the business turned it off. */
+  payment_received: { enabled: boolean } | null;
 }
 
 /** Local clock time + IANA zone for the daily auto reminder run (see business_settings). */
@@ -80,7 +82,8 @@ Thank you!
 const DEFAULT_DUE: DueRule = { enabled: false, days_before: 1, message_template: DEFAULT_PAYMENT_DUE_TEMPLATE, include_pdf: true };
 const DEFAULT_OVERDUE: OverdueRule = { enabled: false, interval_days: 7, message_template: DEFAULT_OVERDUE_TEMPLATE, include_pdf: true };
 
-const PLACEHOLDERS = '{customer_name}, {invoice_no}, {amount}, {due_date}, {balance_amount}, {business_name}';
+const PLACEHOLDERS =
+  '{customer_name}, {invoice_no}, {amount}, {due_date}, {balance_amount}, {business_name}, {payment_link}';
 
 function MessageFields({
   template,
@@ -99,6 +102,9 @@ function MessageFields({
         <label className="type-label mb-1.5 block">Message</label>
         <Textarea rows={7} value={template} onChange={(e) => onTemplate(e.target.value)} />
         <p className="mt-1 text-xs text-text-secondary">You can use: {PLACEHOLDERS}</p>
+        <p className="mt-1 text-xs text-text-secondary">
+          Without {'{payment_link}'}, the link to view and pay the bill is added at the end of the message.
+        </p>
       </div>
       <Switch
         checked={includePdf}
@@ -114,7 +120,7 @@ export function ReminderSettingsTab() {
   const { business } = useAuth();
   const toast = useToastContext();
   const { openIfFeatureDeniedResponse } = useFeatureUpgradeModal();
-  const [settings, setSettings] = useState<ReminderSettings>({ payment_due: null, overdue: null });
+  const [settings, setSettings] = useState<ReminderSettings>({ payment_due: null, overdue: null, payment_received: null });
   const [schedule, setSchedule] = useState<ReminderSchedule>(DEFAULT_SCHEDULE);
   const [saved, setSaved] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -139,6 +145,7 @@ export function ReminderSettingsTab() {
         const next: ReminderSettings = {
           payment_due: data.settings.payment_due || DEFAULT_DUE,
           overdue: data.settings.overdue || DEFAULT_OVERDUE,
+          payment_received: { enabled: data.settings.payment_received?.enabled !== false },
         };
         const nextSchedule: ReminderSchedule = data.schedule
           ? {
@@ -179,6 +186,7 @@ export function ReminderSettingsTab() {
           business_id: business.id,
           payment_due: settings.payment_due,
           overdue: settings.overdue,
+          payment_received: { enabled: settings.payment_received?.enabled !== false },
           schedule: normalizedSchedule,
         }),
       });
@@ -343,6 +351,18 @@ export function ReminderSettingsTab() {
             />
           </div>
         ) : null}
+      </SettingsBlock>
+
+      <SettingsBlock
+        id="reminder-payment-received"
+        title="When a payment comes in"
+        description="Thanks the customer on WhatsApp and tells them what is still due. Sent for online payments from the bill link and for payments your staff record (not for back-dated entries)."
+      >
+        <Switch
+          checked={settings.payment_received?.enabled !== false}
+          onChange={(enabled) => setSettings((s) => ({ ...s, payment_received: { enabled } }))}
+          label="Send a payment received message"
+        />
       </SettingsBlock>
 
       {dirty ? (

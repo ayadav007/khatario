@@ -3,8 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import * as db from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { receivableAccountIds } from '@/lib/accounting/receivable-accounts';
-import { fetchPartyLedgerDocs, type PartyType } from '@/lib/reports/party-ledger-docs';
+import type { PartyType } from '@/lib/reports/party-ledger-docs';
+import { computePartyStatement } from '@/lib/reports/party-statement';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,122 +99,19 @@ export async function GET(request: NextRequest) {
     // A party deals with every branch; only narrow when the caller explicitly asks.
     const branchFilter = branchIdParam ? finalBranchId : null;
 
-    const docs = await fetchPartyLedgerDocs({
+    const statement = await computePartyStatement({
       businessId,
       partyType: partyType as PartyType,
-      asOfDate: toDate,
       partyId,
-      branchId: branchFilter,
+      fromDate,
+      toDate,
+      branchFilter,
     });
-
-    type Row = {
-      id: string | null;
-      reference_number: string;
-      transaction_date: string;
-      transaction_type: string;
-      description: string;
-      debit: number;
-      credit: number;
-    };
-    // Customer: debit = amount owed by the party. Supplier statements keep the ledger view
-    // (bill = credit, payment/return/TDS = debit) with the balance signed as "to pay".
-    const toRow = (d: { voucherId: string | null; reference: string; docDate: string; voucherType: string; description: string; amount: number }): Row => {
-      const increase = d.amount > 0 ? d.amount : 0;
-      const decrease = d.amount < 0 ? -d.amount : 0;
-      return {
-        id: d.voucherId,
-        reference_number: d.reference,
-        transaction_date: d.docDate,
-        transaction_type: d.voucherType,
-        description: d.description,
-        debit: partyType === 'customer' ? increase : decrease,
-        credit: partyType === 'customer' ? decrease : increase,
-      };
-    };
-    const signed = (r: Row) => (partyType === 'customer' ? r.debit - r.credit : r.credit - r.debit);
-
-    const allDocRows: Row[] = docs.map(toRow);
-
-    if (partyType === 'customer') {
-      // Cash sales post straight to cash/bank, so they never touch receivables; show them as sale + receipt.
-      const cashSales = await db.queryRows<{ id: string; invoice_number: string; invoice_date: string; grand_total: string }>(
-        `SELECT i.id, i.invoice_number, i.invoice_date::text AS invoice_date, i.grand_total
-           FROM invoices i
-          WHERE i.business_id = $1 AND i.customer_id = $2 AND i.deleted_at IS NULL
-            AND i.status NOT IN ('draft', 'cancelled')
-            AND COALESCE(i.document_type, 'tax_invoice') NOT IN ('proforma_invoice', 'quotation', 'delivery_challan')
-            AND i.invoice_date <= $3::date
-            AND ($4::uuid IS NULL OR i.branch_id = $4::uuid)
-            AND NOT EXISTS (
-              SELECT 1 FROM ledger_entry_lines l
-               WHERE l.voucher_type = 'invoice' AND l.voucher_id = i.id AND l.account_id = ANY($5::uuid[])
-            )`,
-        [businessId, partyId, toDate, branchFilter, await receivableAccountIds(businessId)]
-      );
-      for (const inv of cashSales) {
-        const amount = Number(inv.grand_total) || 0;
-        const date = String(inv.invoice_date).slice(0, 10);
-        allDocRows.push(
-          { id: inv.id, reference_number: inv.invoice_number, transaction_date: date, transaction_type: 'invoice', description: 'Sale (cash)', debit: amount, credit: 0 },
-          { id: inv.id, reference_number: inv.invoice_number, transaction_date: date, transaction_type: 'payment', description: 'Received at sale', debit: 0, credit: amount }
-        );
-      }
-    }
-
-    const advances = await db.queryRows<{ id: string; payment_date: string; amount: string }>(
-      `SELECT ap.id, ap.payment_date::text AS payment_date, ap.amount
-         FROM advance_payments ap
-        WHERE ap.business_id = $1 AND ${partyType === 'customer' ? 'ap.customer_id' : 'ap.supplier_id'} = $2
-          AND ap.type = $3 AND ap.payment_date <= $4::date`,
-      [businessId, partyId, partyType === 'customer' ? 'received' : 'paid', toDate]
-    ).catch(() => []);
-    for (const ap of advances) {
-      const amount = Number(ap.amount) || 0;
-      allDocRows.push({
-        id: ap.id,
-        reference_number: `ADV-${ap.id.slice(0, 8)}`,
-        transaction_date: String(ap.payment_date).slice(0, 10),
-        transaction_type: 'advance',
-        description: partyType === 'customer' ? 'Advance received' : 'Advance paid',
-        debit: partyType === 'customer' ? 0 : amount,
-        credit: partyType === 'customer' ? amount : 0,
-      });
-    }
-
-    const r2 = (n: number) => Math.round(n * 100) / 100;
-    const adjustedOpeningBalance = r2(
-      allDocRows.filter((r) => r.transaction_date < fromDate).reduce((s, r) => s + signed(r), 0)
-    );
-
-    const openingBalanceRow = {
-      id: null,
-      reference_number: 'Opening Balance',
-      transaction_date: fromDate,
-      transaction_type: 'opening_balance',
-      description: 'Opening Balance',
-      debit: partyType === 'customer' ? Math.max(adjustedOpeningBalance, 0) : Math.max(-adjustedOpeningBalance, 0),
-      credit: partyType === 'customer' ? Math.max(-adjustedOpeningBalance, 0) : Math.max(adjustedOpeningBalance, 0),
-      running_balance: adjustedOpeningBalance,
-      is_virtual: true,
-    };
-
-    let runningBalance = adjustedOpeningBalance;
-    const transactions = allDocRows
-      .filter((r) => r.transaction_date >= fromDate)
-      .sort((a, b) =>
-        a.transaction_date !== b.transaction_date
-          ? a.transaction_date < b.transaction_date ? -1 : 1
-          : signed(b) - signed(a)
-      )
-      .map((r) => {
-        runningBalance = r2(runningBalance + signed(r));
-        return { ...r, running_balance: runningBalance };
-      });
-
-    const allRows = [openingBalanceRow, ...transactions];
-    const totalDebit = r2(allRows.reduce((sum, t) => sum + Number(t.debit || 0), 0));
-    const totalCredit = r2(allRows.reduce((sum, t) => sum + Number(t.credit || 0), 0));
-    const closingBalance = runningBalance;
+    const adjustedOpeningBalance = statement.opening_balance;
+    const allRows = statement.transactions;
+    const totalDebit = statement.total_debit;
+    const totalCredit = statement.total_credit;
+    const closingBalance = statement.closing_balance;
     const closingBalanceType = partyType === 'customer'
       ? (closingBalance >= 0 ? 'debit' : 'credit')
       : (closingBalance >= 0 ? 'credit' : 'debit');

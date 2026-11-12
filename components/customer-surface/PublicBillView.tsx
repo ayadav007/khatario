@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { CheckCircle2, CreditCard, Download, Loader2 } from 'lucide-react';
 import type { PublicBusinessSurface, PublicInvoiceSummary } from '@/lib/customer-surface/types';
 import { CustomerSurfaceShell } from './CustomerSurfaceShell';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
@@ -11,6 +11,7 @@ interface PublicBillPayload {
   business: PublicBusinessSurface;
   html: string;
   public_token: string;
+  pay: { online: boolean };
 }
 
 function formatInr(n: number) {
@@ -28,9 +29,14 @@ export function PublicBillView({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const viewRecorded = useRef(false);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  /** Set when the gateway sends the customer back here (?payment=done|paid|failed|pending). */
+  const [returned, setReturned] = useState<'done' | 'failed' | null>(null);
+  const confirmTries = useRef(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/public/i/${encodeURIComponent(token)}`);
@@ -45,6 +51,7 @@ export function PublicBillView({
         business: json.business,
         html: json.html,
         public_token: json.public_token,
+        pay: { online: !!json.pay?.online },
       });
     } catch {
       setError('Could not load bill.');
@@ -56,6 +63,44 @@ export function PublicBillView({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('payment');
+      if (p === 'failed') setReturned('failed');
+      else if (p) setReturned('done');
+    } catch {
+      /* no search params */
+    }
+  }, []);
+
+  // The gateway's notice can land a few seconds after the customer is sent back: re-check quietly.
+  useEffect(() => {
+    if (returned !== 'done' || !data || data.summary.payment_status === 'paid') return;
+    if (confirmTries.current >= 6) return;
+    const t = setTimeout(() => {
+      confirmTries.current += 1;
+      void load(true);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [returned, data, load]);
+
+  const startPayment = async () => {
+    setPaying(true);
+    setPayError(null);
+    try {
+      const res = await fetch(`/api/public/i/${encodeURIComponent(token)}/pay`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && typeof json.payment_url === 'string') {
+        window.location.href = json.payment_url;
+        return;
+      }
+      setPayError(typeof json.error === 'string' ? json.error : 'Could not start the payment. Please try again.');
+    } catch {
+      setPayError('Could not start the payment. Please try again.');
+    }
+    setPaying(false);
+  };
 
   useEffect(() => {
     if (!data || viewRecorded.current) return;
@@ -126,7 +171,37 @@ export function PublicBillView({
             <p className="text-xs capitalize text-text-muted">{summary.payment_status}</p>
           </div>
         </div>
-        <div className="mt-4 flex gap-2">
+        {returned === 'done' ? (
+          summary.payment_status === 'paid' ? (
+            <p className="mt-4 flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
+              <CheckCircle2 className="h-4 w-4" aria-hidden /> Payment received. Thank you!
+            </p>
+          ) : (
+            <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {confirmTries.current >= 6
+                ? 'We are still confirming your payment with the bank. This page will show it once it is confirmed.'
+                : 'Confirming your payment…'}
+            </p>
+          )
+        ) : null}
+        {returned === 'failed' && summary.payment_status !== 'paid' ? (
+          <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            The payment did not go through. No money was taken; you can try again.
+          </p>
+        ) : null}
+        {payError ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{payError}</p> : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {data.pay.online && summary.balance_amount >= 1 && summary.payment_status !== 'paid' ? (
+            <button
+              type="button"
+              onClick={() => void startPayment()}
+              disabled={paying}
+              className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+            >
+              {paying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <CreditCard className="h-4 w-4" aria-hidden />}
+              Pay {formatInr(summary.balance_amount)} now
+            </button>
+          ) : null}
           <a
             href={`/api/public/i/${encodeURIComponent(token)}/pdf`}
             target="_blank"

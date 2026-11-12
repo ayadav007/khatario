@@ -21,9 +21,15 @@ Link your WhatsApp number by QR code first (Settings > WhatsApp > Connection). T
 
 All of these go out from your QR-linked number. You do not need Khatario Connect for reminders.
 
+A customer with two or more unpaid bills gets one combined reminder instead of one per bill: the list of bills, the total to pay (less any advance they have with you), their statement as a PDF (unpaid bills on top, ledger below) and one link to a page with all their bills. A customer with one unpaid bill gets that invoice's reminder and PDF.
+
+## What do reminders cost me, and what did they bring in?
+
+Sales > Payment Reminders > Recovery shows the amount you reminded customers about, how much came in after a reminder, how much was paid from the reminder link, and what is still pending.
+
 ## How do I add a payment link to invoices?
 
-Connect your gateway account (Razorpay, Cashfree, PayU, PhonePe Business, Instamojo or Easebuzz) in Settings > Payment providers. Invoices and reminders can then include a link for the customer to pay online, and the payment is recorded automatically. Payment gateway integration is included from the Starter plan upwards and in the free trial.
+Connect Razorpay or Easebuzz in Settings > Payment providers. Every reminder then carries a link: the bill page has a Pay now button, and the combined reminder's page lets the customer pay everything or tick the bills they want to pay. The payment is recorded against each invoice automatically (oldest bill first) and the customer gets a "payment received" message on WhatsApp (turn it off in Settings > WhatsApp > Notifications). An advance the customer has with you is not set against bills automatically; adjust it in Accounting > Advances. Payment gateway integration is included from the Starter plan upwards and in the free trial.
 
 ## How do I record a payment I received in cash or UPI?
 

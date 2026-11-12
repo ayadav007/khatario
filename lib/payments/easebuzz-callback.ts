@@ -72,6 +72,9 @@ export async function handleEasebuzzCallback(
   if (context === 'KH') {
     return handleKhataCallback(rawBody, txnid, options.expectedBusinessId);
   }
+  if (context === 'IN') {
+    return handleInvoiceCallback(rawBody, txnid, options.expectedBusinessId);
+  }
   return handleSalesOrderCallback(rawBody, txnid, options.expectedBusinessId);
 }
 
@@ -112,6 +115,53 @@ async function handleKhataCallback(
   }
   const result = await applyKhataGatewayPayment({
     khataPaymentId: row.id,
+    businessId: row.business_id,
+    amount: verified.amount,
+    providerPaymentId: verified.providerPaymentId,
+    payload: verified.rawPayload ?? null,
+  });
+  return { httpStatus: 200, body: { ok: true, ...result }, redirectPath };
+}
+
+/** Public-bill invoice payment: the row Khatario stored for this txnid picks the business. */
+async function handleInvoiceCallback(
+  rawBody: string,
+  txnid: string,
+  expectedBusinessId?: string | null,
+): Promise<EasebuzzCallbackResult> {
+  const {
+    findInvoiceOnlinePayment,
+    applyInvoiceGatewayPayment,
+    markInvoiceOnlinePaymentFailed,
+    onlinePaymentReturnPath,
+  } = await import('@/lib/invoices/online-pay');
+  const row = await findInvoiceOnlinePayment('easebuzz', { paymentRef: txnid });
+  if (!row) {
+    return { httpStatus: 200, body: { ok: true, ignored: true }, redirectPath: payComplete('pending') };
+  }
+  if (expectedBusinessId && expectedBusinessId !== row.business_id) {
+    return { httpStatus: 400, body: { ok: false, error: 'business_id mismatch' }, redirectPath: payComplete('unverified') };
+  }
+  const verifier = await verifierFor(row.business_id);
+  if (!verifier) {
+    return { httpStatus: 400, body: { ok: false, error: 'Unknown payment config' }, redirectPath: payComplete('unverified') };
+  }
+  const verified = await verifier.verifyWebhook({ rawBody, headers: {} });
+  if (!verified.verified) {
+    return { httpStatus: 401, body: { ok: false, verified: false }, redirectPath: payComplete('unverified') };
+  }
+  const back = await onlinePaymentReturnPath(row.id);
+  const outcome = outcomeFromStatus(verified.status);
+  const redirectPath = back ? `${back}?payment=${outcome}` : payComplete(outcome);
+  if (verified.status === 'failed') {
+    await markInvoiceOnlinePaymentFailed(row.id, row.business_id);
+    return { httpStatus: 200, body: { ok: true, outcome: 'failed' }, redirectPath };
+  }
+  if (verified.status !== 'success') {
+    return { httpStatus: 200, body: { ok: true, verified: true, ignored: true }, redirectPath };
+  }
+  const result = await applyInvoiceGatewayPayment({
+    invoicePaymentId: row.id,
     businessId: row.business_id,
     amount: verified.amount,
     providerPaymentId: verified.providerPaymentId,

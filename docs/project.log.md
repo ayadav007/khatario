@@ -1756,3 +1756,102 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - `tests/db/post-sale-discount-credit-note.db.test.ts` fails 7 tests on the merged tree for a reason that is not the merge: it creates an invoice dated 2026-10-05, which is now more than 30 days back and needs backdate approval. The test needs a relative date.
   - Nothing here is deployed. Staging needs a deploy, which runs migrations 471 to 473. Migration 471 drops the business-wide unique debit note number in favour of per-branch uniqueness; 472 attributes existing GSTR-2B imports to the business GSTIN (a branch's 2B uploaded earlier must be re-imported).
   - The branch GST work and the ported phone fields have not been seen in a browser or on a device.
+
+## 2026-11-12: Phone app parity Stage 8 (remaining pages)
+- **Asked:** "Start Stage 8".
+- **Decided:** GET `/api/suppliers/dashboard` and `/api/suppliers/thresholds` take `supplier_business_id` as an optional claim, as GSTR-2B and credit approvals do (missing means the session business, a different one is still refused). "Customers with Low Stock" and Propose order were built natively: `buyer_business_id` is a counterparty id the server checks against an approved supplier link. Workflow automation has no backend, so it has no phone screen. The "Opens the website" hint follows where a tap really goes: help, guides, support, privacy, store design and the two leave tools keep their phone screens. A link kept on the website by design no longer falls back to the automatic list.
+- **Shipped:** commits 5c6ed962 (supplier dashboard, to-do, restore row, server reads), adb5c57c (website pages by design) and the checklist (steps 190-200) on local `main`, not pushed. Phone tests 2,152 pass with the 2 old failures; analyze at the 3-issue baseline; Jest 9/9 for the supplier routes. Staging APK built 12 Nov 11:20. `stillGeneric` is empty. This entry is not committed.
+- **Open:**
+  - Nothing was tried on a phone. Stages 6 and 8 change server routes: push and deploy staging before their checklists.
+  - Website follow-ups: the Workflow automation page saves nothing; supply-order proposals do not check `allow_low_stock_access`.
+  - Stage 9 (Task 45) next: remove the automatic list from the menu path, walk every More section on a device, update the phone docs and roadmap.
+
+## 2026-11-12: Merged main deployed to staging (migrations 471 to 473)
+- **Asked:** "Yes, deploy staging".
+- **Decided:** staging database dumped first (`/var/backups/khatario/khatario_staging-pre-471-20261112-0543.dump`, 41 MB, root-only). Checked before the deploy that no branch has two credit or debit notes with the same number, so migration 471's unique indexes could be created.
+- **Shipped:** staging went from b31fb73a to d5978165 (log `/var/log/khatario-staging-deploy-20261112-0543.log`). Migrations 471 to 473 applied, 0 failed; both per-branch note indexes and `inter_branch_settlements` exist. `khatario-staging` and both workers online, no errors after the reload. Signed out: `/`, `/login` and `demo-quick.staging.khatario.com` return 200; `/inter-branch-settlements` redirects to login and its API answers 401. Production untouched (`/login` 200). This entry is not committed.
+- **Open:**
+  - Nothing checked signed in. To test on staging: Inter-branch settlements page; a credit note and a debit note from a second-GSTIN branch (own number series); GSTR-2B import and matching for a branch GSTIN (re-import any branch 2B uploaded before today); a stock transfer between branches with different GSTINs (invoice and challan at dispatch); New item with Track batches; currency converter; PAN validator.
+  - Production is now behind staging again by the three merges and migrations 471 to 473.
+  - Help-doc re-index still fails on the two GST law sources (Gemini quota).
+
+## 2026-11-12: Trust pages built (phase 1 of the missing marketing pages)
+- **Asked:** "Run with subagents" on the Trust pages plan.
+- **Decided:**
+  - Built on `main` with no commits; each task was reviewed from a working-tree snapshot diff. Tasks 1+2 and 4+5 were batched.
+  - `/pricing` renders the Billing plans as the Suspense fallback and has a server-rendered `h1`, replacing the plan's `fallback={null}`, so the page HTML always carries plans.
+  - Refund text says "the full plan fee" and the exclusions open "Even within 7 days, we do not refund", to remove a contradiction with the WhatsApp-charges exclusion. Owner to confirm that WhatsApp credits bought in a first payment are not refunded.
+  - Security page keeps 5 claims (separate business data, login and roles, payments, data export, invoice history). Dropped for lack of proof: encrypted traffic (production nginx has no HTTP-to-HTTPS redirect), backups (no Khatario-run database backup documented; scheduled-backup cron is in neither documented crontab), server location (no country in the server docs).
+  - Privacy names only services found in the code: Hostinger, Cloudflare (DNS), Meta/WhatsApp, the payment gateways, Groq and Gemini for AI, the sign-up Meta pixel. No SMS provider exists; login is phone plus password, WhatsApp codes are for sign-up and password reset.
+  - Terms sends deletion requests to the grievance officer via the privacy policy, so both policies give one address.
+  - Lint was not run: the repo has no ESLint config.
+- **Shipped:** nothing committed. New pages `app/contact`, `app/pricing`, `app/refund-policy`, `app/security`; rewritten `app/privacy`, `app/terms`; `components/marketing/MarketingPageShell.tsx`, `LegalDocument.tsx`, `pricing/PricingPageBody.tsx`; `lib/marketing/company-facts.ts`, `contact-details.ts`, `footer-links.ts`, `pricing-page.ts`, `security-claims.ts`, `static-paths.ts`, `legal/*`; edits to `LandingFooter.tsx`, `MarketingSiteHeader.tsx` (Pricing link), `app/sitemap.ts`, `lib/auth/public-surfaces.ts`, `middleware.ts`, `lib/marketing/brand-structured-data.ts`; tests under `tests/lib/marketing` and `tests/lib/auth` (18 suites, 146 tests pass; typecheck clean). No migration.
+- **Open:**
+  - Not seen in a browser. Staging checklist (15 steps) is at the end of `docs/superpowers/plans/2026-11-12-trust-pages.md`.
+  - Owner before production: fill `lib/marketing/company-facts.ts` (a named grievance officer is required); lawyer or CA to read Privacy, Terms and Refund; decide the liability cap (fees of the last 12 months, zero on the free plan), "new price from next renewal", notice before removing a paid feature; say whether prices include GST (the pricing FAQ says "ask support" until then); confirm the live free plan is free with no time limit.
+  - Account deletion is an admin hard delete that keeps nothing; if law requires Khatario to keep its own subscription invoices, the deletion must change.
+  - Privacy gaps for the lawyer pass: saved third-party credentials not listed under what we collect; under-18 line does not fit staff and store shoppers; no retention period for face-check photos.
+  - Server: add the HTTP-to-HTTPS redirect and a documented database backup; then the two claims can return to `/security`.
+  - Roadmap cards for invoice history and the R7/P1 security fixes still say "not merged"; a reviewer found them on `main` and production. Footer "Partners" opens a login-protected portal.
+  - Phases 2 to 4 (product pages, search pages, help centre and customer stories) have no spec yet.
+
+## 2026-11-12: Production brought level with staging again (migrations 471 to 473)
+- **Asked:** "yes make production and staging at same level".
+- **Decided:** promoted exactly what the staging server runs (d5978165). Production database dumped first (`/var/backups/khatario/khatario_prod-pre-471-20261112-0637.dump`, 6.7 MB, root-only). Checked beforehand that production has no branch with two credit or debit notes of the same number. Help-doc re-index skipped (`--skip-kb`).
+- **Shipped:** 43ce13e8 "Promote main to production" on `origin/production`, deployed (log `/var/log/khatario-prod-deploy-20261112-0637.log`). Migrations 471 to 473 applied, 0 failed. Both clones have the same tree (91d37e51) and both databases record migrations 461 to 473 with no failed row. `khatario` still starts with `-H localhost` on 127.0.0.1:3100; no errors after the reload. `/`, `/login` and `demo-quick.khatario.com` return 200; `/inter-branch-settlements` redirects a guest to login and its API answers 401; staging `/login` 200. This entry is not committed.
+- **Open:** the three merged pieces (item/currency/PAN fixes, branch GST safety, phone item form fields) went to production without a signed-in check on either server. On production, any branch GSTR-2B imported before today is attributed to the business GSTIN and must be re-imported.
+
+## 2026-11-12: Phone app parity Stage 9 (close-out)
+- **Asked:** "Start Stage 9".
+- **Decided:** the automatic record list (`RecordPage`) was removed entirely rather than kept for push and search: a link with no phone screen opens the website inside the app. Invoice and supplier push links still open their phone screens. The device walk could not be done here, so it is written as checklist steps 201-224 (owner and restricted staff account); three staff steps were corrected after review to match how locks, search and pushes really behave.
+- **Shipped:** commit 65f1efce on local `main`, not pushed: RecordPage, record_format and the appPages catalogue gone; coverage test requires every More link to be native, a tab or website-by-design (153 links: 139 phone screens, 5 tabs, 9 website); `docs/plan/PHONE_APP.md` counts, the handoff's "Parity pass (Nov 2026)" section and the roadmap card moved to Done. Phone tests 2,147 pass with the 2 old failures; analyze at the 3-issue baseline. Staging APK built 12 Nov 12:33. This entry is not committed.
+- **Open:**
+  - The device walk (steps 201-224) and the Stage 3-8 checklists have not been done on a phone.
+  - Push and deploy staging first: Stages 6 and 8 change server routes.
+  - Owner follow-ups are listed in the handoff under "Open owner follow-ups".
+
+## 2026-11-12: Payment reminders close the loop (pay link, payment received, recovery dashboard)
+- **Asked:** check whether the WhatsApp payment reminder flow is complete: when the customer pays through the gateway, is the invoice updated and is the customer told; and add a dashboard showing what the feature is worth (amount reminded vs amount recovered).
+- **Found:** reminders sent and stopped correctly once a bill was paid, but (1) the bill link in reminders had no Pay button and QR reminders carried no link at all; (2) the gateway webhook only settled sales orders, so a gateway payment never reached an invoice; (3) no "payment received" message existed; (4) the reminder log kept no amount; (5) the History tab called `/api/whatsapp/reminders/logs`, which did not exist, so it was always empty.
+- **Decided:**
+  - Invoice online payment follows the khata online-pay pattern: a row in `invoice_online_payments` is made first, the verified gateway notice posts one receipt with `postStoreInvoiceReceipt` (ledger, customer balance and invoice balance together). Business and invoice come from the row, never the payload. Full balance only (no part payment from the link). Razorpay notices go through `/api/webhooks/store/razorpay` (store order, then khata, then invoice); Easebuzz uses a new `IN-` txnid prefix. If the bill was settled another way before the notice lands, the extra becomes a customer advance (`postKhataAdvance`, now exported with an optional note).
+  - QR reminder templates gain `{payment_link}` / `{invoice_link}`. A saved template without one gets "View and pay: <link>" appended, so existing businesses' reminders carry the link without editing their template. Email reminders do the same.
+  - "Payment received" WhatsApp (new event `invoice_payment_received`, field `amount_paid`) for online payments and for receipts staff record in Payments In or on the invoice. On by default, switch under Settings → WhatsApp → Notifications (`reminder_type = 'payment_received'`). Not sent for receipts dated more than 3 days back, or at invoice creation (POS).
+  - Recovery counts invoices whose first sent reminder is in the period; recovered = active receipts after the first reminder, capped at the amount owed then. Old reminders without `amount_due` fall back to today's balance plus payments since. Worded "after a reminder", not "because of".
+- **Shipped:** nothing committed. Migration `474_invoice_online_payments.sql` written (applied only to `kh_phase2_test` by the test). New: `lib/invoices/online-pay.ts`, `lib/invoices/payment-received-notify.ts`, `lib/payment-reminders/recovery.ts`, `app/api/public/i/[token]/pay`, `app/api/whatsapp/reminders/logs`, `app/api/whatsapp/reminders/recovery`, `components/whatsapp/ReminderRecoveryTab.tsx` (Payment reminders → Recovery tab). Changed: public bill page (Pay now, return banners), reminder processor (link, `amount_due`), Razorpay store webhook, Easebuzz callback and provider, tenant WhatsApp events, reminder settings API and UI, both staff receipt routes. Tests: `tests/lib/reminder-payment-link.test.ts` (8) and `tests/db/invoice-online-pay-recovery.db.test.ts` (3, real DB) pass; khata DB (22), Easebuzz store DB (9) and 22 related unit suites (259) pass; typecheck clean.
+- **Open:**
+  - Migration 474 must be applied before this code is deployed: reminder sends insert `amount_due` and would fail without it.
+  - Not checked in a browser or against a real gateway; test on staging: Pay now on `/i/<token>` with Razorpay test mode and with Easebuzz sandbox, return banner, invoice paid, payment received WhatsApp, Recovery tab numbers, History tab rows.
+  - Razorpay must send `payment_link.paid` to `/api/webhooks/store/razorpay` (same webhook the store and khata use); businesses that only set up the sales-order webhook will not settle invoices until they add it.
+  - Cloud API businesses need an approved template for "Payment received"; without one the message falls back to the QR session and is skipped if none.
+  - Phone app (Flutter) has no Recovery screen yet.
+
+## 2026-11-12: Trust pages deployed to staging and production
+- **Asked:** "did you deploy to staging and production?, if not, please do so".
+- **Decided:**
+  - Waited for another session's production deploy (43ce13e8, migrations 471 to 473) to finish before starting, so two deploys never ran on the server at once.
+  - Promoted all of `main` (7ccc1304) to production, not a cherry-pick: production's tree equalled d5978165, and `main` beyond it held only this work, phone app files and one checklist, with no migrations or package changes.
+  - No database dump: no migration was pending on either server (dry run: 497 applied, 0 pending). Production deployed with `--skip-kb`.
+  - Deployed even though company facts are blank and the legal texts have no lawyer review yet, because the owner asked; the new drafts replace "being prepared" placeholders.
+- **Shipped:** `main` pushed (d5978165..7ccc1304). Staging d5978165 → 7ccc1304 (log `/var/log/khatario-staging-deploy-20261112-0712.log`). `ab9ec869` "Promote main to production" on `origin/production` (same tree as 7ccc1304), deployed (log `/var/log/khatario-prod-deploy-20261112-0725.log`). On both servers, signed out: `/contact`, `/refund-policy`, `/pricing`, `/pricing?product=hr`, `/security`, `/privacy`, `/terms`, `/`, `/about`, `/login`, `/signup` return 200 with one `h1` and no placeholder text; `/pricing/` redirects 308 to `/pricing`; the sitemap lists the four new pages; the home footer links them; `/pricing` HTML carries the plans; demo-quick stores return 200. `khatario` kept `-H localhost`; no new errors after the 07:32 reload. This entry is not committed.
+- **Open:**
+  - Nothing checked signed in, and no page looked at in a browser: run the staging checklist (15 steps) at the end of `docs/superpowers/plans/2026-11-12-trust-pages.md`.
+  - While the production build ran, the old process logged "Cannot find module" for `/signup` and `_error`: requests in the build window can fail. Building in place is how `deploy-vps.sh` works today.
+  - `kb-index-worker` (staging) shows 45 restarts; the production deploy before this one may restart the staging worker when `PM2_KB_WORKER_NAME` is unset in the production env. Not investigated.
+  - Owner items before relying on the pages are unchanged: company facts, lawyer review, liability cap, GST answer, free-plan wording, deletion keeping legally required records.
+
+## 2026-11-12: Combined payment reminder per customer, with ledger PDF and pay-all bills page
+- **Asked:** a customer with several unpaid bills should not get one WhatsApp per bill; send one reminder with the total, one pay link, and the customer's ledger as the PDF instead of no attachment. Asked how payments would still map to each invoice.
+- **Decided:**
+  - The daily run picks both reminder types first, then groups by customer (`checkAndSendReminders`). A customer with 2+ unpaid bills gets one combined job (`statement` on the queue job, id `pr-statement-<customer>`); a customer with one bill keeps the single-invoice reminder and its PDF. The customer's Send reminder button does the same. Bulk send from Payment reminders is still per invoice.
+  - The combined message lists every unpaid bill (up to 10 in the text), bills due, less unadjusted advance, and "to pay"; links to `/b/<token>` (new `customers.bills_public_token`). PDF = existing party statement HTML with an "Unpaid bills" table and totals on top, ledger from the oldest unpaid bill's date. The statement maths moved from the report route into `lib/reports/party-statement.ts` (report unchanged).
+  - Advances are NOT set against bills automatically: adjusting an advance posts a GST reversal and stays a staff action. "To pay" is bills less advance; no combined reminder is sent when the advance covers everything.
+  - One send is logged as one `whatsapp_messages` row per chased bill (plus every overdue bill in the message, so overdue intervals line up), sharing `batch_id`; per-invoice dedupe and recovery keep working, and Recovery counts a batch as one message.
+  - Bills page: pay all ("to pay") or tick bills; one gateway payment is split oldest due first, one receipt per bill, recorded in `invoice_online_payment_allocations`; bills settled meanwhile are skipped, extra becomes an advance. One "payment received" message lists what was cleared. Cloud API businesses need an approved template for the new event `payment_statement_reminder` (Document header for the PDF).
+  - Help article corrected: invoice and bills pay buttons support Razorpay and Easebuzz only (it listed six gateways).
+- **Shipped:** nothing committed. Migration `475_customer_bills_statement.sql` written (applied only to `kh_phase2_test` by the tests; needs 474). New: `lib/payment-reminders/statement.ts`, `lib/reports/party-statement.ts`, `lib/customer-surface/business-surface.ts`, `/b/[token]` page and `PublicBillsView`, `/api/public/b/[token]` (+ `/pay`, `/statement`). Changed: checker, delivery, queue job id, cron, customer send-reminder route and toast, online-pay settlement, Easebuzz return, payment-received notify, recovery SQL, statement print HTML, tenant events, middleware (`/b/` public), help article. Tests: `tests/db/combined-reminder.db.test.ts` (new), multi-bill case added to `tests/db/invoice-online-pay-recovery.db.test.ts`, 4 more unit tests; DB suites 80/80 and related unit suites 265/265 pass; typecheck clean.
+- **Open:**
+  - Apply migrations 474 then 475 before deploying.
+  - Not checked in a browser, on a phone, or with a real gateway or real WhatsApp. On staging: a customer with 3+ bills gets one message with the statement PDF; `/b/<token>` pay all and pay some (Razorpay test mode and Easebuzz sandbox); invoices split oldest first; payment received message; Recovery counts.
+  - Bulk send (Payment reminders → Send reminders) still sends one message per selected invoice.
+  - The combined message wording is fixed (not editable in settings); email reminders are still per invoice.

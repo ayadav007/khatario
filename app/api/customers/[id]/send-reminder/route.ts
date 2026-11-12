@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/customers/[id]/send-reminder
- * Send WhatsApp reminders for all outstanding invoices of a customer
+ * Send WhatsApp reminders for all outstanding invoices of a customer: one combined reminder
+ * (statement PDF, pay-all link) when there are two or more, else the single-invoice reminder.
  */
 export const POST = withWhatsAppBaseApi<{ id: string }>(
   { parseJsonBody: true, module: 'customers', action: 'read' },
@@ -114,6 +115,34 @@ export const POST = withWhatsAppBaseApi<{ id: string }>(
       );
     }
 
+    // Two or more bills: one combined reminder with the statement PDF and a pay-all link.
+    if (invoices.length >= 2) {
+      const { sendStatementReminder } = await import('@/lib/payment-reminders/statement');
+      const r = await sendStatementReminder({
+        businessId: business_id,
+        customerId,
+        chased: invoices.map((i: { id: string }) => ({ invoiceId: i.id, source: 'manual' as const })),
+        scheduled: false,
+      });
+      if (r.outcome === 'sent') {
+        return NextResponse.json({ success: true, sent: 1, failed: 0, total: 1, combined: true, invoices: r.invoices });
+      }
+      if (r.outcome === 'skipped' && r.reason === 'covered_by_advance') {
+        return NextResponse.json({
+          success: true,
+          sent: 0,
+          failed: 0,
+          total: 0,
+          reason: r.reason,
+          message: 'Nothing to remind: the advance this customer has with you covers the unpaid bills. Adjust it under Advances.',
+        });
+      }
+      return NextResponse.json(
+        { success: false, sent: 0, failed: 1, total: 1, combined: true, error: reminderReason(r.reason), errors: [r.reason] },
+        { status: r.outcome === 'failed' ? 502 : 200 },
+      );
+    }
+
     // Check if sending all reminders would exceed limit
     if (limitCheck.limit !== -1 && (limitCheck.current + invoices.length) > limitCheck.limit) {
       return NextResponse.json(
@@ -181,6 +210,15 @@ export const POST = withWhatsAppBaseApi<{ id: string }>(
   }
   },
 );
+
+const REASONS: Record<string, string> = {
+  no_phone: 'This customer has no WhatsApp number.',
+  no_longer_due: 'These bills are no longer unpaid.',
+};
+
+function reminderReason(reason: string): string {
+  return REASONS[reason] ?? reason;
+}
 
 /**
  * Default reminder message template

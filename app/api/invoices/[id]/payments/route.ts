@@ -7,6 +7,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { draftDocumentPaymentError, walkInReceiptNotSupportedError } from '@/lib/accounting/final-document-payment';
+import { queuePaymentReceivedMessage } from '@/lib/invoices/payment-received-notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,7 @@ export async function PATCH(
     // ledger lines at COMMIT. If any step throws, we ROLLBACK everything.
     const client = await getPool().connect();
     let updated: any = null;
+    let recordedPaymentId: string | null = null;
     try {
       await client.query('BEGIN');
       await setInvoiceAuditContext(client, { actorUserId: userId, action: 'payment_recorded' });
@@ -189,6 +191,7 @@ export async function PATCH(
         ],
       );
       const paymentId = paymentRes.rows[0]?.id;
+      recordedPaymentId = paymentId ?? null;
 
       if (paymentId && inv.customer_id) {
         await createPaymentLedgerEntries({
@@ -244,6 +247,7 @@ export async function PATCH(
       client.release();
     }
 
+    if (inv.customer_id) queuePaymentReceivedMessage(inv.business_id, recordedPaymentId);
     return NextResponse.json({ invoice: updated });
   } catch (error: any) {
     console.error('Payment error', error);

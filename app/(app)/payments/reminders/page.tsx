@@ -9,24 +9,27 @@ import { Bell, Loader2, Settings } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SendRemindersTab } from '@/components/whatsapp/SendRemindersTab';
 import { ReminderLogsTab } from '@/components/whatsapp/ReminderLogsTab';
+import { ReminderRecoveryTab } from '@/components/whatsapp/ReminderRecoveryTab';
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader';
 import { WIDE_PAGE_CONTENT_CLASS, STACK_PAGE_CLASS } from '@/lib/page-layout';
 
 const TABS = [
   { id: 'send', label: 'Send reminders' },
   { id: 'logs', label: 'History' },
+  { id: 'recovery', label: 'Recovery' },
 ] as const;
 
 function RemindersContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = searchParams.get('tab') === 'logs' ? 'logs' : 'send';
+  const requested = searchParams.get('tab');
+  const tab = requested === 'logs' || requested === 'recovery' ? requested : 'send';
   return (
     <div className={clsx(WIDE_PAGE_CONTENT_CLASS, STACK_PAGE_CLASS)}>
       <SettingsPageHeader
         title="Payment reminders"
-        description="Send WhatsApp reminders for unpaid invoices now, and see what was sent."
+        description="Send WhatsApp reminders for unpaid invoices now, see what was sent, and how much came in after."
         icon={Bell}
         actions={
           <Link
@@ -59,7 +62,7 @@ function RemindersContent() {
           ))}
         </ul>
       </nav>
-      {tab === 'logs' ? <ReminderLogsTab /> : <SendRemindersTab />}
+      {tab === 'logs' ? <ReminderLogsTab /> : tab === 'recovery' ? <ReminderRecoveryTab /> : <SendRemindersTab />}
     </div>
   );
 }

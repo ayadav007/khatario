@@ -28,7 +28,8 @@ export const GET = withWhatsAppBaseApi({ managePermission: 'read' }, async ({ bu
     // Convert to object with reminder_type as key
     const result: any = {
       payment_due: null,
-      overdue: null
+      overdue: null,
+      payment_received: null
     };
 
     for (const setting of settings) {
@@ -66,10 +67,12 @@ export const GET = withWhatsAppBaseApi({ managePermission: 'read' }, async ({ bu
  */
 export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission: 'update' }, async ({ body, businessId }) => {
   try {
-    const { payment_due, overdue, schedule } = (body ?? {}) as {
+    const { payment_due, overdue, schedule, payment_received } = (body ?? {}) as {
       payment_due?: Record<string, unknown>;
       overdue?: Record<string, unknown>;
       schedule?: Record<string, unknown>;
+      /** "Payment received" message to the customer; on when no row exists. */
+      payment_received?: Record<string, unknown>;
     };
 
     const hasAccess = await hasFeature(businessId, 'whatsapp_auto_reminders');
@@ -171,10 +174,29 @@ export const POST = withWhatsAppBaseApi({ parseJsonBody: true, managePermission:
       results.overdue = { enabled, interval_days, message_template, include_pdf: includePdf };
     }
 
+    if (payment_received !== undefined) {
+      const enabled = payment_received?.enabled !== false;
+      await db.query(
+        `UPDATE whatsapp_reminder_settings SET enabled = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE business_id = $1 AND reminder_type = 'payment_received'`,
+        [businessId, enabled]
+      );
+      await db.query(
+        `INSERT INTO whatsapp_reminder_settings (business_id, reminder_type, enabled)
+         SELECT $1, 'payment_received', $2
+          WHERE NOT EXISTS (
+            SELECT 1 FROM whatsapp_reminder_settings WHERE business_id = $1 AND reminder_type = 'payment_received'
+          )`,
+        [businessId, enabled]
+      );
+      results.payment_received = { enabled };
+    }
+
     if (
       results.payment_due === undefined &&
       results.overdue === undefined &&
-      results.schedule === undefined
+      results.schedule === undefined &&
+      results.payment_received === undefined
     ) {
       return NextResponse.json(
         { error: 'Nothing to save: provide payment_due, overdue, and/or schedule' },

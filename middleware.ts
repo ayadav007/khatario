@@ -98,6 +98,8 @@ const PUBLIC_PATHS = new Set([
 
 function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/i/')) return true;
+  // A customer's unpaid bills with one shop (combined payment reminders link here; token-only).
+  if (pathname.startsWith('/b/')) return true;
   if (pathname.startsWith('/track/')) return true;
   // Rider link for the shop's own delivery rider (token-only, no login).
   if (pathname.startsWith('/r/')) return true;

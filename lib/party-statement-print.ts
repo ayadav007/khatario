@@ -124,6 +124,62 @@ export interface PartyStatementPrintPayload {
     credit: number | string;
     running_balance: number;
   }>;
+  /**
+   * Payment reminder statement: unpaid bills listed above the ledger, with what to pay now.
+   * Omitted for the plain Reports statement.
+   */
+  dues?: StatementDues;
+}
+
+export interface StatementDueBill {
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string | null;
+  grand_total: number;
+  balance: number;
+  days_overdue: number;
+}
+
+export interface StatementDues {
+  bills: StatementDueBill[];
+  billsDue: number;
+  /** Unadjusted advance the customer has with the business. */
+  advance: number;
+  toPay: number;
+  payLink?: string | null;
+}
+
+function duesHtml(d: StatementDues): string {
+  const rows = d.bills
+    .map(
+      (b) => `<tr>
+        <td class="mono">${escapeHtml(b.invoice_number)}</td>
+        <td>${escapeHtml(formatStatementDateInput(b.invoice_date))}</td>
+        <td>${b.due_date ? escapeHtml(formatStatementDateInput(b.due_date)) : '—'}</td>
+        <td class="num">${fmtInr(b.grand_total)}</td>
+        <td class="num bal">${fmtInr(b.balance)}</td>
+        <td class="num ${b.days_overdue > 0 ? 'od' : ''}">${b.days_overdue > 0 ? `${b.days_overdue} days` : 'Not yet due'}</td>
+      </tr>`,
+    )
+    .join('');
+  const advanceRows =
+    d.advance > 0.005
+      ? `<div class="drow"><span>Less advance with us</span><span>− ₹ ${fmtInr(d.advance)}</span></div>`
+      : '';
+  return `<h2 class="sec">Unpaid bills</h2>
+    <table>
+      <thead><tr>
+        <th>Bill</th><th>Date</th><th>Due date</th><th class="num">Bill amount</th><th class="num">Balance</th><th class="num">Overdue</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="dues">
+      <div class="drow"><span>Bills due</span><span>₹ ${fmtInr(d.billsDue)}</span></div>
+      ${advanceRows}
+      <div class="drow total"><span>To pay</span><span>₹ ${fmtInr(d.toPay)}</span></div>
+      ${d.payLink ? `<p class="paylink">Pay online: <a href="${escapeHtml(d.payLink)}">${escapeHtml(d.payLink)}</a></p>` : ''}
+    </div>
+    <h2 class="sec">Ledger</h2>`;
 }
 
 function netSummaryCustomer(closing: number): { title: string; amount: number; subtitle: string } {
@@ -147,7 +203,10 @@ export function customerStatementSummary(closing: number) {
 }
 
 export function buildCustomerStatementHtml(payload: PartyStatementPrintPayload): string {
-  const { title, amount: summaryAmount, subtitle } = netSummaryCustomer(payload.closingBalance);
+  const net = netSummaryCustomer(payload.closingBalance);
+  const { title, amount: summaryAmount, subtitle } = payload.dues
+    ? { title: 'To pay', amount: payload.dues.toPay, subtitle: `${payload.dues.bills.length} unpaid bills` }
+    : net;
   const period = `${formatStatementDateInput(payload.fromDate)} – ${formatStatementDateInput(payload.toDate)}`;
 
   const rowsHtml = payload.transactions
@@ -203,6 +262,12 @@ export function buildCustomerStatementHtml(payload: PartyStatementPrintPayload):
     .footer { margin-top: 20px; padding: 14px 16px; background: #f1f5f9; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .footer .big { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
     .footer .lbl { font-size: 0.8rem; color: #64748b; }
+    h2.sec { font-size: 0.95rem; margin: 22px 0 10px; color: #0f172a; }
+    tbody td.od { color: #b91c1c; }
+    .dues { margin: 14px 0 6px auto; max-width: 340px; font-size: 0.88rem; }
+    .dues .drow { display: flex; justify-content: space-between; padding: 4px 0; color: #334155; }
+    .dues .total { border-top: 1px solid #e2e8f0; margin-top: 4px; padding-top: 8px; font-weight: 700; color: #0f172a; font-size: 1rem; }
+    .dues .paylink { margin: 10px 0 0; font-size: 0.8rem; color: #475569; word-break: break-all; }
     .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
     .btn { appearance: none; border: none; background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
     .btn:hover { background: #1d4ed8; }
@@ -239,6 +304,7 @@ export function buildCustomerStatementHtml(payload: PartyStatementPrintPayload):
         <div class="s">${escapeHtml(subtitle)}</div>
       </div>
     </div>
+    ${payload.dues ? duesHtml(payload.dues) : ''}
     <table>
       <thead>
         <tr>

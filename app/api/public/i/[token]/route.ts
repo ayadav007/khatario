@@ -5,6 +5,7 @@ import {
   resolveInvoiceByPublicToken,
 } from '@/lib/customer-surface';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { invoicePayAvailable } from '@/lib/invoices/online-pay';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,12 @@ export async function GET(
       resolved.invoice_id
     );
     const finalizedHtml = await finalizePrintHtml(html, templateId, settings, businessId);
+    const payOnline = await invoicePayAvailable({
+      businessId: resolved.business_id,
+      customerId: resolved.customer_id,
+      status: resolved.summary.status,
+      balance: resolved.summary.balance_amount,
+    }).catch(() => false);
 
     return NextResponse.json({
       invoice_id: resolved.invoice_id,
@@ -50,6 +57,7 @@ export async function GET(
       summary: resolved.summary,
       business: resolved.business,
       html: finalizedHtml,
+      pay: { online: payOnline },
     });
   } catch (error: unknown) {
     console.error('[public/i] GET error:', error);

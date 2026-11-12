@@ -269,7 +269,12 @@ export default function CustomersPage() {
         const sent = Number(data.sent) || 0;
         const failed = Number(data.failed) || 0;
 
-        if (sent > 0) {
+        if (sent > 0 && data.combined) {
+          setToast({
+            message: `Reminder sent with the statement for ${Number(data.invoices) || 0} unpaid bills.`,
+            type: 'success',
+          });
+        } else if (sent > 0) {
           setToast({ message: `Reminders sent! ${sent} invoice(s) notified.`, type: 'success' });
         } else if (failed > 0) {
           const firstErr =

@@ -115,9 +115,12 @@ export async function settleKhataPayment(
   return { allocations, settled: round2(amount - left), advance, advanceId };
 }
 
-async function postKhataAdvance(
+/** Money above a customer's bills, kept as a customer advance. Also used by invoice online payments. */
+export async function postKhataAdvance(
   client: PoolClient,
   p: {
+    /** Ledger note; defaults to the khata wording. */
+    note?: string;
     businessId: string;
     customerId: string;
     amount: number;
@@ -157,7 +160,7 @@ async function postKhataAdvance(
     taxRate: 0,
     paymentAccountId: account.id,
     reference: p.reference,
-    notes: `Khata payment ${p.reference} above the open bills`,
+    notes: p.note ?? `Khata payment ${p.reference} above the open bills`,
   });
   return created.id;
 }

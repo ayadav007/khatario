@@ -31,6 +31,8 @@ export const TENANT_WA_EVENT_KEYS = [
   'invoice_sent',
   'payment_due_reminder',
   'payment_overdue_reminder',
+  'invoice_payment_received',
+  'payment_statement_reminder',
   'khata_opened',
   'khata_order_placed',
   'khata_order_waiting',
@@ -58,6 +60,10 @@ export const TENANT_WA_FIELDS = {
   invoice_number: { label: 'Invoice number', sample: 'INV-2026-118' },
   amount: { label: 'Invoice amount', sample: '8,400.00' },
   amount_due: { label: 'Amount due', sample: '3,400.00' },
+  amount_paid: { label: 'Amount paid', sample: '5,000.00' },
+  bills_count: { label: 'Number of unpaid bills', sample: '4' },
+  overdue_amount: { label: 'Overdue amount', sample: '8,000.00' },
+  bills_link: { label: 'Bills and pay link', sample: 'https://khatario.com/b/Xy12Ab34' },
   due_date: { label: 'Due date', sample: '15 Oct 2026' },
   invoice_link: { label: 'Invoice link', sample: 'https://khatario.com/i/abc123' },
   order_link: { label: 'Order status link', sample: 'https://khatario.com/track/Xy12Ab34' },
@@ -178,6 +184,7 @@ const BILLING_FIELDS: TenantWaFieldKey[] = [
   'due_date',
   'invoice_link',
 ];
+const PAYMENT_RECEIVED_FIELDS: TenantWaFieldKey[] = [...BILLING_FIELDS, 'amount_paid'];
 
 export const TENANT_WA_EVENTS: TenantWaEvent[] = [
   {
@@ -631,6 +638,37 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
       },
     ],
   },
+  {
+    key: 'invoice_payment_received',
+    group: 'billing',
+    label: 'Payment received',
+    description: 'Thanks the customer when a payment is recorded against an invoice, online or by your staff.',
+    recipient: 'customer',
+    categories: ['UTILITY'],
+    fields: PAYMENT_RECEIVED_FIELDS,
+    suggested: {
+      name: 'khatario_payment_received',
+      category: 'UTILITY',
+      body: 'Hi {{1}}, we have received ₹{{2}} for invoice {{3}} from {{4}}. Balance due: ₹{{5}}. View your bill: {{6}} Thank you.',
+      variableMap: ['customer_name', 'amount_paid', 'invoice_number', 'business_name', 'amount_due', 'invoice_link'],
+    },
+  },
+  {
+    key: 'payment_statement_reminder',
+    group: 'billing',
+    label: 'Combined payment reminder',
+    description:
+      'One reminder for a customer with two or more unpaid bills: the total to pay, a link to pay all or some bills, and the ledger statement as a PDF (use a Document header).',
+    recipient: 'customer',
+    categories: ['UTILITY'],
+    fields: ['customer_name', 'business_name', 'bills_count', 'amount_due', 'overdue_amount', 'bills_link'],
+    suggested: {
+      name: 'khatario_payment_statement',
+      category: 'UTILITY',
+      body: 'Hi {{1}}, you have {{2}} unpaid bills with {{3}}. Amount to pay: ₹{{4}}. Your statement is attached. View your bills and pay here: {{5}} Please ignore if already paid.',
+      variableMap: ['customer_name', 'bills_count', 'business_name', 'amount_due', 'bills_link'],
+    },
+  },
 ];
 
 export const TENANT_WA_GROUP_LABELS: Record<TenantWaEventGroup, string> = {
@@ -679,7 +717,12 @@ export function previewTemplateBody(body: string, variableMap: string[]): string
 }
 
 /** Events that attach the invoice PDF, so a DOCUMENT header can be filled. */
-const DOCUMENT_EVENTS = new Set<TenantWaEventKey>(['invoice_sent', 'payment_due_reminder', 'payment_overdue_reminder']);
+const DOCUMENT_EVENTS = new Set<TenantWaEventKey>([
+  'invoice_sent',
+  'payment_due_reminder',
+  'payment_overdue_reminder',
+  'payment_statement_reminder',
+]);
 
 function hasDynamicUrlButton(buttons: unknown): boolean {
   if (!Array.isArray(buttons)) return false;

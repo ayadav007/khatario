@@ -12,6 +12,11 @@ export interface PaymentReminderJobData {
   kind: PaymentReminderKind;
   messageTemplate: string;
   includePdf: boolean;
+  /**
+   * Combined reminder for a customer with two or more unpaid bills: the bills chased in this run,
+   * each with the reminder type that picked it. `invoiceId` is then the first of them.
+   */
+  statement?: { customerId: string; chased: { invoiceId: string; kind: PaymentReminderKind }[] };
 }
 
 export type PaymentReminderOutcome =
@@ -74,6 +79,17 @@ async function createInvoiceNotification(
 export async function deliverPaymentReminder(job: PaymentReminderJobData): Promise<PaymentReminderOutcome> {
   const { businessId, invoiceId, kind, messageTemplate, includePdf } = job;
   const source = REMINDER_SOURCE[kind];
+
+  if (job.statement) {
+    const { sendStatementReminder } = await import('@/lib/payment-reminders/statement');
+    const r = await sendStatementReminder({
+      businessId,
+      customerId: job.statement.customerId,
+      chased: job.statement.chased.map((c) => ({ invoiceId: c.invoiceId, source: REMINDER_SOURCE[c.kind] })),
+      scheduled: true,
+    });
+    return r.outcome === 'sent' ? { outcome: 'sent' } : r;
+  }
 
   if (!(await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS))) {
     return { outcome: 'skipped', reason: 'feature_not_on_plan' };

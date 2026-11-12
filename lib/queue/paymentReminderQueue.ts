@@ -8,7 +8,8 @@ import type { BusinessTransport } from '@/lib/whatsapp/business-transport';
 import { BAILEYS_SCHEDULED_GAP_MS, randomGapMs, sleep } from '@/lib/whatsapp/baileys-pacing';
 
 /**
- * Scheduled payment reminders. The cron route enqueues one job per invoice and this worker sends
+ * Scheduled payment reminders. The cron route enqueues one job per invoice (or one combined job per
+ * customer with several unpaid bills) and this worker sends
  * them. The worker MUST run inside the Next.js server process: QR (Baileys) sockets live in that
  * process's memory, and a sender in another process would open a second socket for the same
  * number, which WhatsApp treats as "connection replaced" and logs the business out.
@@ -95,7 +96,8 @@ export function planBaileysDelays(
   return { delays, nextSlot: slot };
 }
 
-export function paymentReminderJobId(job: Pick<PaymentReminderJobData, 'kind' | 'invoiceId'>): string {
+export function paymentReminderJobId(job: Pick<PaymentReminderJobData, 'kind' | 'invoiceId' | 'statement'>): string {
+  if (job.statement) return `pr-statement-${job.statement.customerId}`;
   return `pr-${job.kind}-${job.invoiceId}`;
 }
 

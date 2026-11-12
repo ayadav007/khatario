@@ -1087,6 +1087,10 @@ export async function POST(request: NextRequest) {
           branch_id: finalBranchId,
         },
       });
+      if (type === 'receivable' && reference_type === 'invoice' && reference_id) {
+        const { queuePaymentReceivedMessage } = await import('@/lib/invoices/payment-received-notify');
+        queuePaymentReceivedMessage(business_id, payment.id);
+      }
       // Paying a connected supplier's bill: tell the supplier so they can record the receipt.
       if (type === 'payable' && reference_type === 'purchase' && reference_id) {
         const { noticeBuyerPayment } = await import('@/lib/supplier-hub-money');

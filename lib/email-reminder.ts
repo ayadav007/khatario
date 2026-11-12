@@ -8,7 +8,9 @@ import { sendBusinessEmail, type BusinessEmailSendOptions } from '@/lib/business
 import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { hasFeature } from '@/lib/subscription';
-import { processTemplate } from '@/lib/reminder-message-processor';
+import { processTemplate, withPaymentLink } from '@/lib/reminder-message-processor';
+import { ensureInvoicePublicToken } from '@/lib/customer-surface/public-token';
+import { publicInvoiceUrl } from '@/lib/customer-surface/urls';
 
 export type EmailReminderKind = 'payment_due' | 'overdue';
 
@@ -73,7 +75,13 @@ export async function sendEmailReminder(params: {
       email: invoice.business_email,
     };
 
-    const bodyText = processTemplate(messageTemplate, invoice, customer, biz);
+    let link = '';
+    try {
+      link = publicInvoiceUrl(await ensureInvoicePublicToken(invoiceId));
+    } catch {
+      /* the email still goes out without a link */
+    }
+    const bodyText = withPaymentLink(processTemplate(messageTemplate, invoice, customer, biz, link), messageTemplate, link);
     const invoiceNo = invoice.invoice_number || '—';
 
     let attachments: BusinessEmailSendOptions['attachments'];

@@ -27,9 +27,9 @@ import { GatewayRefundError, isDefiniteRefusalStatus } from '../gateway-refund-e
 
 /** Which Khatario flow a txnid belongs to. Encoded as the txnid prefix. */
 /** SO sales orders, ST store orders, PB platform billing, KH store khata payments. */
-export type EasebuzzTxnContext = 'SO' | 'ST' | 'PB' | 'KH';
+export type EasebuzzTxnContext = 'SO' | 'ST' | 'PB' | 'KH' | 'IN';
 
-const EASEBUZZ_TXN_PREFIXES: readonly EasebuzzTxnContext[] = ['SO', 'ST', 'PB', 'KH'];
+const EASEBUZZ_TXN_PREFIXES: readonly EasebuzzTxnContext[] = ['SO', 'ST', 'PB', 'KH', 'IN'];
 
 export function sha512LowerHex(input: string): string {
   return createHash('sha512').update(input, 'utf8').digest('hex');
@@ -251,7 +251,7 @@ export class EasebuzzPaymentProvider implements PaymentProvider {
 
     const ctxRaw = params.metadata?.easebuzz_context;
     const context: EasebuzzTxnContext =
-      ctxRaw === 'ST' || ctxRaw === 'PB' || ctxRaw === 'KH' ? ctxRaw : 'SO';
+      ctxRaw === 'ST' || ctxRaw === 'PB' || ctxRaw === 'KH' || ctxRaw === 'IN' ? ctxRaw : 'SO';
 
     const fields: EasebuzzHashFields = {
       key: this.merchantKey,

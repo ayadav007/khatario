@@ -9,6 +9,22 @@ import { businessTransport } from '@/lib/whatsapp/business-transport';
 import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 
+/** Placeholders that put the bill's view-and-pay link into a reminder. */
+const LINK_PLACEHOLDERS = ['{payment_link}', '{invoice_link}'];
+
+export function templateHasLink(template: string): boolean {
+  return LINK_PLACEHOLDERS.some((p) => template.includes(p));
+}
+
+/**
+ * Reminder text with the view-and-pay link. A saved template without a link placeholder gets the
+ * link on its own line at the end, so every reminder lets the customer open the bill and pay.
+ */
+export function withPaymentLink(message: string, template: string, link: string): string {
+  if (!link || templateHasLink(template)) return message;
+  return `${message.trimEnd()}\n\nView and pay: ${link}`;
+}
+
 /**
  * Process message template by replacing placeholders
  */
@@ -16,7 +32,8 @@ export function processTemplate(
   template: string,
   invoice: any,
   customer: any,
-  business: any
+  business: any,
+  link = ''
 ): string {
   let message = template;
 
@@ -27,7 +44,9 @@ export function processTemplate(
     '{amount}': formatCurrency(invoice.grand_total || 0),
     '{balance_amount}': formatCurrency(invoice.balance_amount || invoice.grand_total || 0),
     '{due_date}': invoice.due_date ? format(new Date(invoice.due_date), 'dd/MM/yyyy') : '',
-    '{business_name}': business?.name || ''
+    '{business_name}': business?.name || '',
+    '{payment_link}': link,
+    '{invoice_link}': link
   };
 
   for (const [placeholder, value] of Object.entries(placeholders)) {
@@ -110,13 +129,19 @@ export async function sendReminderMessage(
       email: invoice.business_email
     };
 
-    const message = processTemplate(messageTemplate, invoice, customer, business);
-    processedMessage = message;
-    logToNumber = invoice.customer_phone;
-
     const eventKey = reminderEventKey(reminderSource, invoice.due_date);
     const transport = await businessTransport(businessId);
     const values = await invoiceEventValues(invoice);
+    const link = values.invoice_link && values.invoice_link !== '-' ? String(values.invoice_link) : '';
+
+    const message = withPaymentLink(
+      processTemplate(messageTemplate, invoice, customer, business, link),
+      messageTemplate,
+      link,
+    );
+    processedMessage = message;
+    logToNumber = invoice.customer_phone;
+    const amountDue = Number(invoice.balance_amount ?? invoice.grand_total ?? 0) || 0;
     const filename = `${invoice.invoice_number || 'invoice'}.pdf`;
 
     let pdfBuffer: Buffer | undefined;
@@ -186,8 +211,9 @@ export async function sendReminderMessage(
         media_url, 
         status,
         baileys_message_id,
-        reminder_source
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        reminder_source,
+        amount_due
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         businessId,
         invoice.customer_phone,
@@ -198,7 +224,8 @@ export async function sendReminderMessage(
         pdfBuffer ? 'blob:pdf' : null,
         'sent',
         providerMessageId,
-        reminderSource
+        reminderSource,
+        amountDue
       ]
     );
 

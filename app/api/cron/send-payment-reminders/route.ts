@@ -2,11 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import {
-  checkAndSendPaymentDueReminders,
-  checkAndSendOverdueReminders,
-  type ReminderRunResult,
-} from '@/lib/payment-reminder-checker';
+import { checkAndSendReminders, type ReminderRunResult } from '@/lib/payment-reminder-checker';
 import { ensurePaymentReminderWorker } from '@/lib/queue/paymentReminderQueue';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import {
@@ -123,11 +119,10 @@ async function processReminders(request?: NextRequest) {
           }
         }
 
-        // Process payment due reminders
-        const paymentDueResult = await checkAndSendPaymentDueReminders(business.business_id, tz);
-
-        // Process overdue reminders
-        const overdueResult = await checkAndSendOverdueReminders(business.business_id, tz);
+        // Both reminder types, grouped by customer (one combined message for several bills)
+        const run = await checkAndSendReminders(business.business_id, tz);
+        const paymentDueResult = run.payment_due;
+        const overdueResult = run.overdue;
 
         results.push({
           business_id: business.business_id,

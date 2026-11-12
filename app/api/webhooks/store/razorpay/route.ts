@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic';
  * The order is the one whose payment link or captured payment id matches.
  * Notes in the payload are not used to choose the business or the user.
  * A refund notice completes a return refund of that order when one matches, else the cancellation refund.
+ * Notices for no store order may be a khata payment or a public-bill invoice payment, in that order.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -141,7 +142,7 @@ async function handleKhataNotice(
 ) {
   const { findKhataPayment, applyKhataGatewayPayment, markKhataPaymentFailed } = await import('@/lib/khata/online-pay');
   const row = await findKhataPayment('razorpay', refs);
-  if (!row) return NextResponse.json({ ok: true, ignored: true });
+  if (!row) return handleInvoiceNotice(request, rawBody, parsed, refs);
   const cfg = await getBusinessPaymentProviderConfig(row.business_id, 'razorpay');
   if (!cfg) return NextResponse.json({ error: 'Unknown store payment config' }, { status: 400 });
   const headers: Record<string, string> = {};
@@ -171,6 +172,50 @@ async function handleKhataNotice(
   } catch (err) {
     console.error('[store razorpay khata webhook]', err);
     return NextResponse.json({ error: 'Khata settlement failed' }, { status: 500 });
+  }
+}
+
+/** Invoice payment links from a public bill (/i/<token>, the link payment reminders carry). */
+async function handleInvoiceNotice(
+  request: NextRequest,
+  rawBody: string,
+  parsed: Record<string, unknown>,
+  refs: { paymentRef: string; providerPaymentId: string },
+) {
+  const { findInvoiceOnlinePayment, applyInvoiceGatewayPayment, markInvoiceOnlinePaymentFailed } = await import(
+    '@/lib/invoices/online-pay'
+  );
+  const row = await findInvoiceOnlinePayment('razorpay', refs);
+  if (!row) return NextResponse.json({ ok: true, ignored: true });
+  const cfg = await getBusinessPaymentProviderConfig(row.business_id, 'razorpay');
+  if (!cfg) return NextResponse.json({ error: 'Unknown payment config' }, { status: 400 });
+  const headers: Record<string, string> = {};
+  request.headers.forEach((v, k) => {
+    headers[k.toLowerCase()] = v;
+  });
+  const verified = await new RazorpayPaymentProvider(cfg).verifyWebhook({
+    rawBody,
+    headers,
+    webhookSecret: cfg.clientSecret,
+  });
+  if (!verified.verified) return NextResponse.json({ ok: false, verified: false }, { status: 401 });
+  if (verified.status === 'failed') {
+    await markInvoiceOnlinePaymentFailed(row.id, row.business_id);
+    return NextResponse.json({ ok: true, outcome: 'failed' });
+  }
+  if (verified.status !== 'success') return NextResponse.json({ ok: true, verified: true, ignored: true });
+  try {
+    const result = await applyInvoiceGatewayPayment({
+      invoicePaymentId: row.id,
+      businessId: row.business_id,
+      amount: verified.amount,
+      providerPaymentId: verified.providerPaymentId,
+      payload: parsed,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[store razorpay invoice webhook]', err);
+    return NextResponse.json({ error: 'Invoice payment failed' }, { status: 500 });
   }
 }
 
