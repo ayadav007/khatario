@@ -3,11 +3,11 @@ import { listSitemapPosts } from '@/lib/blog/repo';
 import { publicSiteUrl } from '@/lib/blog/site';
 import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
 import { marketingRobots } from '@/lib/marketing-builder/seo';
+import { MARKETING_STATIC_PATHS } from '@/lib/marketing/static-paths';
 import { THEME_CATALOG } from '@/lib/store/engine/theme-catalog';
 
 export const dynamic = 'force-dynamic';
 
-const STATIC_PATHS = ['/', '/about', '/blog', '/guides', '/themes', '/privacy', '/terms', '/book-demo', '/solution/accounting', '/solution/inventory'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = publicSiteUrl();
@@ -18,7 +18,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   } catch (error) {
     console.error('[sitemap] home page index flag skipped', error);
   }
-  const paths = hideHome ? STATIC_PATHS.filter((path) => path !== '/') : STATIC_PATHS;
+  const paths = hideHome ? MARKETING_STATIC_PATHS.filter((path) => path !== '/') : MARKETING_STATIC_PATHS;
   const pages: MetadataRoute.Sitemap = paths.map((path) => ({
     url: `${base}${path === '/' ? '' : path}`,
     changeFrequency: path === '/blog' ? 'daily' : 'weekly',
