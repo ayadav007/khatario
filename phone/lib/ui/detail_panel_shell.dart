@@ -122,8 +122,9 @@ class DetailPanelShell<T> extends StatelessWidget {
   }
 
   Widget _header(BuildContext context) {
-    return SizedBox(
-      height: 64,
+    // At least 64 tall; a subtitle that wraps to a second line grows the header instead of overflowing it.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 64),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpace.xs),
         child: Row(

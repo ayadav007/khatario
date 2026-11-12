@@ -391,9 +391,9 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
 
 /// Opens the phone screen for a website link. Returns false when the link has none (the caller then
 /// opens a tab or the website). There is no automatic list: a link with no screen is a website link.
-bool openKnownScreen(BuildContext context, AppSession session, String href, String label) {
+bool openKnownScreen(BuildContext context, AppSession session, String href, String label, {Capabilities? capabilities}) {
   final navigator = Navigator.of(context);
-  final screen = nativeScreenFor(session, href);
+  final screen = nativeScreenFor(session, href, capabilities: capabilities);
   if (screen != null) {
     navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
     return true;
@@ -402,8 +402,8 @@ bool openKnownScreen(BuildContext context, AppSession session, String href, Stri
 }
 
 /// Opens any website link on the phone: its screen, or the website page inside the app, signed in. The More menu and the reports overview both come through here.
-void openAppHref(BuildContext context, AppSession session, String href, String label) {
-  if (!openKnownScreen(context, session, href, label)) openWebsiteInApp(context, session, href, label);
+void openAppHref(BuildContext context, AppSession session, String href, String label, {Capabilities? capabilities}) {
+  if (!openKnownScreen(context, session, href, label, capabilities: capabilities)) openWebsiteInApp(context, session, href, label);
 }
 
 /// Which of the three homes a link has. Tabs and the website decisions come before screens, so a

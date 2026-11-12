@@ -115,6 +115,7 @@ TableReportSpec _supplierWise(AppSession session) => TableReportSpec(
       rowSubtitle: (r) => reportJoin([_count(r['bill_count'], 'bill', 'bills'), reportText(r, 'gstin')]),
       rowAmountKey: 'purchases',
       onOpenRow: (ctx, r) => reportOpenSupplier(ctx, session, reportText(r, 'supplier_id')),
+      openRowIdKey: 'supplier_id',
     );
 
 /// `GET /api/reports/purchase/item-wise` replies `{ items, totals, charges }`. Freight and independent
@@ -137,6 +138,7 @@ TableReportSpec _itemWise(AppSession session) => TableReportSpec(
       ]),
       rowAmountKey: 'amount',
       onOpenRow: (ctx, r) => reportOpenItem(ctx, session, reportText(r, 'item_id')),
+      openRowIdKey: 'item_id',
     );
 
 /// `GET /api/reports/purchase/returns` replies `{ returns, totals }`: purchase returns (debit notes).

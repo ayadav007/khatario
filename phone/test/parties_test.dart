@@ -54,9 +54,9 @@ void main() {
       expect(supplierBalanceHint(-10), 'Prepaid');
     });
 
-    test('reminder sends the signed-in business, matching the website', () {
-      expect(reminderRequestBody('biz-1'), {'business_id': 'biz-1'});
-      expect(reminderRequestBody('  '), isEmpty);
+    test('the reminder body is empty: the server takes the business from the session', () {
+      expect(reminderBody, isEmpty);
+      expect(reminderBody.containsKey('business_id'), isFalse);
     });
 
     test('reminder outcome matches the website', () {
@@ -113,8 +113,12 @@ void main() {
 
     await tester.tap(find.byTooltip('Remind Ravi Traders'));
     await tester.pumpAndSettle();
+    expect(find.text('Send a WhatsApp reminder to Ravi Traders?'), findsOneWidget);
+    expect(api.posts, isEmpty, reason: 'nothing is sent before the answer');
+    await tester.tap(find.text('Send reminder'));
+    await tester.pumpAndSettle();
     expect(api.posts.single.$1, '/api/customers/c1/send-reminder');
-    expect(api.posts.single.$2, {'business_id': 'biz-1'});
+    expect(api.posts.single.$2, isEmpty);
     expect(find.text('Reminders sent! 1 invoice(s) notified.'), findsOneWidget);
 
     await tester.tap(find.text('Suppliers'));
@@ -142,6 +146,17 @@ void main() {
     expect(find.text('Customer portal'), findsOneWidget);
     expect(find.text('https://portal.example/shop'), findsOneWidget);
     expect(api.gets, contains('/api/settings/customer-surface'));
+
+    // The detail page asks too, and sends an empty body once.
+    final before = api.posts.length;
+    await tester.tap(find.byTooltip('Send reminder'));
+    await tester.pumpAndSettle();
+    expect(find.text('Send a WhatsApp reminder to Ravi Traders?'), findsOneWidget);
+    expect(api.posts.length, before);
+    await tester.tap(find.descendant(of: find.byType(BottomSheet), matching: find.text('Send reminder')));
+    await tester.pumpAndSettle();
+    expect(api.posts.length, before + 1);
+    expect(api.posts.last.$2, isEmpty);
 
     await tester.tap(find.text('Transactions'));
     await tester.pumpAndSettle();

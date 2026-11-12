@@ -10,6 +10,7 @@ import '../../theme.dart';
 import '../../ui/kit.dart';
 import 'customer_detail_screen.dart';
 import 'party_logic.dart';
+import 'reminder_ask.dart';
 import 'supplier_detail_screen.dart';
 
 /// `app/(app)/customers/page.tsx` and the suppliers list, on one phone screen:
@@ -116,11 +117,14 @@ class _PartiesScreenState extends State<PartiesScreen> {
 
   Future<void> _sendReminder(Map<String, dynamic> customer) async {
     final id = customer['id']?.toString();
-    if (id == null) return;
+    if (id == null || _sendingReminder != null) return;
+    final name = customer['name']?.toString() ?? 'this customer';
+    if (!await askSendReminder(context, name)) return;
+    if (!mounted) return;
     setState(() => _sendingReminder = id);
     var message = 'Failed to send reminders. Please try again.';
     try {
-      final data = await _api.postJson('/api/customers/$id/send-reminder', reminderRequestBody(widget.session.businessId));
+      final data = await _api.postJson('/api/customers/$id/send-reminder', reminderBody);
       message = reminderOutcome(ok: true, data: data).message;
     } on ApiException catch (e) {
       message = reminderOutcome(ok: false, data: {'error': e.message}).message;

@@ -20,6 +20,7 @@ import '../invoices/invoice_detail_screen.dart';
 import 'customer_form_screen.dart';
 import 'customer_statement_screen.dart';
 import 'party_logic.dart';
+import 'reminder_ask.dart';
 
 /// `CustomerDetailPanel`: Overview, Transactions, Ledger, History, and the portal card.
 class CustomerDetailScreen extends StatefulWidget {
@@ -132,10 +133,14 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   }
 
   Future<void> _sendReminder() async {
+    if (_sendingReminder) return;
+    final name = _customer?['name']?.toString() ?? 'this customer';
+    if (!await askSendReminder(context, name)) return;
+    if (!mounted) return;
     setState(() => _sendingReminder = true);
     var message = 'Failed to send reminders. Please try again.';
     try {
-      final data = await _api.postJson('/api/customers/${widget.customerId}/send-reminder', reminderRequestBody(widget.session.businessId));
+      final data = await _api.postJson('/api/customers/${widget.customerId}/send-reminder', reminderBody);
       message = reminderOutcome(ok: true, data: data).message;
     } on ApiException catch (e) {
       message = reminderOutcome(ok: false, data: {'error': e.message}).message;

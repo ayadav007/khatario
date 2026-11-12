@@ -23,13 +23,8 @@ num partyBalance(dynamic value, [dynamic fallback]) => toNum(value ?? fallback ?
 
 enum PartyKind { customers, suppliers }
 
-/// Same body as the website reminder button. The server uses the signed-in business
-/// when that id does not match the session.
-Map<String, dynamic> reminderRequestBody(String? businessId) {
-  final id = businessId?.trim() ?? '';
-  if (id.isEmpty) return const {};
-  return {'business_id': id};
-}
+/// The reminder route takes the business from the signed-in session, so nothing is sent.
+const Map<String, dynamic> reminderBody = {};
 
 /// Toast copy for POST `/api/customers/:id/send-reminder`, matching the website page.
 ({String message, String type}) reminderOutcome({required bool ok, required Map<String, dynamic> data}) {

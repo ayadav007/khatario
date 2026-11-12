@@ -547,7 +547,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                         Material(
                           color: block != null || _sending ? const Color(0xFF008069).withValues(alpha: 0.45) : const Color(0xFF008069),
                           shape: const CircleBorder(),
-                          child: IconButton(onPressed: block != null || _sending ? null : _send, color: Colors.white, icon: const Icon(Icons.send)),
+                          child: IconButton(tooltip: 'Send', onPressed: block != null || _sending ? null : _send, color: Colors.white, icon: const Icon(Icons.send)),
                         ),
                       ],
                     ),

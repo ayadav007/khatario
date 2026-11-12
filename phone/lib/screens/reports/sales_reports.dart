@@ -108,6 +108,10 @@ void _openFromParty(BuildContext context, AppSession session, String what) {
   if (what == 'New invoice' || what.startsWith('New invoice:')) {
     final id = what.startsWith('New invoice:') ? what.substring('New invoice:'.length) : '';
     navigator.push(MaterialPageRoute<void>(builder: (_) => InvoiceFormScreen(session: session, customerId: id.isEmpty ? null : id)));
+  } else if (what == 'New estimate' || what == 'New quotation') {
+    navigator.push(MaterialPageRoute<void>(builder: (_) => InvoiceFormScreen(session: session, documentType: 'proforma_invoice')));
+  } else if (what == 'New payment') {
+    reportOpenHref(context, session, '/payments/in', 'Payment in');
   } else if (what == 'New payment out') {
     reportOpenHref(context, session, '/payments/out', 'Payment out');
   } else if (what == 'New purchase') {
@@ -289,6 +293,7 @@ TableReportSpec _itemWise(AppSession session) => TableReportSpec(
       ]),
       rowAmountKey: 'amount',
       onOpenRow: (ctx, r) => reportOpenItem(ctx, session, reportText(r, 'item_id')),
+      openRowIdKey: 'item_id',
     );
 
 /// `GET /api/reports/sales/party-wise` replies `{ parties, totals }`. The website's "Customers" tile is the
@@ -314,6 +319,7 @@ TableReportSpec _partyWise(AppSession session) => TableReportSpec(
       },
       rowAmountKey: 'sales',
       onOpenRow: (ctx, r) => reportOpenCustomer(ctx, session, reportText(r, 'customer_id')),
+      openRowIdKey: 'customer_id',
     );
 
 /// `GET /api/reports/sales/tax-wise` replies `{ taxWise, totals }`, one row per rate and HSN. The rows come

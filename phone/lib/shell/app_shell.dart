@@ -160,7 +160,7 @@ class _AppShellState extends State<AppShell> {
       '/customers' || '/suppliers' => AppTab.parties,
       _ => null,
     };
-    if (openKnownScreen(context, widget.session, href, label)) return;
+    if (openKnownScreen(context, widget.session, href, label, capabilities: _capabilities)) return;
     // No phone screen for this link: open the website page inside the app, signed in.
     if (tab == null) return openWebsiteInApp(context, widget.session, href, label);
     _selectTab(tab);

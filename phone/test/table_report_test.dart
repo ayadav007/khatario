@@ -318,6 +318,33 @@ void main() {
     expect(find.text('Nothing for this period'), findsOneWidget);
   });
 
+  testWidgets('a row with no record behind it (a cash sale) is not drawn as tappable', (t) async {
+    final (s, _) = fakeSession((_) => {
+          'data': {
+            'rows': [
+              {'id': 'p1', 'name': 'Asha', 'total': 100},
+              {'id': null, 'name': 'Walk-in / Cash Sale', 'total': 50},
+            ],
+          },
+        });
+    var opened = 0;
+    final spec = TableReportSpec(
+      title: 'Party wise',
+      path: '/api/reports/x',
+      period: ReportPeriodKind.none,
+      rowsKey: 'data.rows',
+      rowTitle: (r) => docTitle(r['name']),
+      rowAmountKey: 'total',
+      onOpenRow: (c, r) => opened++,
+      openRowIdKey: 'id',
+    );
+    await _pump(t, s, spec);
+    expect(t.widget<KListRow>(find.widgetWithText(KListRow, 'Asha')).onTap, isNotNull);
+    expect(t.widget<KListRow>(find.widgetWithText(KListRow, 'Walk-in / Cash Sale')).onTap, isNull);
+    await t.tap(find.text('Asha'));
+    expect(opened, 1);
+  });
+
   testWidgets('a failed pull to refresh keeps the report and toasts the message', (t) async {
     var fail = false;
     final dio = Dio(BaseOptions(baseUrl: 'https://x.test', validateStatus: (s) => s != null && s < 500));

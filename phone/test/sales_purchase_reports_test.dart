@@ -5,10 +5,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:khatario_phone/screens/invoices/invoice_detail_screen.dart';
+import 'package:khatario_phone/screens/invoices/invoice_form_screen.dart';
 import 'package:khatario_phone/screens/items/item_detail_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/parties/customer_detail_screen.dart';
 import 'package:khatario_phone/screens/parties/supplier_detail_screen.dart';
+import 'package:khatario_phone/screens/payments/payment_in_screen.dart';
 import 'package:khatario_phone/screens/purchases/purchase_section.dart';
 import 'package:khatario_phone/screens/reports/other_reports.dart';
 import 'package:khatario_phone/screens/reports/purchase_reports.dart';
@@ -555,6 +557,40 @@ void main() {
       await t.pump();
       await t.pump(const Duration(milliseconds: 400));
       expect(t.widget<SupplierDetailScreen>(find.byType(SupplierDetailScreen)).supplierId, startsWith('8e3f0c10'));
+    });
+
+    testWidgets('a customer opened from a report: + New under quotes opens a quotation form, + New under payments opens Payments in', (t) async {
+      final (session, _) = fakeSession((o) => o.uri.path == '/api/customers/c1'
+          ? {
+              'customer': {'id': 'c1', 'name': 'Asha', 'phone': '9876543210', 'is_active': true},
+              'transactions': [
+                {'type': 'invoice', 'id': 'i1', 'ref_no': 'INV-1', 'date': '2026-11-01', 'amount': 100, 'balance_amount': 0, 'document_type': 'tax_invoice'},
+              ],
+              'totalReceivable': 0,
+            }
+          : <String, dynamic>{});
+      late BuildContext host;
+      await t.pumpWidget(MaterialApp(home: Builder(builder: (c) {
+        host = c;
+        return const Scaffold();
+      })));
+      reportOpenCustomer(host, session, 'c1');
+      await t.pumpAndSettle();
+      await t.tap(find.text('Transactions'));
+      await t.pumpAndSettle();
+      Future<void> tapNew(int index) async {
+        await t.ensureVisible(find.text('+ New').at(index));
+        await t.tap(find.text('+ New').at(index));
+        await t.pumpAndSettle();
+      }
+
+      expect(find.text('+ New'), findsNWidgets(3));
+      await tapNew(1);
+      expect(find.byType(InvoiceFormScreen), findsOneWidget);
+      Navigator.of(t.element(find.byType(InvoiceFormScreen))).pop();
+      await t.pumpAndSettle();
+      await tapNew(2);
+      expect(find.byType(PaymentInScreen), findsOneWidget);
     });
 
     testWidgets('deleted items: without can_restore, Restore shows the upgrade sheet and posts nothing', (t) async {

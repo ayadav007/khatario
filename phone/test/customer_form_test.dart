@@ -103,6 +103,16 @@ void main() {
     expect(api.puts.single.$2['name'], 'Ravi Traders');
   });
 
+  testWidgets('a form opened with no role information (from a report) still opens, and the server decides', (tester) async {
+    final api = _FakeApi();
+    await tester.pumpWidget(MaterialApp(
+      home: CustomerFormScreen(session: _session(api), capabilities: null, customerId: 'c1'),
+    ));
+    await tester.pumpAndSettle();
+    expect(textFieldLabelled('Customer name *'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('statement shows the financial-year party statement', (tester) async {
     final api = _FakeApi();
     await tester.pumpWidget(MaterialApp(home: CustomerStatementScreen(session: _session(api), customerId: 'c1')));

@@ -237,6 +237,7 @@ void main() {
         return _handler(o, b);
       });
       await pumpScreen(t, ChatThreadScreen(session: session, conversationId: 'c1', title: 'Ravi'));
+      expect(find.byTooltip('Send'), findsOneWidget, reason: 'the send arrow has a label for screen readers');
       await t.tap(find.byTooltip('Saved replies'));
       await t.pumpAndSettle();
       await t.tap(inSheet('Manage'));

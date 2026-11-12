@@ -54,8 +54,9 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
   ({num current, num limit})? _limit;
 
   bool get _canSubmit {
+    // A screen opened without role information (from a report, from the bill form) lets the server decide.
     final caps = widget.capabilities;
-    if (caps == null) return false;
+    if (caps == null) return true;
     return caps.has('customers', widget.editing ? 'update' : 'create');
   }
 
@@ -316,7 +317,7 @@ class _CustomerFormScreenState extends State<CustomerFormScreen> {
         ),
       );
     }
-    if (_loading || caps == null) return frame(const KSpinner());
+    if (_loading) return frame(const KSpinner());
     if (_missing) return frame(const KEmptyState(icon: LucideIcons.userX, title: 'Customer not found'));
 
     final addressSummary = [_city.text.trim(), _state].where((p) => p.isNotEmpty).join(', ');

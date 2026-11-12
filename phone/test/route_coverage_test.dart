@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:khatario_phone/api.dart';
+import 'package:khatario_phone/capability.dart';
 import 'package:khatario_phone/screens/hub/supply_orders_screen.dart';
 import 'package:khatario_phone/screens/pages/native_routes.dart';
 import 'package:khatario_phone/screens/pages/page_catalog.dart';
@@ -48,5 +50,22 @@ void main() {
     expect(nativeScreenFor(session, '/reports/aging/payables'), isA<AgingReportScreen>());
     expect(routeTier(session, '/invoices'), RouteTier.tab);
     expect(routeTier(session, '/docs'), RouteTier.website);
+  });
+
+  testWidgets('a link opened from More carries the shell capabilities, so a plan lock shows', (t) async {
+    late BuildContext ctx;
+    await t.pumpWidget(MaterialApp(home: Builder(builder: (c) {
+      ctx = c;
+      return const SizedBox();
+    })));
+    const small = Capabilities(
+      sessionIsPrimaryAdmin: true,
+      sessionPermissions: {},
+      snapshot: CapabilitySnapshot(permissions: {}, isPrimaryAdmin: true, enabledFeatures: ['sales_invoices']),
+    );
+    openAppHref(ctx, session, '/whatsapp/send-message', 'Send message', capabilities: small);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 400));
+    expect(find.byIcon(LucideIcons.lock), findsWidgets);
   });
 }

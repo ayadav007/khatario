@@ -45,6 +45,7 @@ class TableReportSpec {
     this.columns = const [],
     this.extraQuery,
     this.onOpenRow,
+    this.openRowIdKey,
     this.sections = const [],
     this.countTiles = const {},
     this.fromKey = 'from_date',
@@ -78,6 +79,9 @@ class TableReportSpec {
   /// Extra query text such as `party_id=3`. Blank adds nothing.
   final String Function()? extraQuery;
   final void Function(BuildContext context, Map<String, dynamic> row)? onOpenRow;
+
+  /// The field [onOpenRow] opens a record by. A row without it (a cash sale has no customer) is not drawn as tappable.
+  final String? openRowIdKey;
 
   /// Extra tables from the same reply, drawn below the main one: (header, rows key).
   final List<(String title, String rowsKey)> sections;
@@ -336,7 +340,7 @@ class _TableReportScreenState extends State<TableReportScreen> {
       _spec.onOpenSectionRow!(context, section, row);
       return;
     }
-    if (_spec.onOpenRow != null) {
+    if (_spec.onOpenRow != null && _hasRecord(row)) {
       _spec.onOpenRow!(context, row);
       return;
     }
@@ -505,10 +509,15 @@ class _TableReportScreenState extends State<TableReportScreen> {
     return KCard(child: KDivided(children: [for (final r in rows) _row(r, section: section)]));
   }
 
+  bool _hasRecord(Map<String, dynamic> row) {
+    final key = _spec.openRowIdKey;
+    return key == null || docText(row[key]).isNotEmpty;
+  }
+
   Widget _row(Map<String, dynamic> row, {int? section}) {
     final title = _spec.rowTitle(row);
     final subtitle = _spec.rowSubtitle?.call(row);
-    final tappable = _spec.onOpenRow != null || (section != null && _spec.onOpenSectionRow != null) || _spec.columns.isNotEmpty;
+    final tappable = (_spec.onOpenRow != null && _hasRecord(row)) || (section != null && _spec.onOpenSectionRow != null) || _spec.columns.isNotEmpty;
     return KListRow(
       title: title.isEmpty ? _dash : title,
       subtitle: subtitle,

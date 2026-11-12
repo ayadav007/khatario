@@ -1,0 +1,1 @@
+{"granularity":"hour","buckets":[{"key":"0","label":"12 AM","sales":0,"receipt_count":0},{"key":"1","label":"1 AM","sales":0,"receipt_count":0},{"key":"2","label":"2 AM","sales":0,"receipt_count":0}],"summary":{"receipt_count":0,"net_sales":0,"average_sale":0},"range_days":1}
