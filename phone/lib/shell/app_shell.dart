@@ -21,6 +21,7 @@ import '../screens/pages/native_routes.dart';
 import '../screens/pages/page_catalog.dart';
 import '../screens/pages/website_page_screen.dart';
 import '../screens/chats/chats_inbox_screen.dart';
+import '../screens/chats/contacts_screen.dart';
 import '../screens/pages/record_page.dart';
 import '../screens/expenses/expense_form_screen.dart';
 import '../screens/payments/payment_in_logic.dart';
@@ -665,7 +666,7 @@ class _AppShellState extends State<AppShell> {
           onEditNav: _editNav,
         ),
       AppTab.chats => ChatsInboxScreen(key: ValueKey('chats-${widget.session.businessId}'), session: widget.session),
-      AppTab.contacts => _recordTab('/whatsapp/contacts'),
+      AppTab.contacts => ContactsScreen(key: ValueKey('contacts-${widget.session.businessId}'), session: widget.session, embedded: true),
       AppTab.team => _recordTab('/employees'),
       AppTab.attendance => _recordTab('/employees/attendance'),
       AppTab.orders => OrdersScreen(key: ValueKey('orders-${widget.session.businessId}'), session: widget.session, embedded: true),

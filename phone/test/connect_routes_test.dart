@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:khatario_phone/screens/chats/campaigns_screen.dart';
 import 'package:khatario_phone/screens/chats/chat_outreach_screens.dart';
 import 'package:khatario_phone/screens/chats/chat_thread_screen.dart';
 import 'package:khatario_phone/screens/chats/chats_inbox_screen.dart';
@@ -32,7 +33,7 @@ void main() {
       expect(nativeScreenFor(session, '/whatsapp/leads'), isA<LeadsScreen>());
       expect(nativeScreenFor(session, '/whatsapp/lead-sources'), isA<LeadSourcesScreen>());
       expect(nativeScreenFor(session, '/whatsapp/pipeline'), isA<PipelineScreen>());
-      expect(nativeScreenFor(session, '/whatsapp/campaigns'), isA<BroadcastsScreen>());
+      expect(nativeScreenFor(session, '/whatsapp/campaigns'), isA<CampaignsScreen>());
       expect(nativeScreenFor(session, '/whatsapp/bot-rules'), isA<BotRepliesScreen>());
     });
 
@@ -60,10 +61,6 @@ void main() {
       }
       expect(stillGeneric.where((h) => h.startsWith('/whatsapp')).toSet(), {
         '/whatsapp/flows',
-        '/whatsapp/who-to-message',
-        '/whatsapp/contacts',
-        '/whatsapp/contacts/groups',
-        '/whatsapp/unsubscribes',
       });
     });
   });

@@ -159,10 +159,6 @@ const websiteForNow = <String>{};
 const stillGeneric = <String>{
   '/suppliers/dashboard',
   '/whatsapp/flows',
-  '/whatsapp/who-to-message',
-  '/whatsapp/contacts',
-  '/whatsapp/contacts/groups',
-  '/whatsapp/unsubscribes',
   '/tools/todo',
 };
 
@@ -172,7 +168,6 @@ const _webOnly = {
   '/pricing/party-item',
   '/hr/leaves/year-end',
   '/hr/leaves/import-balances',
-  '/whatsapp/send-message',
   '/settings/automation',
   '/settings/bluetooth-printer',
   '/settings/help',

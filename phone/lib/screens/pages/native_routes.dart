@@ -91,14 +91,21 @@ import '../tools/lookup_tools_screens.dart';
 import '../tools/tools_hub_screen.dart';
 import '../settings/settings_router.dart';
 import '../whatsapp/order_verification_screen.dart';
+import '../chats/campaign_report_screen.dart';
+import '../chats/campaigns_screen.dart';
 import '../chats/chat_outreach_screens.dart';
 import '../chats/chat_thread_screen.dart';
 import '../chats/chats_inbox_screen.dart';
 import '../chats/connect_dashboard_screen.dart';
+import '../chats/contact_groups_screen.dart';
+import '../chats/contacts_screen.dart';
 import '../chats/lead_profile_screen.dart';
 import '../chats/lead_sources_screen.dart';
 import '../chats/leads_screen.dart';
 import '../chats/pipeline_screen.dart';
+import '../chats/send_message_screen.dart';
+import '../chats/unsubscribes_screen.dart';
+import '../chats/who_to_message_screen.dart';
 import '../../theme.dart';
 import 'page_catalog.dart';
 import 'record_page.dart';
@@ -127,7 +134,7 @@ const _tabHrefs = {'/items', '/invoices', '/customers', '/suppliers', '/search',
 /// The phone screen for a website href, or null when the link has none.
 ///
 /// Query strings matter: `/supply-orders?role=vendor` is matched before the query is stripped.
-/// [capabilities] is for screens that hide actions the role cannot use; none of today's do.
+/// [capabilities] is for screens that hide what the plan or role cannot use (Send message, Who to message).
 Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabilities}) {
   final query = Uri.tryParse(href);
   if (query != null && query.queryParameters.isNotEmpty) {
@@ -138,8 +145,16 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     if (query.path == '/whatsapp/conversations' && chat != null && chat.isNotEmpty) {
       return ChatThreadScreen(session: session, conversationId: chat, title: 'Chat');
     }
+    if (query.path == '/whatsapp/send-message' && query.queryParameters['tab'] == 'campaign') {
+      return SendMessageScreen(session: session, capabilities: capabilities, startOnCampaign: true);
+    }
     // Any other filter on a Connect page (`?status=open`) opens the same screen.
     if (query.path.startsWith('/whatsapp/')) return nativeScreenFor(session, query.path, capabilities: capabilities);
+  }
+  // One campaign's report: `/whatsapp/campaigns/<id>`.
+  const campaignPrefix = '/whatsapp/campaigns/';
+  if (href.startsWith(campaignPrefix) && href.length > campaignPrefix.length) {
+    return CampaignReportScreen(session: session, campaignId: Uri.decodeComponent(href.substring(campaignPrefix.length)));
   }
   switch (href) {
     case '/whatsapp/dashboard':
@@ -154,7 +169,17 @@ Widget? nativeScreenFor(AppSession session, String href, {Capabilities? capabili
     case '/whatsapp/lead-sources':
       return LeadSourcesScreen(session: session);
     case '/whatsapp/campaigns':
-      return BroadcastsScreen(session: session);
+      return CampaignsScreen(session: session);
+    case '/whatsapp/contacts':
+      return ContactsScreen(session: session);
+    case '/whatsapp/contacts/groups':
+      return ContactGroupsScreen(session: session);
+    case '/whatsapp/unsubscribes':
+      return UnsubscribesScreen(session: session);
+    case '/whatsapp/send-message':
+      return SendMessageScreen(session: session, capabilities: capabilities);
+    case '/whatsapp/who-to-message':
+      return WhoToMessageScreen(session: session, capabilities: capabilities);
     case '/whatsapp/bot-rules':
       return BotRepliesScreen(session: session);
     case '/hr/dashboard':

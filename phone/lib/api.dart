@@ -92,6 +92,14 @@ class KhatarioApi {
     return _map(res);
   }
 
+  /// Uploads one file under the field `file` with its own content type (the WhatsApp media route
+  /// refuses `application/octet-stream`).
+  Future<Map<String, dynamic>> uploadTyped(String path, {required List<int> bytes, required String fileName, required String contentType}) async {
+    final form = FormData.fromMap({'file': MultipartFile.fromBytes(bytes, filename: fileName, contentType: DioMediaType.parse(contentType))});
+    final res = await dio.post<dynamic>(path, data: form);
+    return _map(res);
+  }
+
   Future<Map<String, dynamic>> deleteJson(String path, {Map<String, dynamic>? body}) async {
     final res = await dio.delete<dynamic>(path, data: body ?? const <String, dynamic>{});
     return _map(res);

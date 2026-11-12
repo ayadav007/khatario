@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../api.dart';
 import '../../session.dart';
+import 'campaigns_screen.dart';
 import 'chat_outreach_screens.dart';
 import 'chat_thread_logic.dart';
 import 'chat_thread_screen.dart';
@@ -202,13 +203,13 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
                         final page = value == 'pipeline'
                             ? PipelineScreen(session: widget.session)
                             : value == 'broadcasts'
-                                ? BroadcastsScreen(session: widget.session)
+                                ? CampaignsScreen(session: widget.session)
                                 : BotRepliesScreen(session: widget.session);
                         Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
                       },
                       itemBuilder: (context) => const [
                         PopupMenuItem(value: 'pipeline', child: Text('Pipeline')),
-                        PopupMenuItem(value: 'broadcasts', child: Text('Broadcasts')),
+                        PopupMenuItem(value: 'broadcasts', child: Text('Campaigns')),
                         PopupMenuItem(value: 'bot', child: Text('Bot replies')),
                       ],
                     ),
