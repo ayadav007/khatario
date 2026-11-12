@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
-import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
-import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
+import { isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { reservedStoreUrlChange } from '@/lib/store/resolve-store';
 import { sanitizeStoreHours } from '@/lib/store/store-hours';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { requireTenantPermission } from '@/lib/security/require-tenant-permission';
+import { getConnection, saveConnection, setWebhookToken } from '@/lib/integrations/service';
 
 export const dynamic = 'force-dynamic';
+
+const SAVE_FAIL_STATUS = { INVALID: 400, REJECTED: 400, UNREACHABLE: 502, TOKEN_TAKEN: 409, NOT_CONNECTED: 400 } as const;
 
 const SETTINGS_COLS = `
            store_subdomain, store_enabled,
@@ -23,9 +25,6 @@ const SETTINGS_COLS = `
            COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
            store_theme, store_about_md, store_contact_md,
            store_privacy_md, store_refund_md, store_terms_md,
-           store_shiprocket_email,
-           (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
-           (store_shiprocket_webhook_token_hash IS NOT NULL) AS shiprocket_webhook_configured,
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
            store_promo_sheet,
            COALESCE(store_cart_reminder_enabled, false) AS store_cart_reminder_enabled,
@@ -67,12 +66,13 @@ export async function GET(request: NextRequest) {
   const businessId = tenant.businessId;
 
   try {
-    const [row, logoRow] = await Promise.all([
+    const [row, logoRow, shiprocket] = await Promise.all([
       loadSettingsRow(businessId),
       queryOne<{ logo_url: string | null }>(
         `SELECT logo_url FROM businesses WHERE id = $1`,
         [businessId],
       ),
+      getConnection(businessId, 'shiprocket'),
     ]);
 
     let categories: Array<{ id: string; name: string }> = [];
@@ -122,10 +122,9 @@ export async function GET(request: NextRequest) {
       store_privacy_md: (row as { store_privacy_md?: string | null })?.store_privacy_md ?? null,
       store_refund_md: (row as { store_refund_md?: string | null })?.store_refund_md ?? null,
       store_terms_md: (row as { store_terms_md?: string | null })?.store_terms_md ?? null,
-      store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
-      shiprocket_configured: !!(row as { shiprocket_configured?: boolean })?.shiprocket_configured,
-      shiprocket_webhook_configured: !!(row as { shiprocket_webhook_configured?: boolean })
-        ?.shiprocket_webhook_configured,
+      store_shiprocket_email: shiprocket?.config.email ?? null,
+      shiprocket_configured: shiprocket?.connected ?? false,
+      shiprocket_webhook_configured: shiprocket?.webhookConfigured ?? false,
       store_hide_khatario_badge: !!(row as { store_hide_khatario_badge?: boolean })?.store_hide_khatario_badge,
       store_promo_sheet: sanitizeStorePromoSheet(
         (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
@@ -213,6 +212,46 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  // Shiprocket credentials live in the integrations connection. A rejected login stops the whole PATCH,
+  // before any other field is saved. An empty email or password means "keep what is stored".
+  const emailSent = store_shiprocket_email !== undefined && store_shiprocket_email !== null && store_shiprocket_email !== '';
+  const passwordSent = store_shiprocket_password !== undefined && store_shiprocket_password !== null && store_shiprocket_password !== '';
+  const tokenSent = store_shiprocket_webhook_token !== undefined;
+  try {
+    if (emailSent || passwordSent) {
+      const values: Record<string, unknown> = {};
+      values.email = emailSent ? store_shiprocket_email : (await getConnection(businessId, 'shiprocket'))?.config.email;
+      if (passwordSent) values.password = store_shiprocket_password;
+      if (tokenSent) values.webhook_token = store_shiprocket_webhook_token;
+      const result = await saveConnection(businessId, 'shiprocket', values, tenant.userId);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error, code: result.code }, { status: SAVE_FAIL_STATUS[result.code] });
+      }
+    } else if (tokenSent) {
+      const result = await setWebhookToken(businessId, 'shiprocket', store_shiprocket_webhook_token);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error, code: result.code }, { status: SAVE_FAIL_STATUS[result.code] });
+      }
+    }
+
+    // Choosing Shiprocket at checkout needs a live connection; re-sending the value already stored is fine.
+    if (store_delivery_provider === 'shiprocket') {
+      const current = await queryOne<{ store_delivery_provider: string | null }>(
+        `SELECT store_delivery_provider FROM business_settings WHERE business_id = $1`,
+        [businessId],
+      );
+      if (current?.store_delivery_provider !== 'shiprocket') {
+        const connection = await getConnection(businessId, 'shiprocket');
+        if (!connection?.connected) {
+          return NextResponse.json({ error: 'Connect Shiprocket under Integrations first' }, { status: 400 });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('online-store PATCH shiprocket failed:', err instanceof Error ? err.message : 'unknown');
+    return NextResponse.json({ error: 'Could not save the Shiprocket connection' }, { status: 500 });
+  }
+
   const sets: string[] = [];
   const params: unknown[] = [];
   let idx = 0;
@@ -294,25 +333,6 @@ export async function PATCH(request: NextRequest) {
     sets.push(`store_terms_md = $${idx}`);
     params.push(store_terms_md ?? null);
   }
-  if (store_shiprocket_email !== undefined) {
-    idx++;
-    sets.push(`store_shiprocket_email = $${idx}`);
-    params.push(store_shiprocket_email || null);
-  }
-  if (store_shiprocket_password) {
-    idx++;
-    sets.push(`store_shiprocket_password_enc = $${idx}`);
-    params.push(encryptPaymentSecret(String(store_shiprocket_password)));
-  }
-  if (store_shiprocket_webhook_token !== undefined) {
-    idx++;
-    sets.push(`store_shiprocket_webhook_token_hash = $${idx}`);
-    params.push(
-      store_shiprocket_webhook_token === null
-        ? null
-        : hashStoreWebhookToken(store_shiprocket_webhook_token),
-    );
-  }
   if (store_hide_khatario_badge !== undefined) {
     idx++;
     sets.push(`store_hide_khatario_badge = $${idx}`);
@@ -335,6 +355,22 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (sets.length === 0) {
+    if (emailSent || passwordSent || tokenSent) {
+      // Only Shiprocket fields were sent; they were saved above, so there is nothing left for business_settings.
+      const current = await queryOne(
+        `SELECT store_subdomain, store_enabled, store_tagline,
+           store_hero_image_url, store_min_order_amount::text
+         FROM business_settings WHERE business_id = $1`,
+        [businessId],
+      );
+      return NextResponse.json({
+        store_subdomain: (current as any)?.store_subdomain ?? null,
+        store_enabled: (current as any)?.store_enabled ?? false,
+        store_tagline: (current as any)?.store_tagline ?? null,
+        store_hero_image_url: (current as any)?.store_hero_image_url ?? null,
+        store_min_order_amount: parseFloat((current as any)?.store_min_order_amount ?? '0') || 0,
+      });
+    }
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
   }
 
@@ -342,22 +378,13 @@ export async function PATCH(request: NextRequest) {
   idx++;
   params.push(businessId);
 
-  let updated;
-  try {
-    updated = await queryOne(
-      `INSERT INTO business_settings (business_id) VALUES ($${idx})
-       ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
-       RETURNING store_subdomain, store_enabled, store_tagline,
-         store_hero_image_url, store_min_order_amount::text`,
-      params,
-    );
-  } catch (error: unknown) {
-    const pg = error as { code?: string; constraint?: string };
-    if (pg.code === '23505' && pg.constraint === 'uq_business_settings_shiprocket_webhook_token') {
-      return NextResponse.json({ error: 'Generate a new Shiprocket webhook token' }, { status: 409 });
-    }
-    throw error;
-  }
+  const updated = await queryOne(
+    `INSERT INTO business_settings (business_id) VALUES ($${idx})
+     ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
+     RETURNING store_subdomain, store_enabled, store_tagline,
+       store_hero_image_url, store_min_order_amount::text`,
+    params,
+  );
 
   noteShopChanged(businessId, 'store settings saved');
   return NextResponse.json({
