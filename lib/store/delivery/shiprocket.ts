@@ -73,6 +73,35 @@ async function login(creds: ShiprocketCreds): Promise<string> {
   return data.token;
 }
 
+/**
+ * Checks a login without touching the token cache, so a connect or change of password always
+ * reaches Shiprocket. 4xx or a 2xx without a token means the login was refused; anything else
+ * (5xx, network failure, timeout) means Shiprocket could not be reached.
+ */
+export async function verifyShiprocketLogin(
+  creds: ShiprocketCreds,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ ok: true } | { ok: false; reason: 'rejected' | 'unreachable' }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10000);
+  try {
+    const res = await fetch(`${BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: creds.email, password: creds.password }),
+      signal: controller.signal,
+    });
+    if (res.status >= 500) return { ok: false, reason: 'unreachable' };
+    const data = (await res.json().catch(() => ({}))) as { token?: string };
+    if (res.ok && data.token) return { ok: true };
+    return { ok: false, reason: 'rejected' };
+  } catch {
+    return { ok: false, reason: 'unreachable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 type Json = Record<string, unknown>;
 
 /** Shiprocket reports problems as `message`, or as `errors: { field: [text] }`. */
