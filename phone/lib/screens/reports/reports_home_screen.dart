@@ -129,6 +129,7 @@ class _ReportsHomeScreenState extends State<ReportsHomeScreen> {
                         if (i > 0) const Divider(height: 1, color: AppColors.hairline),
                         KListRow(
                           title: r.label,
+                          opensWebsite: rowOpensWebsite(widget.session, r.href),
                           leading: Icon(LucideIcons.chartColumn, size: 18, color: r.locked ? AppColors.ink3 : AppColors.brand),
                           trailing: r.locked
                               ? const KPill(label: 'Upgrade', tone: KTone.due, icon: LucideIcons.lock)

@@ -10,6 +10,7 @@ import '../../ui/form_kit.dart';
 import '../../ui/kit.dart';
 import '../../ui/toast.dart';
 import '../docs/doc_logic.dart';
+import '../pages/page_catalog.dart';
 import '../pages/website_page_screen.dart';
 import '../sales/doc_action_sheets.dart';
 import 'bank_recon_logic.dart';
@@ -343,10 +344,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
               icon: LucideIcons.fileSpreadsheet,
               title: 'No statements for this account',
               body: 'Import a bank statement first, then match its lines here.',
-              action: KButton.secondary(
-                label: 'Import a statement on the website',
-                expand: false,
-                onPressed: () => openWebsiteInApp(context, widget.session, bankImportHref, 'Bank import'),
+              action: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KButton.secondary(
+                    label: 'Import a statement on the website',
+                    expand: false,
+                    onPressed: () => openWebsiteInApp(context, widget.session, bankImportHref, 'Bank import'),
+                  ),
+                  if (opensWebsiteByDesign(bankImportHref)) ...[const SizedBox(height: AppSpace.sm), const KWebsiteHint()],
+                ],
               ),
             ),
           ] else if (_statements.isNotEmpty) ...[

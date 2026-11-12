@@ -217,8 +217,11 @@ class SettingRow extends StatelessWidget {
     this.onTap,
     this.todo = false,
     this.tag,
+    this.opensWebsite = false,
   });
 
+  /// Adds the [KWebsiteHint] under the help line.
+  final bool opensWebsite;
   final String label;
   final String? help;
   final Widget? trailing;
@@ -254,6 +257,7 @@ class SettingRow extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(help!, style: AppText.caption),
                     ],
+                    if (opensWebsite) ...[const SizedBox(height: 2), const KWebsiteHint()],
                   ],
                 ),
               ),
@@ -336,8 +340,10 @@ class ChoiceSetting<T> extends StatelessWidget {
 
 /// A link to a deeper screen: label, its current value underneath, chevron.
 class NavSetting extends StatelessWidget {
-  const NavSetting({super.key, required this.label, this.value, required this.onTap, this.web = false, this.tag});
+  const NavSetting({super.key, required this.label, this.value, required this.onTap, this.web = false, this.tag, this.opensWebsite = false});
 
+  /// The row's page really opens the website (see `rowOpensWebsite`): adds the globe hint.
+  final bool opensWebsite;
   final String label;
   final String? value;
   final VoidCallback onTap;
@@ -352,6 +358,7 @@ class NavSetting extends StatelessWidget {
       label: label,
       help: value,
       tag: tag,
+      opensWebsite: opensWebsite,
       onTap: onTap,
       trailing: Icon(web ? LucideIcons.externalLink : LucideIcons.chevronRight, size: 18, color: AppColors.ink3),
     );

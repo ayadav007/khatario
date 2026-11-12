@@ -7,6 +7,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../chats/saved_replies_screen.dart';
+import '../pages/native_routes.dart';
 import '../parties/party_logic.dart' show partyDay;
 import 'appearance_screen.dart';
 import 'plan_billing_screen.dart';
@@ -470,7 +471,7 @@ class HelpSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    NavSetting row(String label, String href) => NavSetting(label: label, onTap: () => openPhoneSetting(context, session, href));
+    NavSetting row(String label, String href) => NavSetting(label: label, opensWebsite: rowOpensWebsite(session, href), onTap: () => openPhoneSetting(context, session, href));
     return SettingsPage(
       title: 'Help',
       blurb: 'Guides, tours, and tools for when something is not working.',

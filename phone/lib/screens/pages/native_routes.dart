@@ -404,6 +404,8 @@ bool openKnownScreen(BuildContext context, AppSession session, String href, Stri
     navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
     return true;
   }
+  // Kept on the website by design: never fall back to the automatic list for these.
+  if (opensWebsiteByDesign(href)) return false;
   final page = pageForHref(href)?.withTitle(label);
   if (page != null) {
     navigator.push(MaterialPageRoute<void>(builder: (_) => RecordPage(session: session, page: page)));
@@ -427,3 +429,8 @@ RouteTier routeTier(AppSession session, String href) {
   if (isWebsiteOnlyHref(href) || pageForHref(href) == null) return RouteTier.website;
   return RouteTier.generic;
 }
+
+/// Whether a row's tap really opens the website: the link is kept there by design and no phone
+/// screen (native or settings) answers it. Rows show `KWebsiteHint` only then.
+bool rowOpensWebsite(AppSession session, String href) =>
+    opensWebsiteByDesign(href) && nativeScreenFor(session, href) == null;
