@@ -75,9 +75,12 @@ async function login(creds: ShiprocketCreds): Promise<string> {
 
 /**
  * Checks a login without touching the token cache, so a connect or change of password always
- * reaches Shiprocket. 4xx or a 2xx without a token means the login was refused; anything else
- * (5xx, network failure, timeout) means Shiprocket could not be reached.
+ * reaches Shiprocket. Only 400, 401, 403, 422, or a 2xx whose JSON body has no token, means the
+ * login was refused. Anything else (429 and other 4xx, 5xx, a body that is not JSON or fails to
+ * arrive, a network failure, a timeout) means Shiprocket could not be reached.
  */
+const LOGIN_REJECTED_STATUSES = new Set([400, 401, 403, 422]);
+
 export async function verifyShiprocketLogin(
   creds: ShiprocketCreds,
   opts: { timeoutMs?: number } = {},
@@ -91,9 +94,16 @@ export async function verifyShiprocketLogin(
       body: JSON.stringify({ email: creds.email, password: creds.password }),
       signal: controller.signal,
     });
-    if (res.status >= 500) return { ok: false, reason: 'unreachable' };
-    const data = (await res.json().catch(() => ({}))) as { token?: string };
-    if (res.ok && data.token) return { ok: true };
+    if (LOGIN_REJECTED_STATUSES.has(res.status)) return { ok: false, reason: 'rejected' };
+    if (res.status < 200 || res.status >= 300) return { ok: false, reason: 'unreachable' };
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      return { ok: false, reason: 'unreachable' };
+    }
+    const token = data && typeof data === 'object' ? (data as { token?: unknown }).token : undefined;
+    if (typeof token === 'string' && token !== '') return { ok: true };
     return { ok: false, reason: 'rejected' };
   } catch {
     return { ok: false, reason: 'unreachable' };

@@ -284,7 +284,7 @@ export const INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
 
           q: 'What happens to parcels already booked?',
 
-          a: 'They stay booked with Shiprocket and the courier. Khatario simply stops getting tracking updates and cannot book new parcels until you connect again.',
+          a: 'You can disconnect once every parcel is delivered or returned. Until then, parcels already with Shiprocket keep getting tracking updates in Khatario.',
 
         },
 

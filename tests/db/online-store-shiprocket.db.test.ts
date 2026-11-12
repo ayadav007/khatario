@@ -34,6 +34,7 @@ jest.mock('@/lib/security/require-tenant-permission', () => ({
 
 import { getPool, closePool } from '@/lib/db';
 import { GET, PATCH } from '@/app/api/settings/online-store/route';
+import * as service from '@/lib/integrations/service';
 import { getConnection, saveConnection, loadSecrets } from '@/lib/integrations/service';
 
 const ACCEPT = { ok: true };
@@ -147,6 +148,21 @@ d('online-store settings: Shiprocket via integrations (real DB)', () => {
     expect(mockVerify).not.toHaveBeenCalled();
   });
 
+  test('a tagline-only PATCH does not read the integrations connection and still saves', async () => {
+    const spy = jest.spyOn(service, 'getConnection');
+    try {
+      const res = await PATCH(call(biz.plain, 'PATCH', { store_tagline: 'no connection read' }));
+      expect(res.status).toBe(200);
+      expect(spy).not.toHaveBeenCalled();
+      expect((await settings(biz.plain)).store_tagline).toBe('no connection read');
+      // Control: the spy does see the route's read when a Shiprocket field is sent.
+      await PATCH(call(biz.plain, 'PATCH', { store_shiprocket_email: 'new@shop.test' }));
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('R2: a blank password keeps the stored one', async () => {
     await saveConnection(biz.blank, 'shiprocket', { email: 'keep@shop.test', password: 'secret-keep' }, USER);
     const res = await PATCH(
@@ -175,7 +191,9 @@ d('online-store settings: Shiprocket via integrations (real DB)', () => {
   test('choosing shiprocket as the checkout provider without a connection is 400', async () => {
     const res = await PATCH(call(biz.provider, 'PATCH', { store_delivery_provider: 'shiprocket' }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe('Connect Shiprocket under Integrations first');
+    expect((await res.json()).error).toBe(
+      'Add your Shiprocket API user first: Settings → Integrations → Shiprocket on the website, or Online store → Shiprocket in the app.',
+    );
     expect((await settings(biz.provider)).store_delivery_provider ?? 'self').not.toBe('shiprocket');
   });
 
@@ -208,6 +226,16 @@ d('online-store settings: Shiprocket via integrations (real DB)', () => {
     }
     expect(mockVerify).not.toHaveBeenCalled();
     expect((await settings(biz.same)).store_tagline).toBe('t same@shop.TEST');
+    expect((await loadSecrets(biz.same, 'shiprocket'))?.secrets.password).toBe('pw-same');
+  });
+
+  test('Shiprocket fields that change nothing, and no other field: 200 with the current settings', async () => {
+    mockVerify.mockClear();
+    await pool.query(`UPDATE business_settings SET store_tagline = 'kept' WHERE business_id = $1`, [biz.same]);
+    const res = await PATCH(call(biz.same, 'PATCH', { store_shiprocket_email: ' SAME@shop.test ', store_shiprocket_password: '' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ store_tagline: 'kept' });
+    expect(mockVerify).not.toHaveBeenCalled();
     expect((await loadSecrets(biz.same, 'shiprocket'))?.secrets.password).toBe('pw-same');
   });
 

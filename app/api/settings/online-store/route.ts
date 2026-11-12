@@ -15,6 +15,10 @@ export const dynamic = 'force-dynamic';
 
 const SAVE_FAIL_STATUS = { INVALID: 400, REJECTED: 400, UNREACHABLE: 502, TOKEN_TAKEN: 409, NOT_CONNECTED: 400 } as const;
 
+/** Shown on the web page and in the phone app, which has no Integrations screen. */
+const SHIPROCKET_NOT_CONNECTED_ERROR =
+  'Add your Shiprocket API user first: Settings → Integrations → Shiprocket on the website, or Online store → Shiprocket in the app.';
+
 const SETTINGS_COLS = `
            store_subdomain, store_enabled,
            store_tagline, store_hero_image_url,
@@ -215,11 +219,23 @@ export async function PATCH(request: NextRequest) {
   // Shiprocket credentials live in the integrations connection. A rejected login stops the whole PATCH,
   // before any other field is saved. The settings forms resend the stored email on every save, so the
   // login is checked only for a new password or a changed email; an unchanged email is ignored.
+  // The connection is read only when the body carries a Shiprocket field or picks Shiprocket at checkout.
   const passwordSent = typeof store_shiprocket_password === 'string' && store_shiprocket_password !== '';
   const tokenSent = store_shiprocket_webhook_token !== undefined;
+  const shiprocketFieldSent =
+    store_shiprocket_email !== undefined || store_shiprocket_password !== undefined || tokenSent;
+  const needsConnection = shiprocketFieldSent || store_delivery_provider === 'shiprocket';
   let shiprocketTouched = false;
-  try {
-    let connection = await getConnection(businessId, 'shiprocket');
+  let connection: Awaited<ReturnType<typeof getConnection>> = null;
+  if (needsConnection) {
+    try {
+      connection = await getConnection(businessId, 'shiprocket');
+    } catch (err) {
+      console.error('online-store PATCH shiprocket read failed:', err instanceof Error ? err.message : 'unknown');
+      return NextResponse.json({ error: 'Could not check the Shiprocket connection' }, { status: 500 });
+    }
+  }
+  if (needsConnection) try {
     const sentEmail = typeof store_shiprocket_email === 'string' ? store_shiprocket_email.trim() : '';
     const storedEmail = (connection?.config.email ?? '').trim();
     const emailNonString = store_shiprocket_email !== undefined && store_shiprocket_email !== null && typeof store_shiprocket_email !== 'string';
@@ -250,13 +266,16 @@ export async function PATCH(request: NextRequest) {
         [businessId],
       );
       if (current?.store_delivery_provider !== 'shiprocket' && !connection?.connected) {
-        return NextResponse.json({ error: 'Connect Shiprocket under Integrations first' }, { status: 400 });
+        return NextResponse.json({ error: SHIPROCKET_NOT_CONNECTED_ERROR }, { status: 400 });
       }
     }
   } catch (err) {
     console.error('online-store PATCH shiprocket failed:', err instanceof Error ? err.message : 'unknown');
     return NextResponse.json({ error: 'Could not save the Shiprocket connection' }, { status: 500 });
   }
+
+  // Shiprocket fields that needed no change (same email, no password, no token) and nothing else: answer like a save.
+  const shiprocketOnlyNoop = shiprocketFieldSent && !shiprocketTouched;
 
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -361,8 +380,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (sets.length === 0) {
-    if (shiprocketTouched) {
-      // Only Shiprocket fields were sent; they were saved above, so there is nothing left for business_settings.
+    if (shiprocketTouched || shiprocketOnlyNoop) {
+      // Only Shiprocket fields were sent; they were saved above (or needed no change), so there is nothing left for business_settings.
       const current = await queryOne(
         `SELECT store_subdomain, store_enabled, store_tagline,
            store_hero_image_url, store_min_order_amount::text

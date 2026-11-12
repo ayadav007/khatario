@@ -362,6 +362,18 @@ When two Khatario businesses message each other (Supplier Hub), WhatsApp gives t
 
    After it, both businesses keep their own copy. Do not add this migration in the same deploy as 451.
 
+### Migration 476 (courier plugins, Shiprocket connection)
+
+`476_business_integrations.sql` creates `business_integrations` and copies each business's Shiprocket login (`store_shiprocket_email`, `store_shiprocket_password_enc`, `store_shiprocket_webhook_token_hash` on `business_settings`) into one `shiprocket` row. It is additive and idempotent, and `scripts/deploy-vps.sh` runs it automatically through `db:migrate:pending`. The old columns are kept.
+
+**Deploy order.** Migrations run before the build (see Migration 447 above), so for the length of the build the old code runs on the migrated database and still saves Shiprocket logins to the old columns only. A merchant who connects Shiprocket, changes its password or changes the webhook token in that window would be missed, and re-running the migration's copy INSERT (`ON CONFLICT DO NOTHING`) does not pick up changes to a row it already copied. After `pm2 reload`, run the sync file once against that environment's database:
+
+```bash
+node scripts/run-migration.js database/scripts/476-post-deploy-shiprocket-sync.sql
+```
+
+It repeats the copy INSERT, then refreshes only rows that are still exactly the copy (`updated_at = created_at` and `last_verified_at IS NULL`, so never saved by the new code) from the old columns where they differ. It is safe to run twice; the second run changes nothing. Never run it against production until `scripts/setup-khatario-production.sh` has been run.
+
 ### Platform admin PWA and push (staging and production)
 
 The merchant app and the operator console are different installs.

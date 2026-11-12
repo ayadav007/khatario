@@ -55,6 +55,43 @@ describe('verifyShiprocketLogin', () => {
     );
     expect(await verifyShiprocketLogin(creds, { timeoutMs: 10 })).toEqual({ ok: false, reason: 'unreachable' });
   });
+
+  test('400 and 422: rejected', async () => {
+    fetchMock.mockResolvedValueOnce(reply(400, {}));
+    expect(await verifyShiprocketLogin(creds)).toEqual({ ok: false, reason: 'rejected' });
+    fetchMock.mockResolvedValueOnce(reply(422, {}));
+    expect(await verifyShiprocketLogin(creds)).toEqual({ ok: false, reason: 'rejected' });
+  });
+
+  test('429 throttling and other 4xx: unreachable, not a wrong password', async () => {
+    fetchMock.mockResolvedValueOnce(reply(429, { message: 'Too many requests' }));
+    expect(await verifyShiprocketLogin(creds)).toEqual({ ok: false, reason: 'unreachable' });
+    fetchMock.mockResolvedValueOnce(reply(404, {}));
+    expect(await verifyShiprocketLogin(creds)).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  test('200 with a body that is not JSON: unreachable', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON');
+      },
+    } as unknown as Response);
+    expect(await verifyShiprocketLogin(creds)).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  test('abort while reading the body: unreachable', async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_res, rej) => {
+          init.signal?.addEventListener('abort', () => rej(new Error('aborted')));
+        }),
+    }));
+    expect(await verifyShiprocketLogin(creds, { timeoutMs: 10 })).toEqual({ ok: false, reason: 'unreachable' });
+  });
 });
 
 describe('provider registry', () => {

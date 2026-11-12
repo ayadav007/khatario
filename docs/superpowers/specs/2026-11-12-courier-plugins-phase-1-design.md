@@ -99,7 +99,7 @@ ON CONFLICT (business_id, provider) DO NOTHING;
 ```
 
 - The three old columns are **not dropped** in Phase 1. New code never reads them. Disconnect sets them to NULL, so running the copy again can never bring back a connection the merchant removed.
-- The copy is safe to run twice. If a merchant saves credentials through the old code between the migration and the deploy, running the `INSERT` once more after the deploy picks that up.
+- The copy is safe to run twice. If a merchant saves credentials through the old code between the migration and the deploy, run `database/scripts/476-post-deploy-shiprocket-sync.sql` once after the deploy (`pm2 reload`): it repeats the `INSERT` for new rows and refreshes rows that are still exactly the copy (never saved by the new code) from the old columns, which re-running the `INSERT` alone would not do (ruling R6, `docs/SERVER_INFRASTRUCTURE.md` Migration 476).
 - Dropping the old columns is a separate later migration, once Phase 1 has run in production.
 
 ## 6. The catalogue

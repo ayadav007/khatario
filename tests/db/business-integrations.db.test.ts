@@ -34,6 +34,9 @@ const COPY_SQL = (() => {
   return m[0];
 })();
 
+/** The post-deploy sync file (ruling R6), run exactly as shipped. */
+const SYNC_SQL = readFileSync(path.join(process.cwd(), 'database/scripts/476-post-deploy-shiprocket-sync.sql'), 'utf8');
+
 d('business_integrations (real DB)', () => {
   jest.setTimeout(60000);
 
@@ -42,7 +45,9 @@ d('business_integrations (real DB)', () => {
   const B = randomUUID();
   const C = randomUUID();
   const D = randomUUID();
-  const ALL = [A, B, C, D];
+  const E = randomUUID();
+  const F = randomUUID();
+  const ALL = [A, B, C, D, E, F];
   const tag = A.slice(0, 8);
   const HASH_A = hashStoreWebhookToken(`bint${tag}${'a'.repeat(24)}`);
 
@@ -55,6 +60,8 @@ d('business_integrations (real DB)', () => {
       [B, 'B'],
       [C, 'C'],
       [D, 'D'],
+      [E, 'E'],
+      [F, 'F'],
     ] as const) {
       await pool.query(
         `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type)
@@ -97,6 +104,59 @@ d('business_integrations (real DB)', () => {
   test('copy: a business with no Shiprocket columns gets no row', async () => {
     // B has a business_settings row with all three columns NULL
     expect((await pool.query(`SELECT 1 FROM business_integrations WHERE business_id = $1`, [B])).rowCount).toBe(0);
+  });
+
+  describe('post-deploy sync (database/scripts/476-post-deploy-shiprocket-sync.sql)', () => {
+    const setOld = (biz: string, email: string, enc: string, hash: string) =>
+      pool.query(
+        `UPDATE business_settings SET store_shiprocket_email = $2, store_shiprocket_password_enc = $3,
+           store_shiprocket_webhook_token_hash = $4 WHERE business_id = $1`,
+        [biz, email, enc, hash],
+      );
+    const rowOf = async (biz: string) =>
+      (
+        await pool.query(
+          `SELECT xmin::text AS xmin, config, secrets_enc, webhook_token_hash, updated_at, created_at, last_verified_at
+             FROM business_integrations WHERE business_id = $1 AND provider = 'shiprocket'`,
+          [biz],
+        )
+      ).rows[0];
+    const HASH_E1 = hashStoreWebhookToken(`syncE1${tag}${'e'.repeat(24)}`);
+    const HASH_E2 = hashStoreWebhookToken(`syncE2${tag}${'f'.repeat(24)}`);
+    const HASH_F = hashStoreWebhookToken(`syncF${tag}${'g'.repeat(24)}`);
+
+    test('a copied row picks up old-column changes made during the build; a second run changes nothing', async () => {
+      await setOld(E, 'e1@shop.test', 'CIPHER-E1', HASH_E1);
+      await pool.query(COPY_SQL);
+      const copied = await rowOf(E);
+      expect(copied).toMatchObject({ config: { email: 'e1@shop.test' }, secrets_enc: { password: 'CIPHER-E1' }, webhook_token_hash: HASH_E1 });
+
+      // The old code, still running during the build, saves a new password and token to the old columns only.
+      await setOld(E, 'e2@shop.test', 'CIPHER-E2', HASH_E2);
+      await pool.query(COPY_SQL); // what migration 476 alone would do: nothing
+      expect((await rowOf(E)).xmin).toBe(copied.xmin);
+
+      await pool.query(SYNC_SQL);
+      const synced = await rowOf(E);
+      expect(synced).toMatchObject({ config: { email: 'e2@shop.test' }, secrets_enc: { password: 'CIPHER-E2' }, webhook_token_hash: HASH_E2 });
+      expect(synced.xmin).not.toBe(copied.xmin);
+
+      await pool.query(SYNC_SQL);
+      expect(await rowOf(E)).toEqual(synced);
+    });
+
+    test('a row written by saveConnection is never touched', async () => {
+      const r = await saveConnection(F, 'shiprocket', { email: 'f-new@shop.test', password: 'pw-f' }, null, {
+        verify: async () => ({ ok: true as const }),
+      });
+      expect(r.ok).toBe(true);
+      await setOld(F, 'f-old@shop.test', 'CIPHER-F-OLD', HASH_F);
+      const before = await rowOf(F);
+      await pool.query(SYNC_SQL);
+      await pool.query(SYNC_SQL);
+      expect(await rowOf(F)).toEqual(before);
+      expect(await loadSecrets(F, 'shiprocket')).toEqual({ config: { email: 'f-new@shop.test' }, secrets: { password: 'pw-f' } });
+    });
   });
 
   describe('service', () => {
