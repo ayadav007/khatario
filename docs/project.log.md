@@ -1962,3 +1962,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The 16 failing DB suites (invoice creation 403 from plan gating) are pre-existing: three were re-run at the starting commit 7f3b8d86 and failed the same 24 tests.
 - **Shipped:** a22ce622, bcf0d255 on main after the ten task commits (9f3879b3..8bb64f22). Not pushed.
 - **Open:** owner pushes and deploys to staging (migration 476 runs in deploy, then the sync file), then the 17-step checklist `docs/superpowers/plans/2026-11-12-courier-plugins-phase-1-staging-checklist.md`. Phone follow-up: the Shiprocket login screen is reachable only through Delivery zones until Shiprocket is chosen (needs a `phone/` change).
+
+## 2026-11-13: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; `/guides` has 62 impressions, below the 100 trigger). Recorded that the 11-12 production deploy put the brand title and `/about` live, closing that owner action.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-13.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job has saved no draft in 6 runs since 11-06; no backlinks yet; `/solution/inventory` not recrawled since 10-26.
