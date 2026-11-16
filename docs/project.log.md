@@ -1980,3 +1980,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; `/guides` has 62 impressions, below the 100 trigger). Recorded the site's first click (11-13, on the old `www.khatario.com/terms` URL); no fix needed since www 301s to the apex and the apex canonical is set.
 - **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-15.{json,md}` and this entry. Nothing pushed or deployed.
 - **Open:** the writer job has saved no draft in 7 runs since 11-06 (next run Mon 11-16); no backlinks yet; `/solution/inventory` not recrawled since 10-26.
+
+## 2026-11-16: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; `/guides` has 62 impressions, below the 100 trigger). Impressions 70 → 71, the new one again on the old `www.khatario.com/terms` URL at position 1.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-16.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job had saved no draft by this run on writer day (7 runs since 11-06 without one); no backlinks yet; `/solution/inventory` not recrawled since 10-26.
