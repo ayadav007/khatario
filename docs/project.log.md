@@ -2004,3 +2004,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; `/guides` has 62 impressions, below the 100 trigger). Totals unchanged at 1 click, 71 impressions; no new crawls; health all green.
 - **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-19.{json,md}` and this entry. Nothing pushed or deployed.
 - **Open:** the writer job has saved no draft in 9 runs since 11-06 (the Wed 11-18 run included); no backlinks yet.
+
+## 2026-11-20: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 1 click, 72 impressions (up 1, on `/themes` at position 2); no new crawls; health all green.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-20.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job has saved no draft in 9 runs since 11-06 (today's Fri run not seen yet); no backlinks yet.
