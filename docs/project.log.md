@@ -2022,3 +2022,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals unchanged at 2 clicks, 73 impressions; no new crawls; health all green.
 - **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-23.{json,md}` and this entry. Nothing pushed or deployed.
 - **Open:** the writer job has saved no draft in 10 runs since 11-06 (today's Mon run not seen yet); no backlinks yet.
+
+## 2026-11-24: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 2 clicks, 76 impressions (up 3 on 11-22, one of them on an indexable demo storefront subdomain); no new crawls; health all green.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-24.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job has saved no draft in 11 runs since 11-06; no backlinks yet; owner to decide whether demo storefronts should be `noindex`.
