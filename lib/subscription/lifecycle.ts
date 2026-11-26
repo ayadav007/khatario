@@ -9,6 +9,7 @@ import { query, queryOne, queryRows } from '@/lib/db';
 import {
   getBusinessSubscription,
   clearSubscriptionCache,
+  clearAddonCache,
   checkLimit,
   type SubscriptionPlan,
 } from '@/lib/subscription';
@@ -289,6 +290,7 @@ export interface ModuleExpiredSubscriptionCounts {
   scheduledDowngrades: number;
   graceStarted: number;
   graceExpired: number;
+  addonsExpired: number;
 }
 
 /**
@@ -317,6 +319,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     scheduledDowngrades: 0,
     graceStarted: 0,
     graceExpired: 0,
+    addonsExpired: 0,
   };
 
   const expiredTrials = await queryRows<{
@@ -489,6 +492,30 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
       'grace_expired',
     );
     if (changed) counts.graceExpired++;
+  }
+
+  // Paid add-ons (Khatario AI top-up) whose period ended.
+  const endedAddons = await queryRows<{ business_id: string; addon_type: string }>(
+    `SELECT business_id, addon_type
+     FROM whatsapp_addons
+     WHERE status = 'active'
+       AND end_date IS NOT NULL
+       AND end_date < CURRENT_DATE`,
+  );
+
+  for (const row of endedAddons) {
+    const expired = await query(
+      `UPDATE whatsapp_addons
+       SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+       WHERE business_id = $1 AND addon_type = $2
+         AND status = 'active'
+         AND end_date IS NOT NULL
+         AND end_date < CURRENT_DATE`,
+      [row.business_id, row.addon_type],
+    );
+    if ((expired.rowCount ?? 0) === 0) continue;
+    clearAddonCache(row.business_id);
+    counts.addonsExpired++;
   }
 
   return counts;

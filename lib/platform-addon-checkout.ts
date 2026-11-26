@@ -71,31 +71,22 @@ export async function activateWhatsAppAddon(
   const runOne = async <T extends Record<string, unknown>>(sql: string, values: unknown[]) =>
     ((await run(sql, values)).rows[0] as T | undefined) ?? null;
 
-  const existingAddon = await runOne<{ id: string; status: string }>(
-    `SELECT id, status FROM whatsapp_addons
-     WHERE business_id = $1 AND addon_type = $2`,
-    [businessId, addonType],
+  // One paid month per payment. A payment made while the add-on is still running extends it
+  // from its current end date; one made after it ended (or on a row with no end date) starts today.
+  await run(
+    `INSERT INTO whatsapp_addons (
+       business_id, addon_type, status, price_monthly, start_date, end_date
+     ) VALUES ($1, $2, 'active', $3, CURRENT_DATE, (CURRENT_DATE + INTERVAL '1 month')::date)
+     ON CONFLICT (business_id, addon_type) DO UPDATE
+     SET start_date = CASE WHEN whatsapp_addons.status = 'active'
+                           THEN whatsapp_addons.start_date ELSE CURRENT_DATE END,
+         status = 'active',
+         price_monthly = EXCLUDED.price_monthly,
+         end_date = (GREATEST(COALESCE(whatsapp_addons.end_date, CURRENT_DATE), CURRENT_DATE)
+                     + INTERVAL '1 month')::date,
+         updated_at = CURRENT_TIMESTAMP`,
+    [businessId, addonType, price],
   );
-
-  if (existingAddon) {
-    await run(
-      `UPDATE whatsapp_addons
-       SET status = 'active',
-           start_date = CURRENT_DATE,
-           end_date = NULL,
-           price_monthly = $1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $2 AND addon_type = $3`,
-      [price, businessId, addonType],
-    );
-  } else {
-    await run(
-      `INSERT INTO whatsapp_addons (
-         business_id, addon_type, status, price_monthly, start_date, end_date
-       ) VALUES ($1, $2, 'active', $3, CURRENT_DATE, NULL)`,
-      [businessId, addonType, price],
-    );
-  }
 
   const addon = await runOne(
     `SELECT * FROM whatsapp_addons

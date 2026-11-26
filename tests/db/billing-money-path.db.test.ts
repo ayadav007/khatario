@@ -64,6 +64,7 @@ import {
   updateBillingTransactionStatus,
 } from '@/lib/platform-billing';
 import { completeAddonCheckoutPayment } from '@/lib/platform-addon-checkout';
+import { khatarioMonthlyQuota } from '@/lib/ai-agent/billing';
 import { sendPlatformAdminPush } from '@/lib/platform-push';
 import {
   findStuckWebhookEvents,
@@ -149,6 +150,37 @@ run('billing money path (kh_phase2_test)', () => {
   async function daysFromToday(n: number): Promise<string> {
     const r = await queryOne<{ d: string }>(`SELECT (CURRENT_DATE + $1::int)::text AS d`, [n]);
     return r!.d;
+  }
+
+  /** The database's CURRENT_DATE + n months, as text. */
+  async function monthsFromToday(n: number): Promise<string> {
+    const r = await queryOne<{ d: string }>(`SELECT (CURRENT_DATE + make_interval(months => $1::int))::date::text AS d`, [n]);
+    return r!.d;
+  }
+
+  /** The Khatario AI add-on row with dates as text, or null. */
+  async function addon(businessId: string) {
+    return queryOne<{ status: string; start_date: string; end_date: string | null; price_monthly: string }>(
+      `SELECT status, start_date::text, end_date::text, price_monthly::text FROM whatsapp_addons
+       WHERE business_id = $1 AND addon_type = 'khatario_ai'`,
+      [businessId],
+    );
+  }
+
+  /** One real Khatario AI payment through completeAddonCheckoutPayment. */
+  async function payAddon(businessId: string) {
+    const billingTransactionId = await pendingCheckout(businessId, 'connect', 299);
+    await query(
+      `UPDATE billing_transactions SET gateway_response = '{"checkout_type":"whatsapp_addon","addon_type":"khatario_ai","provider":"razorpay"}'::jsonb WHERE id = $1`,
+      [billingTransactionId],
+    );
+    return completeAddonCheckoutPayment({
+      businessId,
+      addonType: 'khatario_ai',
+      billingTransactionId,
+      providerPaymentId: 'pay_ai_' + randomUUID().replace(/-/g, '').slice(0, 16),
+      amount: 299,
+    });
   }
 
   /** The module row with date columns as text, or null. */
@@ -512,6 +544,69 @@ run('billing money path (kh_phase2_test)', () => {
       await query(readFileSync('database/migrations/477_free_plan_no_end_date_addon_period.sql', 'utf8'));
       expect((await row(biz, 'billing'))!.end_date).toBeNull();
       expect((await getOperationalModuleSubscriptions(biz, true)).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('SUB-04: the AI add-on has a paid period', () => {
+    it('first payment gives one month', async () => {
+      await payAddon(biz);
+      const a = (await addon(biz))!;
+      expect(a.status).toBe('active');
+      expect(a.end_date).toBe(await monthsFromToday(1));
+      expect(a.start_date).toBe(await daysFromToday(0));
+    });
+
+    it('second payment extends from the current end date', async () => {
+      await payAddon(biz);
+      await payAddon(biz);
+      const a = (await addon(biz))!;
+      expect(a.end_date).toBe(await monthsFromToday(2));
+      expect(a.start_date).toBe(await daysFromToday(0));
+    });
+
+    it('job expires an ended add-on and the quota drops', async () => {
+      await payAddon(biz);
+      expect(await khatarioMonthlyQuota(biz)).toBe(3000);
+      await query(`UPDATE whatsapp_addons SET end_date = CURRENT_DATE - 1 WHERE business_id = $1`, [biz]);
+      const counts = await processExpiredModuleSubscriptions();
+      expect(counts.addonsExpired).toBeGreaterThanOrEqual(1);
+      expect((await addon(biz))!.status).toBe('expired');
+      expect(await khatarioMonthlyQuota(biz)).toBe(0);
+    });
+
+    it('an add-on still in its period is not expired by the job', async () => {
+      await payAddon(biz);
+      await processExpiredModuleSubscriptions();
+      expect((await addon(biz))!.status).toBe('active');
+    });
+
+    it('paying again after expiry restarts the period from today', async () => {
+      await payAddon(biz);
+      await query(`UPDATE whatsapp_addons SET end_date = CURRENT_DATE - 10, start_date = CURRENT_DATE - 40 WHERE business_id = $1`, [biz]);
+      await processExpiredModuleSubscriptions();
+      expect((await addon(biz))!.status).toBe('expired');
+      await payAddon(biz);
+      const a = (await addon(biz))!;
+      expect(a.status).toBe('active');
+      expect(a.start_date).toBe(await daysFromToday(0));
+      expect(a.end_date).toBe(await monthsFromToday(1));
+    });
+
+    it('migration 477 gives an open-ended active add-on 30 days and leaves dated ones alone', async () => {
+      const other = await newBusiness('addon-dated');
+      await query(
+        `INSERT INTO whatsapp_addons (business_id, addon_type, status, price_monthly, start_date, end_date)
+         VALUES ($1, 'khatario_ai', 'active', 299, CURRENT_DATE, NULL)`,
+        [biz],
+      );
+      await query(
+        `INSERT INTO whatsapp_addons (business_id, addon_type, status, price_monthly, start_date, end_date)
+         VALUES ($1, 'khatario_ai', 'active', 299, CURRENT_DATE, CURRENT_DATE + 5)`,
+        [other],
+      );
+      await query(readFileSync('database/migrations/477_free_plan_no_end_date_addon_period.sql', 'utf8'));
+      expect((await addon(biz))!.end_date).toBe(await daysFromToday(30));
+      expect((await addon(other))!.end_date).toBe(await daysFromToday(5));
     });
   });
 

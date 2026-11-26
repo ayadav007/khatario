@@ -69,23 +69,6 @@ export async function POST(
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    const existingAddon = await db.queryOne<{ id: string; status: string }>(
-      `SELECT id, status FROM whatsapp_addons
-       WHERE business_id = $1 AND addon_type = $2`,
-      [business_id, addonType],
-    );
-
-    if (existingAddon?.status === 'active') {
-      return NextResponse.json(
-        {
-          error: 'This add-on is already active',
-          code: 'ALREADY_ACTIVE',
-          addon: existingAddon,
-        },
-        { status: 400 },
-      );
-    }
-
     if (!(await isPlatformPaymentConfigured())) {
       return NextResponse.json(
         {
