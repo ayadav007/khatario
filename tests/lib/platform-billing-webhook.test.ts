@@ -39,6 +39,7 @@ jest.mock('@/lib/subscription/module-subscriptions', () => ({
 }));
 
 import { processPlatformRazorpayWebhook } from '@/lib/platform-billing';
+import { BillingTransactionStateError } from '@/lib/platform-billing-transaction-state';
 
 const BIZ = '00000000-0000-4000-8000-000000000001';
 const TX = '00000000-0000-4000-8000-000000000002';
@@ -289,6 +290,60 @@ describe('processPlatformRazorpayWebhook', () => {
       await expect(processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' })).rejects.toThrow('boom');
       const errored = query.mock.calls.find(([sql]) => String(sql).includes("status = 'error'"));
       expect(errored?.[1]).toEqual([expect.any(String), 'boom']);
+    });
+  });
+  describe('fix round 1', () => {
+    function cancelPayload() {
+      return {
+        verified: true as const,
+        eventType: 'payment_link.cancelled',
+        status: 'failed' as const,
+        amount: 499,
+        providerPaymentId: 'plink_x',
+        rawPayload: {
+          payload: { payment_link: { entity: { id: 'plink_x', notes: { business_id: BIZ, billing_transaction_id: TX } } } },
+        },
+      };
+    }
+
+    it('a cancel whose guarded update changes no row marks the event processed and sends nothing', async () => {
+      mockVerifyWebhook.mockResolvedValueOnce(cancelPayload());
+      queryOne.mockImplementation(async (sql: string) => {
+        if (sql.includes('INSERT INTO platform_billing_webhook_events')) return { id: 'evt' };
+        if (sql.includes('SELECT status FROM billing_transactions')) return { status: 'pending' };
+        return null;
+      });
+      query.mockImplementation(async (sql: string) =>
+        sql.includes('UPDATE billing_transactions') ? { rows: [] } : undefined,
+      );
+
+      expect(await processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' })).toEqual({ ok: true });
+      const guarded = query.mock.calls.find(([sql]) => String(sql).includes('UPDATE billing_transactions'));
+      expect(String(guarded?.[0])).toMatch(/business_id = \$2 AND status = 'pending'/);
+      const ev = query.mock.calls.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'));
+      expect(ev?.[1][1]).toBe('processed');
+      // no failure email path: dispatchBillingEmails would read the transaction through queryOne
+      expect(queryOne.mock.calls.some(([sql]) => String(sql).includes('SELECT business_id, plan_id, amount'))).toBe(false);
+    });
+
+    it.each([
+      ['CHECKOUT_TRANSACTION_NOT_FOUND', new Error('CHECKOUT_TRANSACTION_NOT_FOUND')],
+      [
+        'a refunded row',
+        new BillingTransactionStateError('INVALID_STATUS_TRANSITION', 'Cannot transition billing transaction from refunded to completed', 'refunded', 'completed'),
+      ],
+    ])('a success that hits %s is ignored, not retried', async (_label, err) => {
+      mockVerifyWebhook.mockResolvedValueOnce(verifiedSuccessPayload());
+      queryOne.mockImplementation(async (sql: string) =>
+        sql.includes('INSERT INTO platform_billing_webhook_events') ? { id: 'evt' } : null,
+      );
+      query.mockResolvedValue(undefined);
+      completeSubscriptionCheckoutPayment.mockRejectedValueOnce(err);
+
+      const result = await processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' });
+      expect(result).toMatchObject({ ok: true, error: expect.any(String) });
+      const ev = query.mock.calls.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'));
+      expect(ev?.[1][1]).toBe('ignored');
     });
   });
 });

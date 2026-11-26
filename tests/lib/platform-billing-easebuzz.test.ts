@@ -26,8 +26,11 @@ jest.mock('@/lib/platform-addon-checkout', () => ({
 }));
 
 const queryOne = jest.fn();
+let guardedUpdateRows: unknown[] = [{ id: 'tx' }];
 const query = jest.fn(async (...args: unknown[]) => {
   updateStatusQueries.push(args);
+  // The guarded `UPDATE billing_transactions … AND status = 'pending' RETURNING id`.
+  if (String(args[0]).includes('UPDATE billing_transactions')) return { rows: guardedUpdateRows };
   return undefined;
 });
 
@@ -94,6 +97,7 @@ describe('processPlatformEasebuzzCallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     updateStatusQueries.length = 0;
+    guardedUpdateRows = [{ id: 'tx' }];
     completeSubscriptionCheckoutPayment.mockResolvedValue('activated');
     completeAddonCheckoutPayment.mockResolvedValue('activated');
   });
@@ -172,6 +176,17 @@ describe('processPlatformEasebuzzCallback', () => {
       'processed',
       'Checkout already failed; no status change',
     ]);
+  });
+
+  it('marks the event processed, not failed, when the guarded failure update changes no row', async () => {
+    mockDb(billingRow());
+    guardedUpdateRows = [];
+    const r = await processPlatformEasebuzzCallback(body({ status: 'failure' }));
+    expect(r).toMatchObject({ ok: true });
+    const guarded = updateStatusQueries.find(([sql]) => String(sql).includes('UPDATE billing_transactions'));
+    expect(String(guarded?.[0])).toContain("status = 'pending'");
+    const eventUpdate = updateStatusQueries.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'));
+    expect((eventUpdate?.[1] as unknown[])[1]).toBe('processed');
   });
 
   it('treats already_completed from the locked row as paid', async () => {

@@ -41,7 +41,7 @@ jest.mock('@/lib/platform-whatsapp-send', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { query, queryOne, closePool } from '@/lib/db';
+import { query, queryOne, closePool, getPool } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { POST as upgradePost } from '@/app/api/subscriptions/upgrade/route';
@@ -59,6 +59,7 @@ import {
   processPlatformEasebuzzCallback,
   processPlatformRazorpayWebhook,
   recordBillingTransaction,
+  updateBillingTransactionStatus,
 } from '@/lib/platform-billing';
 import { completeAddonCheckoutPayment } from '@/lib/platform-addon-checkout';
 import { POST as razorpayWebhookPost } from '@/app/api/webhooks/platform-billing/razorpay/route';
@@ -676,6 +677,109 @@ run('billing money path (kh_phase2_test)', () => {
       ).rejects.toThrow('CHECKOUT_TRANSACTION_NOT_FOUND');
       expect((await txRow(tx))!.status).toBe('pending');
       expect(await row(biz, 'connect')).toBeNull();
+    });
+  });
+  describe('Task 5 fix round 1: failure writes are guarded by the row status', () => {
+    /** Lock the row on a separate connection, set it completed (uncommitted), run fn, then commit. */
+    async function completeUnderneath<T>(txId: string, fn: () => Promise<T>): Promise<T> {
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SELECT id FROM billing_transactions WHERE id = $1 FOR UPDATE`, [txId]);
+        await client.query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [txId]);
+        const pending = fn();
+        pending.catch(() => undefined);
+        await new Promise((r) => setTimeout(r, 200));
+        await client.query('COMMIT');
+        return await pending;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    async function eventByPayment(payId: string) {
+      return queryOne<{ status: string; processing_notes: string | null }>(
+        `SELECT status, processing_notes FROM platform_billing_webhook_events WHERE payload::text LIKE $1 ORDER BY created_at DESC LIMIT 1`,
+        [`%${payId}%`],
+      );
+    }
+
+    it('a cancel that lands after a completed payment cannot reopen the checkout', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      const notes = notesFor(biz, tx, 'billing_growth');
+      const payId = 'pay_cr_' + sfx();
+      expect(await hook('payment.captured', payId, 'captured', notes)).toEqual({ ok: true });
+      expect(await hook('payment_link.cancelled', 'cr_' + sfx(), 'cancelled', notes)).toEqual({ ok: true });
+      expect((await txRow(tx))!.status).toBe('completed');
+      expect((await hook('payment_link.paid', payId, 'captured', notes, { withLink: true })).ok).toBe(true);
+      expect(await count(`subscription_events WHERE business_id = $1 AND event_type = 'upgraded'`, [biz])).toBe(1);
+    });
+
+    it('a cancel racing a completion does not overwrite completed or send a failure', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      const notes = notesFor(biz, tx, 'billing_growth');
+      const r = await completeUnderneath(tx, () => hook('payment_link.cancelled', 'crace_' + sfx(), 'cancelled', notes));
+      expect(r.ok).toBe(true);
+      expect((await txRow(tx))!.status).toBe('completed');
+      expect(await count(`subscription_events WHERE business_id = $1 AND event_type = 'payment_failed'`, [biz])).toBe(0);
+    });
+
+    it('Easebuzz: a failure racing a completion does not overwrite completed', async () => {
+      const { id, txnid } = await pendingEasebuzzCheckout(biz, 'billing_growth', 499);
+      const r = await completeUnderneath(id, () => processPlatformEasebuzzCallback(easebuzzBody(txnid, { status: 'failure' })));
+      expect(r.ok).toBe(true);
+      expect((await txRow(id))!.status).toBe('completed');
+      expect(await count(`subscription_events WHERE business_id = $1 AND event_type = 'payment_failed'`, [biz])).toBe(0);
+    });
+
+    it('updateBillingTransactionStatus refuses to write when the row changed underneath it', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await expect(completeUnderneath(tx, () => updateBillingTransactionStatus(tx, 'failed'))).rejects.toMatchObject({
+        name: 'BillingTransactionStateError',
+        code: 'INVALID_STATUS_TRANSITION',
+      });
+      expect((await txRow(tx))!.status).toBe('completed');
+      expect(await count(`subscription_events WHERE business_id = $1 AND event_type = 'payment_failed'`, [biz])).toBe(0);
+    });
+
+    it('a success event for a row owned by another business is ignored, not retried', async () => {
+      const other = await newBusiness('foreign-notes');
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      const payId = 'pay_fx_' + sfx();
+      const r = await hook('payment.captured', payId, 'captured', notesFor(other, tx, 'billing_growth'));
+      expect(r).toMatchObject({ ok: true, error: expect.any(String) });
+      expect((await eventByPayment(payId))!.status).toBe('ignored');
+      expect((await txRow(tx))!.status).toBe('pending');
+      expect(await row(other, 'billing')).toBeNull();
+    });
+
+    it('a success event for a refunded row is ignored, not retried', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'refunded' WHERE id = $1`, [tx]);
+      const payId = 'pay_rf_' + sfx();
+      const r = await hook('payment.captured', payId, 'captured', notesFor(biz, tx, 'billing_growth'));
+      expect(r).toMatchObject({ ok: true, error: expect.any(String) });
+      expect((await eventByPayment(payId))!.status).toBe('ignored');
+      expect((await txRow(tx))!.status).toBe('refunded');
+      expect(await row(biz, 'billing')).toBeNull();
+    });
+
+    it('an add-on success for a row owned by another business is ignored, not retried', async () => {
+      const other = await newBusiness('foreign-addon');
+      const { id: tx } = await recordBillingTransaction({
+        businessId: biz, planId: 'connect', moduleKey: 'connect', amount: 499,
+        billingCycle: 'monthly', paymentMethod: 'razorpay', status: 'pending', skipEmails: true,
+      });
+      const payId = 'pay_fa_' + sfx();
+      const r = await hook('payment.captured', payId, 'captured',
+        { business_id: other, billing_transaction_id: tx, checkout_type: 'whatsapp_addon', addon_type: 'whatsapp_bot' });
+      expect(r).toMatchObject({ ok: true, error: expect.any(String) });
+      expect((await eventByPayment(payId))!.status).toBe('ignored');
+      expect((await txRow(tx))!.status).toBe('pending');
+      expect(await row(other, 'connect')).toBeNull();
     });
   });
 });

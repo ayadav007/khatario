@@ -506,7 +506,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
     }
     const planId = tx.plan_id;
     const billingCycle = normalizeBillingCycle(tx.billing_cycle);
-    const moduleKey = await resolveModuleKeyForPlan(planId);
+    const moduleKey = await resolveModuleKeyForPlan(planId, client);
 
     await client.query(
       `UPDATE billing_transactions

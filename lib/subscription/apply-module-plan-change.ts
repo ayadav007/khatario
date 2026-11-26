@@ -42,15 +42,18 @@ export async function afterPlanChangeCommitted(
   result: ApplyModulePlanChangeResult,
   meta: PlanChangeCommittedMeta,
 ): Promise<void> {
-  await enableBusinessModule(result.business_id, result.module_key, 'upgrade');
+  try {
+    await enableBusinessModule(result.business_id, result.module_key, 'upgrade');
 
-  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
-  if (result.module_key === 'billing') {
-    await ensureComplimentaryHrForBilling(result.business_id);
+    // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
+    if (result.module_key === 'billing') {
+      await ensureComplimentaryHrForBilling(result.business_id);
+    }
+  } finally {
+    // The committed plan row must be visible even if a step above failed.
+    clearSubscriptionCache(result.business_id);
+    clearModuleSubscriptionCache(result.business_id);
   }
-
-  clearSubscriptionCache(result.business_id);
-  clearModuleSubscriptionCache(result.business_id);
 
   await logSubscriptionEvent(result.business_id, 'upgraded', {
     module_key: result.module_key,
@@ -81,7 +84,7 @@ export async function applyModuleSubscriptionPlanChange(
   },
   client?: PoolClient,
 ): Promise<ApplyModulePlanChangeResult> {
-  await assertPlanMatchesModule(params.planId, params.moduleKey);
+  await assertPlanMatchesModule(params.planId, params.moduleKey, client);
 
   const paymentMethod = params.paymentMethod ?? 'manual';
   const paymentReference = params.paymentReference?.trim() || null;

@@ -225,14 +225,24 @@ export async function updateBillingTransactionStatus(
 
   assertBillingTransactionTransition(current.status, status);
 
-  await query(
+  // Guarded by the status we checked: a row that changed underneath us is never overwritten.
+  const updated = await query(
     `UPDATE billing_transactions
      SET status = $2,
          gateway_response = COALESCE($3::jsonb, gateway_response),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1`,
-    [transactionId, status, gatewayResponse ? JSON.stringify(gatewayResponse) : null],
+     WHERE id = $1 AND status = $4
+     RETURNING id`,
+    [transactionId, status, gatewayResponse ? JSON.stringify(gatewayResponse) : null, current.status],
   );
+  if (!updated?.rows?.length) {
+    throw new BillingTransactionStateError(
+      'INVALID_STATUS_TRANSITION',
+      `Billing transaction ${transactionId} changed while moving ${current.status} to ${status}`,
+      current.status,
+      status,
+    );
+  }
   await dispatchBillingEmails(transactionId, status);
 
   if (status === 'refunded') {
@@ -246,6 +256,39 @@ export async function updateBillingTransactionStatus(
       console.error('Partner commission cancel on refund failed:', partnerErr);
     }
   }
+}
+
+/**
+ * Close a checkout as failed only while it is still `pending` (single guarded UPDATE, so a payment
+ * that completed concurrently is never overwritten). Sends the failure notifications only when the
+ * row actually changed. Returns false when the row was already settled or is not this business's.
+ */
+export async function markCheckoutFailedIfPending(
+  transactionId: string,
+  businessId: string,
+  gatewayResponse?: unknown,
+): Promise<boolean> {
+  const updated = await query(
+    `UPDATE billing_transactions
+     SET status = 'failed',
+         gateway_response = COALESCE($3::jsonb, gateway_response),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND business_id = $2 AND status = 'pending'
+     RETURNING id`,
+    [transactionId, businessId, gatewayResponse ? JSON.stringify(gatewayResponse) : null],
+  );
+  if (!updated?.rows?.length) return false;
+  await dispatchBillingEmails(transactionId, 'failed');
+  return true;
+}
+
+/** Errors that no redelivery can fix: the event is ignored instead of retried. */
+function terminalCheckoutError(err: unknown): string | null {
+  if (err instanceof BillingTransactionStateError) return err.message;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg === 'CHECKOUT_TRANSACTION_NOT_FOUND') return 'Checkout transaction not found for this business';
+  if (msg === 'CHECKOUT_PLAN_MISSING') return 'Checkout transaction has no plan';
+  return null;
 }
 
 /**
@@ -620,14 +663,22 @@ async function handleVerifiedRazorpayEvent(
       checkoutMeta.checkoutType === 'whatsapp_addon' &&
       isWhatsAppAddonType(checkoutMeta.addonType)
     ) {
-      const completion = await completeAddonCheckoutPayment({
-        businessId,
-        addonType: checkoutMeta.addonType,
-        billingTransactionId,
-        providerPaymentId: verified.providerPaymentId,
-        amount,
-        gatewayResponse: verified.rawPayload,
-      });
+      let completion: 'activated' | 'already_completed';
+      try {
+        completion = await completeAddonCheckoutPayment({
+          businessId,
+          addonType: checkoutMeta.addonType,
+          billingTransactionId,
+          providerPaymentId: verified.providerPaymentId,
+          amount,
+          gatewayResponse: verified.rawPayload,
+        });
+      } catch (err) {
+        const terminal = terminalCheckoutError(err);
+        if (!terminal) throw err;
+        await markEvent('ignored', terminal, businessId);
+        return { ok: true, error: terminal };
+      }
       if (completion === 'already_completed') {
         await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTxId);
         return { ok: true, duplicate: true };
@@ -655,6 +706,12 @@ async function handleVerifiedRazorpayEvent(
             billingTransactionId,
           );
           return { ok: false, error: 'Amount mismatch' };
+        }
+        const terminal = terminalCheckoutError(err);
+        if (terminal) {
+          // Not linked to the row: the notes' business may not own it.
+          await markEvent('ignored', terminal, businessId);
+          return { ok: true, error: terminal };
         }
         throw err;
       }
@@ -703,11 +760,16 @@ async function handleVerifiedRazorpayEvent(
         );
         return { ok: true };
       }
-      await updateBillingTransactionStatus(
-        billingTransactionId,
-        'failed',
-        verified.rawPayload,
-      );
+      const closed = await markCheckoutFailedIfPending(billingTransactionId, businessId, verified.rawPayload);
+      if (!closed) {
+        await markEvent(
+          'processed',
+          'Checkout settled concurrently; no status change',
+          businessId,
+          billingTransactionId,
+        );
+        return { ok: true };
+      }
     } else {
       const { id } = await recordBillingTransaction({
         businessId,
@@ -875,7 +937,12 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
         await markEvent('processed', `Checkout already ${tx.status}; no status change`);
         return { ok: true, outcome: 'failed', ...base };
       }
-      await updateBillingTransactionStatus(tx.id, 'failed', { ...gw, ...verified.rawPayload });
+      const closed = await markCheckoutFailedIfPending(tx.id, tx.business_id, { ...gw, ...verified.rawPayload });
+      if (!closed) {
+        const now = await queryOne<{ status: string }>(`SELECT status FROM billing_transactions WHERE id = $1`, [tx.id]);
+        await markEvent('processed', `Checkout settled concurrently (${now?.status ?? 'unknown'}); no status change`);
+        return { ok: true, outcome: now?.status === 'completed' ? 'paid' : 'failed', ...base };
+      }
       await markEvent('failed', 'Payment failed');
       return { ok: true, outcome: 'failed', ...base };
     }
