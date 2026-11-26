@@ -157,18 +157,25 @@ export async function extendModuleSubscriptionForFreeMonths(
   businessId: string,
   moduleKey: PlatformModule,
   freeMonths: number,
+  client?: PoolClient,
 ): Promise<void> {
   if (!Number.isFinite(freeMonths) || freeMonths <= 0) return;
 
-  await queryOne(
-    `UPDATE business_module_subscriptions
+  const sql = `UPDATE business_module_subscriptions
      SET end_date = (
        COALESCE(end_date::date, CURRENT_DATE) + make_interval(months => $3::int)
      )::date,
      updated_at = CURRENT_TIMESTAMP
-     WHERE business_id = $1 AND module_key = $2`,
-    [businessId, moduleKey, Math.floor(freeMonths)],
-  );
+     WHERE business_id = $1 AND module_key = $2`;
+  const values = [businessId, moduleKey, Math.floor(freeMonths)];
+
+  if (client) {
+    // Inside the caller's transaction: the caller clears caches after COMMIT.
+    await client.query(sql, values);
+    return;
+  }
+
+  await queryOne(sql, values);
 
   clearSubscriptionCache(businessId);
   clearModuleSubscriptionCache(businessId);

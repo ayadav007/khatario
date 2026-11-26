@@ -43,6 +43,7 @@ import { normalizeBillingCycle, type BillingCycle } from '@/lib/subscription/app
 import {
   afterPlanChangeCommitted,
   applyModuleSubscriptionPlanChange,
+  extendModuleSubscriptionForFreeMonths,
   type ApplyModulePlanChangeResult,
 } from '@/lib/subscription/apply-module-plan-change';
 
@@ -534,6 +535,21 @@ export async function completeSubscriptionCheckoutPayment(params: {
       client,
     );
 
+    // Coupon: redeemed in the same transaction, so a paid checkout gets everything or nothing.
+    if (tx.coupon_id) {
+      const redeemed = await redeemCoupon(
+        tx.coupon_id,
+        params.businessId,
+        planId,
+        billingTransactionId,
+        billingCycle,
+        client,
+      );
+      if (redeemed.type === 'free_months') {
+        await extendModuleSubscriptionForFreeMonths(params.businessId, moduleKey, redeemed.value, client);
+      }
+    }
+
     await client.query('COMMIT');
 
     committed = {
@@ -560,14 +576,6 @@ export async function completeSubscriptionCheckoutPayment(params: {
     });
   } catch (err) {
     console.error('[checkout] post-commit plan activation steps failed:', err);
-  }
-
-  if (committed.couponId) {
-    try {
-      await redeemCoupon(committed.couponId, params.businessId, committed.planId, billingTransactionId);
-    } catch (err) {
-      console.error('[checkout] coupon redemption after payment failed:', err);
-    }
   }
 
   try {

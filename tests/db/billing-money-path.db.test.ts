@@ -54,6 +54,7 @@ import {
 } from '@/lib/subscription/module-plan-lifecycle';
 import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
 import * as planChange from '@/lib/subscription/apply-module-plan-change';
+import * as couponsModule from '@/lib/subscription/coupons';
 import { processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
 import { getOperationalModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
@@ -798,6 +799,60 @@ run('billing money path (kh_phase2_test)', () => {
       ).rejects.toThrow('CHECKOUT_TRANSACTION_NOT_FOUND');
       expect((await txRow(tx))!.status).toBe('pending');
       expect(await row(biz, 'connect')).toBeNull();
+    });
+  });
+  describe('SUB-16: coupons are redeemed inside the completion transaction', () => {
+    async function redemption(couponId: string) {
+      return queryOne<{ discount_amount: string; billing_transaction_id: string | null }>(
+        `SELECT discount_amount::text, billing_transaction_id FROM coupon_redemptions
+         WHERE coupon_id = $1 ORDER BY redeemed_at DESC LIMIT 1`,
+        [couponId],
+      );
+    }
+    async function redemptionCounter(couponId: string) {
+      return Number((await queryOne<{ n: number }>(`SELECT current_redemptions AS n FROM coupons WHERE id = $1`, [couponId]))!.n);
+    }
+
+    it('3 free months extend a paid monthly checkout to 4 months', async () => {
+      const coupon = await makeCoupon({ type: 'free_months', value: 3 });
+      const tx = await pendingCheckout(biz, 'billing_growth', 499, { couponId: coupon });
+      await hook('payment.captured', 'pay_fm1', 'captured', notesFor(biz, tx, 'billing_growth'), { amountPaise: 49900 });
+      expect((await row(biz, 'billing'))!.end_date).toBe(await monthsFromToday(4));
+    });
+
+    it('yearly percentage coupon records the yearly discount', async () => {
+      const coupon = await makeCoupon({ type: 'percentage', value: 10 });
+      const tx = await pendingCheckout(biz, 'billing_growth', 4499, { couponId: coupon, discount: 449.9, cycle: 'yearly' });
+      await hook('payment.captured', 'pay_y1', 'captured', notesFor(biz, tx, 'billing_growth', 'yearly'), { amountPaise: 404910 });
+      expect(Number((await redemption(coupon))!.discount_amount)).toBe(449.9);
+    });
+
+    it('redelivering a free-months success adds the months once and redeems once', async () => {
+      const coupon = await makeCoupon({ type: 'free_months', value: 3 });
+      const tx = await pendingCheckout(biz, 'billing_growth', 499, { couponId: coupon });
+      const notes = notesFor(biz, tx, 'billing_growth');
+      await hook('payment.captured', 'pay_fm2', 'captured', notes, { amountPaise: 49900 });
+      await hook('payment.captured', 'pay_fm2', 'captured', notes, { amountPaise: 49900 });
+      await hook('payment.captured', 'pay_fm2b', 'captured', notes, { amountPaise: 49900 });
+      expect((await row(biz, 'billing'))!.end_date).toBe(await monthsFromToday(4));
+      expect(await count(`coupon_redemptions WHERE coupon_id = $1`, [coupon])).toBe(1);
+      expect(await redemptionCounter(coupon)).toBe(1);
+    });
+
+    it('a failing redemption rolls the whole completion back and a redelivery succeeds', async () => {
+      const coupon = await makeCoupon({ type: 'free_months', value: 3 });
+      const tx = await pendingCheckout(biz, 'billing_growth', 499, { couponId: coupon });
+      const notes = notesFor(biz, tx, 'billing_growth');
+      const spy = jest.spyOn(couponsModule, 'redeemCoupon').mockRejectedValueOnce(new Error('redeem boom'));
+      await expect(hook('payment.captured', 'pay_rf1', 'captured', notes, { amountPaise: 49900 })).rejects.toThrow('redeem boom');
+      spy.mockRestore();
+      expect((await txRow(tx))!.status).toBe('pending');
+      expect(await row(biz, 'billing')).toBeNull();
+      expect(await count(`coupon_redemptions WHERE coupon_id = $1`, [coupon])).toBe(0);
+      expect(await hook('payment.captured', 'pay_rf1', 'captured', notes, { amountPaise: 49900 })).toEqual({ ok: true });
+      expect((await txRow(tx))!.status).toBe('completed');
+      expect((await row(biz, 'billing'))!.end_date).toBe(await monthsFromToday(4));
+      expect(await count(`coupon_redemptions WHERE coupon_id = $1`, [coupon])).toBe(1);
     });
   });
   describe('Task 5 fix round 1: failure writes are guarded by the row status', () => {

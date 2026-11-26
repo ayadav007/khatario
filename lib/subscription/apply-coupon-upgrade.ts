@@ -63,6 +63,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       params.businessId,
       params.planId,
       billingTxId,
+      params.billingCycle,
     );
   } else if (params.pricing.finalAmount <= 0 && params.pricing.baseAmount <= 0) {
     await recordBillingTransaction({

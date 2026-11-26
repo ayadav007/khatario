@@ -1,5 +1,6 @@
 import { query, queryOne, queryRows } from '@/lib/db';
-import { computePlanAmount } from '@/lib/subscription/apply-plan-change';
+import type { PoolClient, QueryResultRow } from 'pg';
+import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -160,53 +161,60 @@ export async function validateCoupon(
   };
 }
 
+/**
+ * Record a coupon redemption for one billing transaction. Idempotent per
+ * (coupon, business, billing transaction): the counter moves only when a row is inserted.
+ * Pass the transaction client to make this part of the caller's transaction.
+ */
 export async function redeemCoupon(
   couponId: string,
   businessId: string,
   planId: string,
-  billingTransactionId?: string
-): Promise<CouponRedemption> {
-  // Fetch the coupon to calculate the discount amount stored on the redemption
-  const coupon = await queryOne<Coupon>(
-    `SELECT id, type, value FROM coupons WHERE id = $1`,
-    [couponId]
+  billingTransactionId: string,
+  billingCycle: BillingCycle,
+  client?: PoolClient,
+): Promise<{ type: Coupon['type']; value: number; discount_amount: number }> {
+  const one = async <T extends QueryResultRow>(sql: string, values: unknown[]): Promise<T | null> =>
+    client ? ((await client.query<T>(sql, values)).rows[0] ?? null) : queryOne<T>(sql, values);
+
+  const coupon = await one<{ type: Coupon['type']; value: string | number }>(
+    `SELECT type, value FROM coupons WHERE id = $1`,
+    [couponId],
   );
 
   if (!coupon) {
     throw new Error(`Coupon ${couponId} not found`);
   }
+  const value = Number(coupon.value);
 
-  const plan = await queryOne<{ price_monthly: string; price_yearly: string }>(
-    `SELECT price_monthly, price_yearly FROM subscription_plans WHERE id = $1`,
+  const plan = await one<{ price_monthly: string; price_yearly: string; price_3year: string | null }>(
+    `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
     [planId],
   );
 
-  const planPrice = plan ? parseFloat(plan.price_monthly) : 0;
-  const discount = calculateDiscount(coupon, planPrice);
+  const planPrice = plan ? computePlanAmount(plan, billingCycle) : 0;
+  const discount = calculateDiscount({ type: coupon.type, value }, planPrice);
 
-  // Increment global redemption counter
-  await query(
-    `UPDATE coupons
-     SET current_redemptions = current_redemptions + 1,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1`,
-    [couponId]
-  );
-
-  // Insert redemption record
-  const redemption = await queryOne<CouponRedemption>(
+  const inserted = await one<{ id: string }>(
     `INSERT INTO coupon_redemptions
        (coupon_id, business_id, plan_id, discount_amount, billing_transaction_id)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [couponId, businessId, planId, discount.amount, billingTransactionId ?? null]
+     ON CONFLICT (coupon_id, business_id, billing_transaction_id) DO NOTHING
+     RETURNING id`,
+    [couponId, businessId, planId, discount.amount, billingTransactionId],
   );
 
-  if (!redemption) {
-    throw new Error('Failed to create coupon redemption record');
+  if (inserted) {
+    await one(
+      `UPDATE coupons
+       SET current_redemptions = current_redemptions + 1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [couponId],
+    );
   }
 
-  return redemption;
+  return { type: coupon.type, value, discount_amount: discount.amount };
 }
 
 export function calculateDiscount(
