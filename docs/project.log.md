@@ -1976,3 +1976,24 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Owner decisions: GST on subscription fees and the tax invoice; what a refund does to the plan; renewal model and proration.
   - Check on production: `SELECT count(*) FROM platform_limits;` must not be 0 (`scripts/setup-khatario-production.sh` does not copy that table).
   - Not exercised: staging, production, real gateways, Playwright specs, HTTP routes through a running server.
+
+## 2026-11-26: Billing money-path fixes (first fix plan after the audit)
+- **Asked:** "how would you plan to fix them?", "can you create a detailed plan for fixing?", then "my only requirement is for testing i should be able to set a price of say rupees 1 for any product or plan and it should work. Rest you all please fix", and later "commit and push".
+- **Decided:**
+  - The 45 findings are split by subsystem; this plan covers only the payment and plan-change path (SUB-01 to 05, 16, 26 to 28, 31). Refunds, GST, renewal, server enforcement gaps, payment-record constraints and customer-facing screens each need their own plan.
+  - Plan order is an explicit rank (free-tier plans at the bottom, then `sort_order`), never price, because of the owner's 1-rupee requirement. Cost: Classic plans rank above the new ladder, so Classic to new Business counts as a downgrade.
+  - `/api/subscriptions/upgrade` applies only a product's own free plan or a first trial. The HR trial is allowed once per business, judged by real trial history, so a business that signed up for Billing can still start it.
+  - A due downgrade to a cheaper paid plan gets 7 days of grace on that plan and then Free, instead of a free month. There is no Renew button yet (SUB-11), so today such a customer can only pay by choosing a plan again.
+  - A failed attempt no longer closes a checkout and sends no message; only a cancelled link notifies. An expired link closes silently.
+  - Recording a payment, applying the plan, enabling the product, redeeming the coupon and adding free months are one database transaction; webhook events left unprocessed are retried; the paid amount is checked against the stored amount on both gateways and for the add-on.
+  - The Khatario AI add-on runs one month per payment. Migration 477 gives existing add-ons 30 days from the day it is applied; existing buyers need to be told.
+  - Payment links expire after 24 hours and unpaid checkouts close after 48.
+  - Left out on purpose: re-checking coupon limits when a payment is redeemed; the month-end overflow in `computeSubscriptionPeriodEnd`; a "pay during grace" screen.
+  - Run with a subagent per task and a review after each. The Task 5 review caught a cancel notice racing a success that could activate a plan twice; the whole-change review caught the Razorpay add-on path trusting webhook notes and skipping the amount check. Both fixed and re-reviewed.
+- **Shipped:** on branch `claude/gifted-gates-jx4rbn`, pushed, not merged: 0c64ca0 (audit, plan, tasks 1 to 5), 3f8931c (cancel-race fix), 95da6d9 (nightly report), a9d23bc (add-on period), dfd20af (free-month coupons), a357e73 (link and checkout expiry), and the final fix commit that carries this entry. Migration `477_free_plan_no_end_date_addon_period.sql` written, applied only to the local `kh_phase2_test`. Final local run: 5 database suites, 101 tests pass; 21 unit suites, 234 tests pass; `tsc --noEmit` clean on the whole tree. `graphify update` not run (the tool is not installed in this environment).
+- **Open:**
+  - Owner approval to apply migration 477 on staging, then one Razorpay test-mode payment that fails once and succeeds on retry, and the two API checks at the end of the plan. Nothing here was run on staging, in a browser, or against a real gateway.
+  - Whether Razorpay would capture a payment carrying owner-chosen notes on the platform account was not checked; the code no longer trusts the notes either way.
+  - Production check still owed: `SELECT count(*) FROM platform_limits;` must not be 0.
+  - Owner decisions for the next plans: GST on subscription fees and the tax invoice, what a refund does to the plan, renewal and credit for unused days.
+  - Payments completed through Razorpay before this change are invisible to the new nightly report.

@@ -299,6 +299,9 @@ export async function createSubscriptionCheckout(
 
     skipEmails: true,
 
+    // Written at creation so the row says what it is even if the provider returns no payment id.
+    gatewayResponse: { checkout_type: 'subscription', provider: checkout.id },
+
   });
 
 
@@ -359,7 +362,7 @@ export async function createSubscriptionCheckout(
 
        SET payment_reference = $2,
 
-           gateway_response = $3::jsonb,
+           gateway_response = COALESCE(gateway_response, '{}'::jsonb) || $3::jsonb,
 
            updated_at = CURRENT_TIMESTAMP
 
@@ -465,7 +468,6 @@ export async function completeSubscriptionCheckoutPayment(params: {
   const client: PoolClient = await getPool().connect();
   let committed: {
     planId: string;
-    couponId: string | null;
     totalAmount: number;
     result: ApplyModulePlanChangeResult;
   };
@@ -479,8 +481,10 @@ export async function completeSubscriptionCheckoutPayment(params: {
       billing_cycle: string | null;
       coupon_id: string | null;
       total_amount: string | null;
+      checkout_type: string | null;
     }>(
-      `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount
+      `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount,
+              gateway_response->>'checkout_type' AS checkout_type
        FROM billing_transactions
        WHERE id = $1 AND business_id = $2
        FOR UPDATE`,
@@ -500,6 +504,12 @@ export async function completeSubscriptionCheckoutPayment(params: {
     // pending -> completed and failed -> completed only (Task 4 rules).
     assertBillingTransactionTransition(tx.status, 'completed');
 
+    // The stored row decides the checkout type, never the webhook notes. A row with no
+    // checkout_type key predates the key and is a subscription checkout.
+    if ((tx.checkout_type ?? 'subscription') !== 'subscription') {
+      throw new Error('CHECKOUT_TYPE_MISMATCH');
+    }
+
     const expectedPaise = Math.round(Number(tx.total_amount) * 100);
     const paidPaise = Number.isFinite(params.amount) ? Math.round(params.amount * 100) : Number.NaN;
     if (!Number.isFinite(expectedPaise) || paidPaise !== expectedPaise) {
@@ -517,7 +527,8 @@ export async function completeSubscriptionCheckoutPayment(params: {
       `UPDATE billing_transactions
        SET status = 'completed',
            payment_reference = COALESCE(payment_reference, $2),
-           gateway_response = COALESCE($3::jsonb, gateway_response),
+           gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
+                                   ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -558,7 +569,6 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
     committed = {
       planId,
-      couponId: tx.coupon_id ?? null,
       totalAmount: Number(tx.total_amount) || 0,
       result,
     };

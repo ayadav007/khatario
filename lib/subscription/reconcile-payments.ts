@@ -68,11 +68,58 @@ export async function findStuckWebhookEvents(): Promise<StuckWebhookEvent[]> {
   );
 }
 
+export type IgnoredSuccessEvent = {
+  id: string;
+  provider: string;
+  event_type: string;
+  billing_transaction_id: string | null;
+  processing_notes: string | null;
+  created_at: string;
+};
+
+/**
+ * Success events that were ignored (last 35 days): the customer paid but nothing was applied and
+ * no retry will fix it, so a person has to look. Matches `payment.captured`, `payment_link.paid`
+ * and Easebuzz events whose notes name an amount mismatch, a checkout type mismatch, a missing
+ * checkout reference or a payment-row state error. Read-only.
+ */
+export async function findIgnoredSuccessEvents(): Promise<IgnoredSuccessEvent[]> {
+  return queryRows<IgnoredSuccessEvent>(
+    `SELECT id::text AS id, provider, event_type, billing_transaction_id::text AS billing_transaction_id,
+            processing_notes, created_at::text AS created_at
+     FROM platform_billing_webhook_events
+     WHERE status = 'ignored'
+       AND created_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
+       AND (event_type IN ('payment.captured', 'payment_link.paid') OR event_type LIKE 'easebuzz%')
+       AND (
+         processing_notes LIKE '%Amount mismatch%'
+         OR processing_notes LIKE '%CHECKOUT_TYPE_MISMATCH%'
+         OR processing_notes LIKE '%reference required%'
+         OR processing_notes LIKE '%Cannot transition%'
+         OR processing_notes LIKE '%is already %'
+         OR processing_notes LIKE '%changed while moving%'
+         OR processing_notes LIKE '%Checkout transaction not found%'
+         OR processing_notes LIKE '%has no plan%'
+       )
+     ORDER BY created_at`,
+  );
+}
+
 /** Alert platform admins about anomalies. Never throws and changes no data. */
-export async function reportBillingAnomalies(): Promise<{ unapplied: number; stuckEvents: number }> {
+export async function reportBillingAnomalies(): Promise<{
+  unapplied: number;
+  stuckEvents: number;
+  ignoredPaid: number;
+}> {
   try {
-    const [unapplied, stuck] = await Promise.all([findUnappliedPayments(), findStuckWebhookEvents()]);
-    if (unapplied.length === 0 && stuck.length === 0) return { unapplied: 0, stuckEvents: 0 };
+    const [unapplied, stuck, ignored] = await Promise.all([
+      findUnappliedPayments(),
+      findStuckWebhookEvents(),
+      findIgnoredSuccessEvents(),
+    ]);
+    if (unapplied.length === 0 && stuck.length === 0 && ignored.length === 0) {
+      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0 };
+    }
 
     for (const p of unapplied) {
       console.error(
@@ -85,20 +132,26 @@ export async function reportBillingAnomalies(): Promise<{ unapplied: number; stu
       );
     }
 
+    for (const e of ignored) {
+      console.error(
+        `[billing-reconcile] paid but ignored: id=${e.id} provider=${e.provider} event=${e.event_type} tx=${e.billing_transaction_id ?? 'none'} notes=${e.processing_notes ?? ''} created_at=${e.created_at}`,
+      );
+    }
+
     try {
       const { sendPlatformAdminPush } = await import('@/lib/platform-push');
       await sendPlatformAdminPush({
         event: 'incident',
         title: 'Billing: payments need attention',
-        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck`,
+        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored`,
         url: '/admin/billing',
       });
     } catch (err) {
       console.warn('[billing-reconcile] admin push failed', err instanceof Error ? err.message : err);
     }
-    return { unapplied: unapplied.length, stuckEvents: stuck.length };
+    return { unapplied: unapplied.length, stuckEvents: stuck.length, ignoredPaid: ignored.length };
   } catch (err) {
     console.error('[billing-reconcile] check failed', err);
-    return { unapplied: 0, stuckEvents: 0 };
+    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0 };
   }
 }

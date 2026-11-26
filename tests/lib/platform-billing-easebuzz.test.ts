@@ -142,11 +142,38 @@ describe('processPlatformEasebuzzCallback', () => {
     expect(completeSubscriptionCheckoutPayment).not.toHaveBeenCalled();
   });
 
-  it('treats a repeat of the same result as a duplicate', async () => {
+  it('a repeat of an event on a still-pending row is pending, never duplicate or paid', async () => {
     mockDb(billingRow(), false);
     const r = await processPlatformEasebuzzCallback(body({}));
-    expect(r).toMatchObject({ ok: true, outcome: 'duplicate' });
+    expect(r).toMatchObject({ ok: true, outcome: 'pending' });
     expect(completeSubscriptionCheckoutPayment).not.toHaveBeenCalled();
+  });
+
+  it('a repeat of a failure callback reports failed from the row', async () => {
+    mockDb(billingRow({ status: 'failed' }), false);
+    const r = await processPlatformEasebuzzCallback(body({ status: 'failure' }));
+    expect(r).toMatchObject({ ok: true, outcome: 'failed' });
+  });
+
+  it('a repeat of a success callback on a completed row reports paid', async () => {
+    mockDb(billingRow({ status: 'completed' }), false);
+    const r = await processPlatformEasebuzzCallback(body({}));
+    expect(r).toMatchObject({ ok: true, outcome: 'paid' });
+  });
+
+  it('a success on a refunded row is ignored with the event marked ignored', async () => {
+    mockDb(billingRow());
+    const { BillingTransactionStateError } = jest.requireActual('@/lib/platform-billing-transaction-state');
+    completeSubscriptionCheckoutPayment.mockRejectedValueOnce(
+      new BillingTransactionStateError('INVALID_STATUS_TRANSITION', 'Cannot transition billing transaction from refunded to completed', 'refunded', 'completed'),
+    );
+    const r = await processPlatformEasebuzzCallback(body({}));
+    expect(r).toMatchObject({ ok: true, outcome: 'ignored' });
+    expect(updateStatusQueries.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'))?.[1]).toEqual([
+      expect.any(String),
+      'ignored',
+      expect.stringContaining('refunded'),
+    ]);
   });
 
   it('reports an already completed checkout as paid without re-applying it', async () => {

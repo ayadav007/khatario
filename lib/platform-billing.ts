@@ -208,7 +208,6 @@ export async function updateBillingTransactionStatus(
   transactionId: string,
   status: BillingTxStatus,
   gatewayResponse?: unknown,
-  options?: { notify?: boolean },
 ): Promise<void> {
   const current = await queryOne<{ status: BillingTxStatus }>(
     `SELECT status FROM billing_transactions WHERE id = $1`,
@@ -230,7 +229,8 @@ export async function updateBillingTransactionStatus(
   const updated = await query(
     `UPDATE billing_transactions
      SET status = $2,
-         gateway_response = COALESCE($3::jsonb, gateway_response),
+         gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
+                                 ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = $1 AND status = $4
      RETURNING id`,
@@ -244,9 +244,7 @@ export async function updateBillingTransactionStatus(
       status,
     );
   }
-  if (options?.notify !== false) {
-    await dispatchBillingEmails(transactionId, status);
-  }
+  await dispatchBillingEmails(transactionId, status);
 
   if (status === 'refunded') {
     try {
@@ -264,24 +262,27 @@ export async function updateBillingTransactionStatus(
 /**
  * Close a checkout as failed only while it is still `pending` (single guarded UPDATE, so a payment
  * that completed concurrently is never overwritten). Sends the failure notifications only when the
- * row actually changed. Returns false when the row was already settled or is not this business's.
+ * row actually changed and `notify` is true (an expired link is not a failure anyone needs told).
+ * Returns false when the row was already settled or is not this business's.
  */
 export async function markCheckoutFailedIfPending(
   transactionId: string,
   businessId: string,
   gatewayResponse?: unknown,
+  notify = true,
 ): Promise<boolean> {
   const updated = await query(
     `UPDATE billing_transactions
      SET status = 'failed',
-         gateway_response = COALESCE($3::jsonb, gateway_response),
+         gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
+                                 ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = $1 AND business_id = $2 AND status = 'pending'
      RETURNING id`,
     [transactionId, businessId, gatewayResponse ? JSON.stringify(gatewayResponse) : null],
   );
   if (!updated?.rows?.length) return false;
-  await dispatchBillingEmails(transactionId, 'failed');
+  if (notify) await dispatchBillingEmails(transactionId, 'failed');
   return true;
 }
 
@@ -308,7 +309,12 @@ export async function expireStaleCheckouts(olderThanHours = 48): Promise<number>
   );
   const rows = res?.rows ?? [];
   for (const r of rows) {
-    await logSubscriptionEvent(r.business_id, 'checkout_expired', { transaction_id: r.id });
+    // The rows are already closed; one failed log must not lose the count or the other events.
+    try {
+      await logSubscriptionEvent(r.business_id, 'checkout_expired', { transaction_id: r.id });
+    } catch (err) {
+      console.error('[platform-billing] could not log checkout_expired', r.id, err);
+    }
   }
   return rows.length;
 }
@@ -319,6 +325,9 @@ function terminalCheckoutError(err: unknown): string | null {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg === 'CHECKOUT_TRANSACTION_NOT_FOUND') return 'Checkout transaction not found for this business';
   if (msg === 'CHECKOUT_PLAN_MISSING') return 'Checkout transaction has no plan';
+  if (msg === 'CHECKOUT_TYPE_MISMATCH') {
+    return 'CHECKOUT_TYPE_MISMATCH: the checkout row is not of the type this payment event claims';
+  }
   return null;
 }
 
@@ -690,77 +699,63 @@ async function handleVerifiedRazorpayEvent(
   let notes = '';
 
   if (verified.status === 'success') {
-    if (
-      checkoutMeta.checkoutType === 'whatsapp_addon' &&
-      isWhatsAppAddonType(checkoutMeta.addonType)
-    ) {
-      let completion: 'activated' | 'already_completed';
-      try {
-        completion = await completeAddonCheckoutPayment({
-          businessId,
-          addonType: checkoutMeta.addonType,
-          billingTransactionId,
-          providerPaymentId: verified.providerPaymentId,
-          amount,
-          gatewayResponse: verified.rawPayload,
-        });
-      } catch (err) {
-        const terminal = terminalCheckoutError(err);
-        if (!terminal) throw err;
-        await markEvent('ignored', terminal, businessId);
-        return { ok: true, error: terminal };
-      }
-      if (completion === 'already_completed') {
-        await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTxId);
-        return { ok: true, duplicate: true };
-      }
-      notes = 'WhatsApp addon checkout completed';
-    } else if (billingTransactionId) {
-      let completion: CheckoutCompletion;
-      try {
-        completion = await completeSubscriptionCheckoutPayment({
-          businessId,
-          planId: checkoutMeta.planId || planId,
-          billingCycle,
-          billingTransactionId,
-          providerPaymentId: verified.providerPaymentId,
-          // The verified paid amount; a missing amount must not match the stored total.
-          amount: verified.amount ?? Number.NaN,
-          gatewayResponse: verified.rawPayload,
-        });
-      } catch (err) {
-        if (errorMessage(err) === 'AMOUNT_MISMATCH') {
-          await markEvent(
-            'ignored',
-            `Amount mismatch: paid ${verified.amount ?? 'unknown'} INR does not match the checkout total`,
-            businessId,
-            billingTransactionId,
-          );
-          return { ok: false, error: 'Amount mismatch' };
-        }
-        const terminal = terminalCheckoutError(err);
-        if (terminal) {
-          // Not linked to the row: the notes' business may not own it.
-          await markEvent('ignored', terminal, businessId);
-          return { ok: true, error: terminal };
-        }
-        throw err;
-      }
-      if (completion === 'already_completed') {
-        await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTransactionId);
-        return { ok: true, duplicate: true };
-      }
-      notes = 'Subscription checkout completed';
-    } else {
+    if (!billingTransactionId) {
       await markEvent(
         'ignored',
-        'Legacy webhook path disabled — missing billing_transaction_id and checkout plan metadata',
+        'Legacy webhook path disabled — missing billing_transaction_id and checkout plan metadata (checkout transaction reference required)',
       );
       return {
         ok: true,
         error: 'Webhook ignored: checkout transaction reference required',
       };
     }
+
+    // The notes only pick which completion to try; each one re-reads the locked row and refuses
+    // (CHECKOUT_TYPE_MISMATCH) when the stored checkout is of another type.
+    const addonRoute = checkoutMeta.checkoutType === 'whatsapp_addon';
+    let completion: CheckoutCompletion;
+    try {
+      completion = addonRoute
+        ? await completeAddonCheckoutPayment({
+            businessId,
+            billingTransactionId,
+            providerPaymentId: verified.providerPaymentId,
+            // The verified paid amount; a missing amount must not match the stored total.
+            amount: verified.amount ?? Number.NaN,
+            gatewayResponse: verified.rawPayload,
+          })
+        : await completeSubscriptionCheckoutPayment({
+            businessId,
+            planId: checkoutMeta.planId || planId,
+            billingCycle,
+            billingTransactionId,
+            providerPaymentId: verified.providerPaymentId,
+            amount: verified.amount ?? Number.NaN,
+            gatewayResponse: verified.rawPayload,
+          });
+    } catch (err) {
+      if (errorMessage(err) === 'AMOUNT_MISMATCH') {
+        await markEvent(
+          'ignored',
+          `Amount mismatch: paid ${verified.amount ?? 'unknown'} INR does not match the checkout total`,
+          businessId,
+          billingTransactionId,
+        );
+        return { ok: false, error: 'Amount mismatch' };
+      }
+      const terminal = terminalCheckoutError(err);
+      if (terminal) {
+        // Not linked to the row: the notes' business may not own it.
+        await markEvent('ignored', terminal, businessId);
+        return { ok: true, error: terminal };
+      }
+      throw err;
+    }
+    if (completion === 'already_completed') {
+      await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTransactionId);
+      return { ok: true, duplicate: true };
+    }
+    notes = addonRoute ? 'WhatsApp addon checkout completed' : 'Subscription checkout completed';
   } else if (verified.status === 'failed' || verified.eventType === 'payment_link.expired') {
     const closesCheckout =
       verified.eventType === 'payment_link.cancelled' || verified.eventType === 'payment_link.expired';
@@ -791,7 +786,21 @@ async function handleVerifiedRazorpayEvent(
         );
         return { ok: true };
       }
-      const closed = await markCheckoutFailedIfPending(billingTransactionId, businessId, verified.rawPayload);
+      // An expired link is the customer walking away, not a failed payment: close the row quietly.
+      const expired = verified.eventType === 'payment_link.expired';
+      const closed = await markCheckoutFailedIfPending(
+        billingTransactionId,
+        businessId,
+        verified.rawPayload,
+        !expired,
+      );
+      if (closed && expired) {
+        try {
+          await logSubscriptionEvent(businessId, 'checkout_expired', { transaction_id: billingTransactionId });
+        } catch (logErr) {
+          console.error('[platform-billing] could not log checkout_expired', logErr);
+        }
+      }
       if (!closed) {
         await markEvent(
           'processed',
@@ -834,6 +843,10 @@ async function handleVerifiedRazorpayEvent(
   );
 
   return { ok: true };
+}
+
+function outcomeFromRowStatus(status: string | undefined): 'paid' | 'failed' | 'pending' {
+  return status === 'completed' ? 'paid' : status === 'failed' ? 'failed' : 'pending';
 }
 
 export type PlatformEasebuzzOutcome = {
@@ -897,7 +910,10 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
     payload: verified.rawPayload ?? {},
   });
   if (!shouldProcessWebhookEvent(logged)) {
-    return { ok: true, outcome: tx.status === 'completed' ? 'paid' : 'duplicate', ...base };
+    // Not reprocessed: report what the row says now. A repeat of a failure or an ignored event
+    // must never read as success to the browser return.
+    const now = await queryOne<{ status: string }>(`SELECT status FROM billing_transactions WHERE id = $1`, [tx.id]);
+    return { ok: true, outcome: outcomeFromRowStatus(now?.status), ...base };
   }
 
   const markEvent = (status: PlatformWebhookEventStatus, notes: string) =>
@@ -921,18 +937,18 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
         return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
       }
       let completion: 'activated' | 'already_completed';
-      if (checkoutType === 'whatsapp_addon' && isWhatsAppAddonType(addonType)) {
-        completion = await completeAddonCheckoutPayment({
-          businessId: tx.business_id,
-          addonType,
-          billingTransactionId: tx.id,
-          providerPaymentId: verified.providerPaymentId,
-          amount: verified.amount ?? 0,
-          gatewayResponse: { ...gw, ...verified.rawPayload },
-          paymentMethod: 'easebuzz',
-        });
-      } else {
-        try {
+      try {
+        if (checkoutType === 'whatsapp_addon' && isWhatsAppAddonType(addonType)) {
+          completion = await completeAddonCheckoutPayment({
+            businessId: tx.business_id,
+            addonType,
+            billingTransactionId: tx.id,
+            providerPaymentId: verified.providerPaymentId,
+            amount: verified.amount ?? Number.NaN,
+            gatewayResponse: verified.rawPayload,
+            paymentMethod: 'easebuzz',
+          });
+        } else {
           completion = await completeSubscriptionCheckoutPayment({
             businessId: tx.business_id,
             planId: tx.plan_id || 'free',
@@ -940,16 +956,21 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
             billingTransactionId: tx.id,
             providerPaymentId: verified.providerPaymentId,
             amount: verified.amount ?? Number.NaN,
-            gatewayResponse: { ...gw, ...verified.rawPayload },
+            gatewayResponse: verified.rawPayload,
             paymentMethod: 'easebuzz',
           });
-        } catch (err) {
-          if (errorMessage(err) === 'AMOUNT_MISMATCH') {
-            await markEvent('ignored', 'Amount mismatch against the locked checkout row');
-            return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
-          }
-          throw err;
         }
+      } catch (err) {
+        if (errorMessage(err) === 'AMOUNT_MISMATCH') {
+          await markEvent('ignored', 'Amount mismatch against the locked checkout row');
+          return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
+        }
+        const terminal = terminalCheckoutError(err);
+        if (terminal) {
+          await markEvent('ignored', terminal);
+          return { ok: true, outcome: 'ignored', error: terminal, ...base };
+        }
+        throw err;
       }
       await markEvent(
         'processed',

@@ -159,7 +159,22 @@ run('plan catalogue v2 (kh_phase2_test)', () => {
     const biz = await newBusiness('legacy-checkout', 'growth');
     expect(await hasWhatsAppBotAddon(biz, true)).toBe(false);
 
-    await completeAddonCheckoutPayment({ businessId: biz, addonType: 'whatsapp_bot', amount: 499 });
+    // A checkout opened before the Bot add-on was folded into Connect: its row names the add-on type.
+    const tx = await queryOne<{ id: string }>(
+      `INSERT INTO billing_transactions
+         (business_id, type, status, amount, currency, plan_id, module_key, billing_cycle,
+          payment_method, gateway_response, total_amount)
+       VALUES ($1, 'payment', 'pending', 499, 'INR', 'connect', 'connect', 'monthly', 'razorpay',
+               '{"checkout_type":"whatsapp_addon","addon_type":"whatsapp_bot","provider":"razorpay"}'::jsonb, 499)
+       RETURNING id`,
+      [biz],
+    );
+    jest.spyOn(console, 'error').mockImplementationOnce(() => undefined); // platform-billing is mocked here
+    await completeAddonCheckoutPayment({
+      businessId: biz,
+      billingTransactionId: tx!.id,
+      amount: 499,
+    });
 
     const row = await queryOne<{ plan_id: string; status: string; months: number }>(
       `SELECT plan_id, status,

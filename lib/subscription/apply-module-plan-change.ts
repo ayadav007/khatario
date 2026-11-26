@@ -35,25 +35,36 @@ export interface PlanChangeCommittedMeta {
 }
 
 /**
+ * Module switch and the Billing plan's bundled HR. These are part of the activation: with a
+ * `client` they run inside the caller's transaction, so a failure rolls the whole payment back
+ * and a redelivery repairs it instead of leaving a paid business with the product switched off.
+ */
+async function enableModuleForPlanChange(
+  result: ApplyModulePlanChangeResult,
+  client?: PoolClient,
+): Promise<void> {
+  await enableBusinessModule(result.business_id, result.module_key, 'upgrade', client);
+
+  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
+  if (result.module_key === 'billing') {
+    await ensureComplimentaryHrForBilling(
+      result.business_id,
+      client ? (client as unknown as Parameters<typeof ensureComplimentaryHrForBilling>[1]) : undefined,
+    );
+  }
+}
+
+/**
  * Side effects of a plan change that must only run once the row is committed:
- * module switch, HR bundle, cache clearing and the `upgraded` event.
+ * cache clearing and the `upgraded` event. (The module switch and bundled HR are applied by
+ * `applyModuleSubscriptionPlanChange` itself, inside the transaction when it was given a client.)
  */
 export async function afterPlanChangeCommitted(
   result: ApplyModulePlanChangeResult,
   meta: PlanChangeCommittedMeta,
 ): Promise<void> {
-  try {
-    await enableBusinessModule(result.business_id, result.module_key, 'upgrade');
-
-    // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
-    if (result.module_key === 'billing') {
-      await ensureComplimentaryHrForBilling(result.business_id);
-    }
-  } finally {
-    // The committed plan row must be visible even if a step above failed.
-    clearSubscriptionCache(result.business_id);
-    clearModuleSubscriptionCache(result.business_id);
-  }
+  clearSubscriptionCache(result.business_id);
+  clearModuleSubscriptionCache(result.business_id);
 
   await logSubscriptionEvent(result.business_id, 'upgraded', {
     module_key: result.module_key,
@@ -69,9 +80,9 @@ export async function afterPlanChangeCommitted(
 /**
  * Activates a plan for one product module (Billing / HR / Connect).
  *
- * With `client`, the SELECT and the upsert run on that connection (inside the caller's
- * transaction) and the caller must call `afterPlanChangeCommitted` after its COMMIT.
- * Without `client`, the function runs on the pool and performs those side effects itself.
+ * With `client`, the SELECT, the upsert, the module switch and the bundled HR run on that
+ * connection (inside the caller's transaction) and the caller must call `afterPlanChangeCommitted`
+ * after its COMMIT. Without `client`, the function runs on the pool and performs those steps itself.
  */
 export async function applyModuleSubscriptionPlanChange(
   params: {
@@ -140,6 +151,17 @@ export async function applyModuleSubscriptionPlanChange(
     from_plan_id: existing?.plan_id,
     trial_days_carried: trialDaysCarried,
   };
+
+  try {
+    await enableModuleForPlanChange(result, client);
+  } catch (err) {
+    // Without a transaction the plan row is already written: make it visible before failing.
+    if (!client) {
+      clearSubscriptionCache(result.business_id);
+      clearModuleSubscriptionCache(result.business_id);
+    }
+    throw err;
+  }
 
   if (!client) {
     await afterPlanChangeCommitted(result, {

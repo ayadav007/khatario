@@ -4,6 +4,20 @@ Audit only. No application code, migration, plan, price or customer data was cha
 
 **Verdict: Not Production Ready** for commercial launch of paid plans. Reasons are in section F.
 
+## Fix status (updated 2026-11-26, same day)
+
+The first fix plan, `docs/superpowers/plans/2026-11-26-billing-money-path-fixes.md`, is built on branch `claude/gifted-gates-jx4rbn` and not merged or deployed. The findings below are kept as written at audit time.
+
+| Finding | State on the branch |
+| --- | --- |
+| SUB-01, 02, 03, 04, 05, 16, 26, 27, 28, 31 | Fixed, with tests in `tests/db/billing-money-path.db.test.ts` (83 tests on local `kh_phase2_test`). Not verified on staging or against a real gateway. |
+| SUB-29 | Partly fixed: upgrade and downgrade are now judged by an explicit tier rank, not `sort_order` alone. The pickers still list plans that are not on sale (SUB-30). |
+| All other findings | Open. |
+
+Found by the whole-change review and fixed in the same branch: the Razorpay add-on path trusted webhook notes for what was bought and did not check the amount; an Easebuzz failure could redirect the browser to the success page; an expired link sent a "payment failed" message.
+
+Known and left open by decision: coupon limits are not re-checked when a payment is redeemed; the month arithmetic in `computeSubscriptionPeriodEnd` overflows at month end (SUB-37); a customer in the 7-day "awaiting payment" grace after a downgrade has no Renew button (SUB-11); Razorpay payments completed before this change are invisible to the new nightly report.
+
 ## How to read the evidence
 
 Each finding carries one of these labels.

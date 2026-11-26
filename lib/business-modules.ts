@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query, queryRows } from '@/lib/db';
 import {
   deriveModulesFromProductLine,
@@ -107,16 +108,20 @@ export async function enableBusinessModule(
   businessId: string,
   moduleKey: PlatformModule,
   source: 'upgrade' | 'admin' | 'signup' = 'upgrade',
+  client?: PoolClient,
 ): Promise<void> {
-  await query(
-    `INSERT INTO business_modules (business_id, module_key, enabled, source)
+  const sql = `INSERT INTO business_modules (business_id, module_key, enabled, source)
      VALUES ($1, $2, true, $3)
      ON CONFLICT (business_id, module_key) DO UPDATE SET
        enabled = true,
        source = EXCLUDED.source,
-       enabled_at = CURRENT_TIMESTAMP`,
-    [businessId, moduleKey, source],
-  );
+       enabled_at = CURRENT_TIMESTAMP`;
+  const values = [businessId, moduleKey, source];
+  if (client) {
+    await client.query(sql, values);
+    return;
+  }
+  await query(sql, values);
 }
 
 export function businessHasModule(

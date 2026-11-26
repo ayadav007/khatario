@@ -14,6 +14,7 @@ import { enableBusinessModule } from '@/lib/business-modules';
 import { getModuleSubscription, upsertModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lifecycle';
 import { decideZeroPriceChange } from '@/lib/subscription/zero-price-change';
+import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,6 +116,28 @@ export async function POST(request: NextRequest) {
       !!currentPlan &&
       BILLING_CYCLES.some((c) => computePlanAmount(currentPlan, c) > 0);
 
+    // The trial counts as used when the row is on it, came down from it, carries a trial end date,
+    // or the business's event history names it. A free-tier row alone (signup's hr_free) is not use.
+    const trialPlanId = moduleKey === 'crm' ? undefined : MODULE_ADD_CONFIG[moduleKey]?.trialPlanId;
+    let trialAlreadyUsed = false;
+    if (trialPlanId && plan_id === trialPlanId) {
+      const history = await queryOne<{ used: boolean }>(
+        `SELECT (
+           EXISTS (
+             SELECT 1 FROM business_module_subscriptions
+             WHERE business_id = $1 AND module_key = $2
+               AND (plan_id = $3 OR downgraded_from = $3 OR trial_end_date IS NOT NULL)
+           )
+           OR EXISTS (
+             SELECT 1 FROM subscription_events
+             WHERE business_id = $1 AND (from_plan_id = $3 OR to_plan_id = $3)
+           )
+         ) AS used`,
+        [business_id, moduleKey, trialPlanId],
+      );
+      trialAlreadyUsed = history?.used === true;
+    }
+
     const decision = decideZeroPriceChange({
       moduleKey,
       targetPlanId: plan_id,
@@ -126,6 +149,7 @@ export async function POST(request: NextRequest) {
           }
         : null,
       currentPlanIsPaid,
+      trialAlreadyUsed,
     });
 
     if (decision.action === 'reject') {

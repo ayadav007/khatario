@@ -4,9 +4,9 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent, getDataImpactWarnings, type DataImpactWarning } from '@/lib/subscription/lifecycle';
 import { getModuleSubscription, clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
-import { comparePlanTier } from '@/lib/subscription/plan-tier';
+import { comparePlanTier, FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
 import { planOpenToBusiness } from '@/lib/subscription/public-plans';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { isTrialPlanId, TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import {
   getFreePlanIdForModule,
   isModuleOnFreePlan,
@@ -48,7 +48,9 @@ export async function downgradeModuleSubscription(
     `SELECT id, sort_order FROM subscription_plans WHERE id = $1`,
     [current.plan_id],
   );
-  if (currentPlan && comparePlanTier(targetPlan, currentPlan) !== -1) {
+  // A trial plan sorts above every new plan, so tier order alone would call trial -> paid a downgrade.
+  const leavingTrialForPaid = isTrialPlanId(current.plan_id) && !FREE_TIER_PLAN_IDS.has(targetPlanId);
+  if (leavingTrialForPaid || (currentPlan && comparePlanTier(targetPlan, currentPlan) !== -1)) {
     throw new Error(
       `Target plan "${targetPlanId}" is not a lower tier than the current ${moduleKey} plan`,
     );

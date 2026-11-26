@@ -52,7 +52,8 @@ export async function handleEasebuzzCallback(
     const status = r.ok ? 200 : r.httpStatus ?? 400;
     let redirectPath = payComplete('unverified');
     if (r.outcome) {
-      const done = r.outcome === 'paid' || r.outcome === 'duplicate';
+      // Only a settled payment is success; `duplicate`/`pending`/`ignored` never read as paid.
+      const done = r.outcome === 'paid';
       if (r.checkoutType === 'whatsapp_addon') {
         redirectPath = done
           ? `/settings/subscription?addon=success&type=${encodeURIComponent(r.addonType ?? '')}`

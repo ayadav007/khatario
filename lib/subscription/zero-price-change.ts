@@ -1,6 +1,7 @@
 import type { PlatformModule } from '@/lib/platform-modules';
 import { getFreePlanIdForModule } from '@/lib/subscription/module-operational-check';
 import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
+import { FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
 
 export type ZeroPriceDecision =
   | { action: 'apply_free' }
@@ -23,8 +24,10 @@ export function decideZeroPriceChange(input: {
   targetPlanId: string;
   current: { plan_id: string; status: string; trial_end_date: string | null } | null;
   currentPlanIsPaid: boolean;
+  /** The business already had this module's trial (see the upgrade route for how it is derived). */
+  trialAlreadyUsed: boolean;
 }): ZeroPriceDecision {
-  const { moduleKey, targetPlanId, current, currentPlanIsPaid } = input;
+  const { moduleKey, targetPlanId, current, currentPlanIsPaid, trialAlreadyUsed } = input;
 
   if (targetPlanId === getFreePlanIdForModule(moduleKey)) {
     if (currentPlanIsPaid) {
@@ -40,14 +43,17 @@ export function decideZeroPriceChange(input: {
 
   const config = moduleKey === 'crm' ? undefined : MODULE_ADD_CONFIG[moduleKey];
   if (config && !config.paidOnly && targetPlanId === config.trialPlanId && config.trialDays != null) {
-    if (current) {
+    if (trialAlreadyUsed) {
       return {
         action: 'reject',
         code: 'TRIAL_ALREADY_USED',
         message: 'The trial for this product has already been used. Choose a paid plan to continue.',
       };
     }
-    return { action: 'start_trial', trialDays: config.trialDays };
+    // A free-tier row (signup gives every Billing business hr_free or a bundled plan) is not a trial.
+    if (!current || FREE_TIER_PLAN_IDS.has(current.plan_id)) {
+      return { action: 'start_trial', trialDays: config.trialDays };
+    }
   }
 
   return { action: 'reject', code: 'PLAN_NOT_SELECTABLE', message: NOT_SELECTABLE };

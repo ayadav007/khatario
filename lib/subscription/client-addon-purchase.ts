@@ -34,9 +34,6 @@ export async function startAddonPurchase(
           'Online payments are not available. Please contact support.',
       );
     }
-    if (data.code === 'ALREADY_ACTIVE') {
-      throw new Error(data.error || 'This add-on is already active');
-    }
     throw new Error(data.error || 'Failed to start add-on checkout');
   }
 

@@ -126,6 +126,12 @@ export async function createAddonCheckout(
     status: 'pending',
     description: `${label} add-on — monthly`,
     skipEmails: true,
+    // Written at creation so the row says what it is even if the provider returns no payment id.
+    gatewayResponse: {
+      checkout_type: 'whatsapp_addon',
+      addon_type: input.addonType,
+      provider: checkout.id,
+    },
   });
 
   const returnUrl = `${appBaseUrl()}/settings/subscription?addon=success&type=${encodeURIComponent(input.addonType)}`;
@@ -157,7 +163,7 @@ export async function createAddonCheckout(
     await query(
       `UPDATE billing_transactions
        SET payment_reference = $2,
-           gateway_response = $3::jsonb,
+           gateway_response = COALESCE(gateway_response, '{}'::jsonb) || $3::jsonb,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -187,40 +193,44 @@ export async function createAddonCheckout(
   };
 }
 
+/**
+ * Complete an add-on checkout after a verified gateway payment.
+ *
+ * One transaction: lock the billing row, check that it is an add-on checkout (its stored
+ * `checkout_type` / `addon_type`, never the webhook notes), check the paid amount against its
+ * total, mark it completed and activate the row's add-on. A second event for the same payment
+ * waits on the lock, then sees `completed` and returns `already_completed`.
+ * `addonType` in params is accepted for compatibility and ignored.
+ * Throws `CHECKOUT_TYPE_MISMATCH` for a row that is not an add-on checkout and `AMOUNT_MISMATCH`
+ * when the paid amount differs from the row's total.
+ */
 export async function completeAddonCheckoutPayment(params: {
   businessId: string;
-  addonType: WhatsAppAddonType;
+  addonType?: WhatsAppAddonType;
   billingTransactionId?: string | null;
   providerPaymentId?: string | null;
+  /** Paid amount in rupees, from the verified gateway event. */
   amount: number;
   gatewayResponse?: unknown;
   paymentMethod?: PlatformPaymentProviderId;
 }): Promise<'activated' | 'already_completed'> {
-  const price = WHATSAPP_ADDON_PRICING[params.addonType] ?? params.amount;
-
   if (!params.billingTransactionId) {
-    await recordBillingTransaction({
-      businessId: params.businessId,
-      planId: CONNECT_PLAN_ID,
-      moduleKey: 'connect',
-      amount: params.amount,
-      billingCycle: 'monthly',
-      paymentMethod: params.paymentMethod ?? 'razorpay',
-      paymentReference: params.providerPaymentId,
-      status: 'completed',
-      description: `${WHATSAPP_ADDON_LABELS[params.addonType]} add-on — monthly`,
-      gatewayResponse: params.gatewayResponse,
-    });
-    await activateAddonForCheckout(params.businessId, params.addonType, price);
-    return 'activated';
+    throw new Error('CHECKOUT_TRANSACTION_REQUIRED');
   }
-
   const billingTransactionId = params.billingTransactionId;
   const client: PoolClient = await getPool().connect();
   try {
     await client.query('BEGIN');
-    const locked = await client.query<{ status: BillingTxStatus }>(
-      `SELECT status FROM billing_transactions
+    const locked = await client.query<{
+      status: BillingTxStatus;
+      total_amount: string | null;
+      checkout_type: string | null;
+      addon_type: string | null;
+    }>(
+      `SELECT status, total_amount::text AS total_amount,
+              gateway_response->>'checkout_type' AS checkout_type,
+              gateway_response->>'addon_type' AS addon_type
+       FROM billing_transactions
        WHERE id = $1 AND business_id = $2
        FOR UPDATE`,
       [billingTransactionId, params.businessId],
@@ -235,11 +245,24 @@ export async function completeAddonCheckoutPayment(params: {
     }
     assertBillingTransactionTransition(tx.status, 'completed');
 
+    // The stored row decides what was bought; the webhook notes are only a hint to route here.
+    if (tx.checkout_type !== 'whatsapp_addon' || !isWhatsAppAddonType(tx.addon_type)) {
+      throw new Error('CHECKOUT_TYPE_MISMATCH');
+    }
+    const addonType = tx.addon_type;
+
+    const expectedPaise = Math.round(Number(tx.total_amount) * 100);
+    const paidPaise = Number.isFinite(params.amount) ? Math.round(params.amount * 100) : Number.NaN;
+    if (!Number.isFinite(expectedPaise) || paidPaise !== expectedPaise) {
+      throw new Error('AMOUNT_MISMATCH');
+    }
+
     await client.query(
       `UPDATE billing_transactions
        SET status = 'completed',
            payment_reference = COALESCE(payment_reference, $2),
-           gateway_response = COALESCE($3::jsonb, gateway_response),
+           gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
+                                   ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -249,7 +272,8 @@ export async function completeAddonCheckoutPayment(params: {
       ],
     );
 
-    await activateAddonForCheckout(params.businessId, params.addonType, price, client);
+    const price = WHATSAPP_ADDON_PRICING[addonType];
+    await activateAddonForCheckout(params.businessId, addonType, price, client);
 
     await client.query('COMMIT');
   } catch (err) {

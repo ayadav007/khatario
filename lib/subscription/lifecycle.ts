@@ -15,6 +15,7 @@ import {
 } from '@/lib/subscription';
 import { HR_TRIAL_PLAN_ID, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { type PlatformModule } from '@/lib/platform-modules';
+import { FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
 import {
   isLocalCalendarOnOrBeforeToday,
   parseLocalDateOnly,
@@ -302,6 +303,10 @@ export interface ModuleExpiredSubscriptionCounts {
  * 3. Scheduled downgrades — `scheduled_plan_id` and `end_date` passed → switch plan
  * 4. Lapsed renewals — active past `end_date` → start a 7-day grace period
  * 5. Grace period expired → free
+ * 6. Paid add-ons (Khatario AI) whose `end_date` passed → expired
+ * 7. Gateway checkouts still pending after 48 hours → failed (no notification)
+ *
+ * Every UPDATE repeats the condition that selected its row, so a payment that lands in between wins.
  */
 export async function processExpiredModuleSubscriptions(): Promise<ModuleExpiredSubscriptionCounts> {
   const { moveModuleSubscriptionToFree } = await import(
@@ -401,6 +406,38 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
         'scheduled_due',
       );
       if (moved) counts.scheduledDowngrades++;
+      continue;
+    }
+
+    if (FREE_TIER_PLAN_IDS.has(row.scheduled_plan_id)) {
+      // A free-tier plan that is not the module's own free plan (hr_staff_lite): no payment is
+      // needed either, so no end date and no grace.
+      const updatedFree = await query(
+        `UPDATE business_module_subscriptions
+         SET plan_id = $3,
+             status = 'active',
+             scheduled_plan_id = NULL,
+             end_date = NULL,
+             grace_period_end = NULL,
+             downgraded_from = $4,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE business_id = $1 AND module_key = $2
+           AND status IN ('active', 'trial')
+           AND scheduled_plan_id = $3
+           AND end_date IS NOT NULL
+           AND end_date < CURRENT_DATE`,
+        [row.business_id, row.module_key, row.scheduled_plan_id, row.plan_id],
+      );
+      if ((updatedFree.rowCount ?? 0) === 0) continue;
+
+      await logSubscriptionEvent(row.business_id, 'downgraded', {
+        module_key: row.module_key,
+        from_plan_id: row.plan_id,
+        to_plan_id: row.scheduled_plan_id,
+      });
+      clearSubscriptionCache(row.business_id);
+      clearModuleSubscriptionCache(row.business_id);
+      counts.scheduledDowngrades++;
       continue;
     }
 
