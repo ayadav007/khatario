@@ -19,8 +19,12 @@ describe('assertBillingTransactionTransition', () => {
     );
   });
 
-  it('blocks failed → completed', () => {
-    expect(() => assertBillingTransactionTransition('failed', 'completed')).toThrow(
+  it('allows failed → completed', () => {
+    expect(() => assertBillingTransactionTransition('failed', 'completed')).not.toThrow();
+  });
+
+  it('blocks completed → failed', () => {
+    expect(() => assertBillingTransactionTransition('completed', 'failed')).toThrow(
       BillingTransactionStateError,
     );
   });

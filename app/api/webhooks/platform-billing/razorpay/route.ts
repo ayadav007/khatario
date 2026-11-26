@@ -20,9 +20,18 @@ export async function POST(request: NextRequest) {
     headers[key.toLowerCase()] = value;
   });
 
-  const result = await processPlatformRazorpayWebhook(rawBody, headers);
+  let result: Awaited<ReturnType<typeof processPlatformRazorpayWebhook>>;
+  try {
+    result = await processPlatformRazorpayWebhook(rawBody, headers);
+  } catch (err) {
+    // 5xx makes Razorpay redeliver; the event row is marked `error` and is reprocessed then.
+    console.error('[platform-billing razorpay webhook]', err);
+    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
+  }
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.error?.includes('configured') ? 503 : 401 });
+    const status =
+      result.error === 'Amount mismatch' ? 422 : result.error?.includes('configured') ? 503 : 401;
+    return NextResponse.json({ error: result.error }, { status });
   }
   return NextResponse.json(result);
 }

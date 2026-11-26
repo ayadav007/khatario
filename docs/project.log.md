@@ -1962,3 +1962,17 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The 16 failing DB suites (invoice creation 403 from plan gating) are pre-existing: three were re-run at the starting commit 7f3b8d86 and failed the same 24 tests.
 - **Shipped:** a22ce622, bcf0d255 on main after the ten task commits (9f3879b3..8bb64f22). Not pushed.
 - **Open:** owner pushes and deploys to staging (migration 476 runs in deploy, then the sync file), then the 17-step checklist `docs/superpowers/plans/2026-11-12-courier-plugins-phase-1-staging-checklist.md`. Phone follow-up: the Shiprocket login screen is reachable only through Delivery zones until Shiprocket is chosen (needs a `phone/` change).
+
+## 2026-11-26: Subscription and billing audit (audit only)
+- **Asked:** "Complete Subscription & Billing System Audit": trace plans, checkout, payment verification, entitlements, lifecycle, database, jobs, frontend and tests end to end; audit only; "Wait for my approval before implementing any fixes."
+- **Decided:**
+  - Verdict: Not Production Ready for paid plans. 45 findings, SUB-01 to SUB-45 (3 Critical, 12 High, 21 Medium, 9 Low).
+  - Critical: a paid plan (Connect, HR Pro) can be activated without payment through `/api/subscriptions/upgrade` on a hidden free plan plus a "downgrade" judged by `sort_order` (SUB-01); with Razorpay a failed attempt followed by a successful one leaves the customer unactivated (SUB-02); no recovery when activation fails after the payment row is completed (SUB-03).
+  - Found sound: session-bound business on every subscription route, owner-only plan changes, server-side amounts, gateway signature checks, no data deletion on downgrade. No cross-tenant access to subscription or payment data was found.
+  - Evidence labels (Reproduced, Code-read, Not verified) are on each finding. Razorpay events were simulated with signed bodies; no real payment was made.
+- **Shipped:** nothing committed. New `docs/qa/subscription-billing-audit-2026-11-26.md`, one row in `docs/qa/README.md`, this entry. No application code, migration, plan or price touched. Run locally: 46 non-DB Jest suites (433 passed, 2 failed, 1 suite cannot start: stale tests and a broken `@jest-environment` line in `capability-snapshot`), 9 DB suites on a local `kh_phase2_test` (71 passed), 14 probe scenarios whose scripts were in the session scratch folder and are not kept.
+- **Open:**
+  - Owner approval before any fix. Suggested order is at the end of the report.
+  - Owner decisions: GST on subscription fees and the tax invoice; what a refund does to the plan; renewal model and proration.
+  - Check on production: `SELECT count(*) FROM platform_limits;` must not be 0 (`scripts/setup-khatario-production.sh` does not copy that table).
+  - Not exercised: staging, production, real gateways, Playwright specs, HTTP routes through a running server.

@@ -1,3 +1,4 @@
+import type { PoolClient, QueryResultRow } from 'pg';
 import { queryOne } from '@/lib/db';
 import { enableBusinessModule } from '@/lib/business-modules';
 import { type PlatformModule } from '@/lib/platform-modules';
@@ -20,25 +21,75 @@ export interface ApplyModulePlanChangeResult {
   start_date: string;
   end_date: string;
   billing_cycle: BillingCycle;
+  /** Plan the module was on before this change (undefined when there was no row). */
+  from_plan_id?: string;
+  /** Unused trial days added to the new period. */
+  trial_days_carried?: number;
+}
+
+export interface PlanChangeCommittedMeta {
+  fromPlanId: string | undefined;
+  paymentMethod: string;
+  paymentReference: string | null;
+  trialDaysCarried: number;
+}
+
+/**
+ * Side effects of a plan change that must only run once the row is committed:
+ * module switch, HR bundle, cache clearing and the `upgraded` event.
+ */
+export async function afterPlanChangeCommitted(
+  result: ApplyModulePlanChangeResult,
+  meta: PlanChangeCommittedMeta,
+): Promise<void> {
+  await enableBusinessModule(result.business_id, result.module_key, 'upgrade');
+
+  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
+  if (result.module_key === 'billing') {
+    await ensureComplimentaryHrForBilling(result.business_id);
+  }
+
+  clearSubscriptionCache(result.business_id);
+  clearModuleSubscriptionCache(result.business_id);
+
+  await logSubscriptionEvent(result.business_id, 'upgraded', {
+    module_key: result.module_key,
+    to_plan_id: result.plan_id,
+    from_plan_id: meta.fromPlanId,
+    billing_cycle: result.billing_cycle,
+    payment_method: meta.paymentMethod,
+    payment_reference: meta.paymentReference,
+    trial_days_carried: meta.trialDaysCarried,
+  });
 }
 
 /**
  * Activates a plan for one product module (Billing / HR / Connect).
+ *
+ * With `client`, the SELECT and the upsert run on that connection (inside the caller's
+ * transaction) and the caller must call `afterPlanChangeCommitted` after its COMMIT.
+ * Without `client`, the function runs on the pool and performs those side effects itself.
  */
-export async function applyModuleSubscriptionPlanChange(params: {
-  businessId: string;
-  moduleKey: PlatformModule;
-  planId: string;
-  billingCycle: BillingCycle;
-  paymentMethod?: string;
-  paymentReference?: string | null;
-}): Promise<ApplyModulePlanChangeResult> {
+export async function applyModuleSubscriptionPlanChange(
+  params: {
+    businessId: string;
+    moduleKey: PlatformModule;
+    planId: string;
+    billingCycle: BillingCycle;
+    paymentMethod?: string;
+    paymentReference?: string | null;
+  },
+  client?: PoolClient,
+): Promise<ApplyModulePlanChangeResult> {
   await assertPlanMatchesModule(params.planId, params.moduleKey);
 
   const paymentMethod = params.paymentMethod ?? 'manual';
   const paymentReference = params.paymentReference?.trim() || null;
 
-  const existing = await queryOne<{ plan_id: string; trial_end_date: string | null }>(
+  const one = async <T extends QueryResultRow>(sql: string, values: unknown[]): Promise<T | null> =>
+    client ? ((await client.query<T>(sql, values)).rows[0] ?? null) : queryOne<T>(sql, values);
+
+  const existing = await one<{ plan_id: string; trial_end_date: string | null }>(
     `SELECT plan_id, trial_end_date::text FROM business_module_subscriptions
      WHERE business_id = $1 AND module_key = $2`,
     [params.businessId, params.moduleKey],
@@ -48,7 +99,7 @@ export async function applyModuleSubscriptionPlanChange(params: {
   const startDate = new Date().toISOString().split('T')[0];
   const endDate = computeSubscriptionPeriodEnd(params.billingCycle, trialDaysCarried);
 
-  const row = await queryOne<ApplyModulePlanChangeResult>(
+  const row = await one<ApplyModulePlanChangeResult>(
     `INSERT INTO business_module_subscriptions (
        business_id, module_key, plan_id, status, start_date, end_date,
        billing_cycle, trial_end_date, scheduled_plan_id
@@ -81,27 +132,22 @@ export async function applyModuleSubscriptionPlanChange(params: {
     throw new Error('Failed to apply module subscription plan change');
   }
 
-  await enableBusinessModule(params.businessId, params.moduleKey, 'upgrade');
+  const result: ApplyModulePlanChangeResult = {
+    ...row,
+    from_plan_id: existing?.plan_id,
+    trial_days_carried: trialDaysCarried,
+  };
 
-  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
-  if (params.moduleKey === 'billing') {
-    await ensureComplimentaryHrForBilling(params.businessId);
+  if (!client) {
+    await afterPlanChangeCommitted(result, {
+      fromPlanId: existing?.plan_id,
+      paymentMethod,
+      paymentReference,
+      trialDaysCarried,
+    });
   }
 
-  clearSubscriptionCache(params.businessId);
-  clearModuleSubscriptionCache(params.businessId);
-
-  await logSubscriptionEvent(params.businessId, 'upgraded', {
-    module_key: params.moduleKey,
-    to_plan_id: params.planId,
-    from_plan_id: existing?.plan_id,
-    billing_cycle: params.billingCycle,
-    payment_method: paymentMethod,
-    payment_reference: paymentReference,
-    trial_days_carried: trialDaysCarried,
-  });
-
-  return row;
+  return result;
 }
 
 export async function extendModuleSubscriptionForFreeMonths(

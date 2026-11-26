@@ -108,6 +108,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // A coupon on a ₹1 test plan can leave a fraction of a rupee, which gateways cannot charge.
+    if (pricing.finalAmount < 1) {
+      return NextResponse.json(
+        {
+          error: 'The amount after discount is below ₹1. Remove the coupon or use a 100% coupon.',
+          code: 'AMOUNT_BELOW_MINIMUM',
+        },
+        { status: 400 },
+      );
+    }
+
     if (!(await isPlatformPaymentConfigured())) {
       return NextResponse.json(
         {

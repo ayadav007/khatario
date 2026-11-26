@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne } from '@/lib/db';
+import { query, queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { isPlatformPaymentConfigured } from '@/lib/platform-subscription-checkout';
@@ -7,12 +7,13 @@ import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
 import { BILLING_CYCLES, computePlanAmount } from '@/lib/subscription/apply-plan-change';
-import {
-  applyModuleSubscriptionPlanChange,
-} from '@/lib/subscription/apply-module-plan-change';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { normalizePlatformModule, type PlatformModule } from '@/lib/platform-modules';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { clearSubscriptionCache } from '@/lib/subscription';
+import { enableBusinessModule } from '@/lib/business-modules';
+import { getModuleSubscription, upsertModuleSubscription } from '@/lib/subscription/module-subscriptions';
+import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lifecycle';
+import { decideZeroPriceChange } from '@/lib/subscription/zero-price-change';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,17 +40,6 @@ export async function POST(request: NextRequest) {
 
     if (!plan_id) {
       return NextResponse.json({ error: 'plan_id is required' }, { status: 400 });
-    }
-
-    if (plan_id === TRIAL_PLAN_ID) {
-      return NextResponse.json(
-        {
-          error:
-            'The Trial plan is assigned when you create your account. Choose Free or a paid plan to change your subscription.',
-          code: 'TRIAL_NOT_SELECTABLE',
-        },
-        { status: 400 },
-      );
     }
 
     const plan = await queryOne<{
@@ -110,14 +100,60 @@ export async function POST(request: NextRequest) {
     const moduleKey: PlatformModule =
       normalizePlatformModule(moduleKeyBody) ?? (await resolveModuleKeyForPlan(plan_id));
 
-    const subscription = await applyModuleSubscriptionPlanChange({
-      businessId: business_id,
+    const current = await getModuleSubscription(business_id, moduleKey, true);
+    const currentPlan = current
+      ? await queryOne<{
+          price_monthly: number | string;
+          price_yearly: number | string;
+          price_3year: number | string | null;
+        }>(
+          `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
+          [current.plan_id],
+        )
+      : null;
+    const currentPlanIsPaid =
+      !!currentPlan &&
+      BILLING_CYCLES.some((c) => computePlanAmount(currentPlan, c) > 0);
+
+    const decision = decideZeroPriceChange({
       moduleKey,
-      planId: plan_id,
-      billingCycle: cycle,
-      paymentMethod: payment_method,
-      paymentReference: payment_reference,
+      targetPlanId: plan_id,
+      current: current
+        ? {
+            plan_id: current.plan_id,
+            status: current.status,
+            trial_end_date: current.trial_end_date,
+          }
+        : null,
+      currentPlanIsPaid,
     });
+
+    if (decision.action === 'reject') {
+      return NextResponse.json(
+        { error: decision.message, code: decision.code },
+        { status: 409 },
+      );
+    }
+
+    if (decision.action === 'apply_free') {
+      if (current) {
+        await moveModuleSubscriptionToFree(business_id, moduleKey, current.plan_id, 'downgraded');
+      } else {
+        await upsertModuleSubscription({ query }, business_id, moduleKey, plan_id, 'active', null);
+      }
+    } else {
+      await upsertModuleSubscription(
+        { query },
+        business_id,
+        moduleKey,
+        plan_id,
+        'trial',
+        decision.trialDays,
+      );
+    }
+    await enableBusinessModule(business_id, moduleKey, 'upgrade');
+    clearSubscriptionCache(business_id);
+    const subscription = await getModuleSubscription(business_id, moduleKey, true);
 
     void (async () => {
       try {

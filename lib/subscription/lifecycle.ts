@@ -307,6 +307,9 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   const { clearModuleSubscriptionCache } = await import(
     '@/lib/subscription/module-subscriptions'
   );
+  const { getFreePlanIdForModule } = await import(
+    '@/lib/subscription/module-operational-check'
+  );
 
   const counts: ModuleExpiredSubscriptionCounts = {
     trialExpired: 0,
@@ -332,13 +335,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   );
 
   for (const row of expiredTrials) {
-    await moveModuleSubscriptionToFree(
+    const changed = await moveModuleSubscriptionToFree(
       row.business_id,
       row.module_key as PlatformModule,
       row.plan_id,
       'trial_expired',
+      'trial_due',
     );
-    counts.trialExpired++;
+    if (changed) counts.trialExpired++;
   }
 
   const cancelledSubs = await queryRows<{
@@ -355,13 +359,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   );
 
   for (const row of cancelledSubs) {
-    await moveModuleSubscriptionToFree(
+    const changed = await moveModuleSubscriptionToFree(
       row.business_id,
       row.module_key as PlatformModule,
       row.plan_id,
       'cancelled',
+      'cancel_due',
     );
-    counts.cancelledAtPeriodEnd++;
+    if (changed) counts.cancelledAtPeriodEnd++;
   }
 
   const scheduledDowngrades = await queryRows<{
@@ -378,23 +383,45 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
        AND end_date < CURRENT_DATE`,
   );
 
+  const freeTarget = (moduleKey: string) => getFreePlanIdForModule(moduleKey as PlatformModule);
+
   for (const row of scheduledDowngrades) {
-    await query(
+    if (row.scheduled_plan_id === freeTarget(row.module_key)) {
+      // Free plan: no payment needed, land on free with no end date.
+      const moved = await moveModuleSubscriptionToFree(
+        row.business_id,
+        row.module_key as PlatformModule,
+        row.plan_id,
+        'downgraded',
+        'scheduled_due',
+      );
+      if (moved) counts.scheduledDowngrades++;
+      continue;
+    }
+
+    // Cheaper paid plan: never start a new paid period without payment. Switch the plan, keep the
+    // lapsed end_date and give the usual 7-day grace so the customer can pay for the new plan.
+    const updated = await query(
       `UPDATE business_module_subscriptions
        SET plan_id = $3,
            scheduled_plan_id = NULL,
            downgraded_from = $4,
-           start_date = CURRENT_DATE,
-           end_date = (CURRENT_DATE + INTERVAL '1 month')::date,
+           grace_period_end = (end_date + INTERVAL '7 days')::date,
            updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $1 AND module_key = $2`,
+       WHERE business_id = $1 AND module_key = $2
+         AND status IN ('active', 'trial')
+         AND scheduled_plan_id = $3
+         AND end_date IS NOT NULL
+         AND end_date < CURRENT_DATE`,
       [row.business_id, row.module_key, row.scheduled_plan_id, row.plan_id],
     );
+    if ((updated.rowCount ?? 0) === 0) continue;
 
     await logSubscriptionEvent(row.business_id, 'downgraded', {
       module_key: row.module_key,
       from_plan_id: row.plan_id,
       to_plan_id: row.scheduled_plan_id,
+      awaiting_payment: true,
     });
 
     clearSubscriptionCache(row.business_id);
@@ -419,13 +446,20 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   );
 
   for (const row of lapsedSubs) {
-    await query(
+    const started = await query(
       `UPDATE business_module_subscriptions
        SET grace_period_end = (end_date + INTERVAL '7 days')::date,
            updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $1 AND module_key = $2`,
+       WHERE business_id = $1 AND module_key = $2
+         AND status = 'active'
+         AND cancel_at_period_end = false
+         AND scheduled_plan_id IS NULL
+         AND end_date IS NOT NULL
+         AND end_date < CURRENT_DATE
+         AND grace_period_end IS NULL`,
       [row.business_id, row.module_key],
     );
+    if ((started.rowCount ?? 0) === 0) continue;
     await logSubscriptionEvent(row.business_id, 'grace_started', {
       module_key: row.module_key,
       from_plan_id: row.plan_id,
@@ -447,13 +481,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   );
 
   for (const row of graceExpired) {
-    await moveModuleSubscriptionToFree(
+    const changed = await moveModuleSubscriptionToFree(
       row.business_id,
       row.module_key as PlatformModule,
       row.plan_id,
       'grace_expired',
+      'grace_expired',
     );
-    counts.graceExpired++;
+    if (changed) counts.graceExpired++;
   }
 
   return counts;

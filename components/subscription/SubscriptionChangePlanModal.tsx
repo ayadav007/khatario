@@ -128,7 +128,10 @@ export function SubscriptionChangePlanModal({
   function getPlanAction(
     plan: SubscriptionAvailablePlan
   ): 'current' | 'upgrade' | 'downgrade' {
-    return getPlanChangeAction(currentPlanId, currentPlanSortOrder, plan);
+    return getPlanChangeAction(
+      { id: currentPlanId, sort_order: currentPlanSortOrder },
+      { id: plan.id, sort_order: plan.sort_order },
+    );
   }
 
   function formatDate(dateStr: string | null): string {

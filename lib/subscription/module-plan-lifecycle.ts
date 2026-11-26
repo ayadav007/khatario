@@ -4,6 +4,8 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent, getDataImpactWarnings, type DataImpactWarning } from '@/lib/subscription/lifecycle';
 import { getModuleSubscription, clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
+import { comparePlanTier } from '@/lib/subscription/plan-tier';
+import { planOpenToBusiness } from '@/lib/subscription/public-plans';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import {
   getFreePlanIdForModule,
@@ -34,15 +36,19 @@ export async function downgradeModuleSubscription(
     `SELECT id, sort_order FROM subscription_plans WHERE id = $1 AND is_active = true`,
     [targetPlanId],
   );
-  if (!targetPlan) {
+  // The module's own free plan stays a valid target even though it may not be public.
+  const onSale =
+    targetPlanId === getFreePlanIdForModule(moduleKey) ||
+    (await planOpenToBusiness(businessId, targetPlanId));
+  if (!targetPlan || !onSale) {
     throw new Error(`Target plan "${targetPlanId}" not found or inactive`);
   }
 
-  const currentPlan = await queryOne<{ sort_order: number }>(
-    `SELECT sort_order FROM subscription_plans WHERE id = $1`,
+  const currentPlan = await queryOne<{ id: string; sort_order: number }>(
+    `SELECT id, sort_order FROM subscription_plans WHERE id = $1`,
     [current.plan_id],
   );
-  if (currentPlan && targetPlan.sort_order >= currentPlan.sort_order) {
+  if (currentPlan && comparePlanTier(targetPlan, currentPlan) !== -1) {
     throw new Error(
       `Target plan "${targetPlanId}" is not a lower tier than the current ${moduleKey} plan`,
     );
@@ -155,15 +161,33 @@ export async function cancelModuleSubscription(
   return { end_date: current.end_date ?? null };
 }
 
+/** Extra conditions that make the move-to-free UPDATE a no-op if the row changed since it was selected. */
+export type MoveToFreeOnlyIf = 'grace_expired' | 'cancel_due' | 'trial_due' | 'scheduled_due';
+
+const MOVE_TO_FREE_CONDITIONS: Record<MoveToFreeOnlyIf, string> = {
+  grace_expired: 'grace_period_end IS NOT NULL AND grace_period_end < CURRENT_DATE',
+  cancel_due: 'cancel_at_period_end = true AND end_date IS NOT NULL AND end_date < CURRENT_DATE',
+  trial_due:
+    'trial_extension_granted = true AND trial_end_date IS NOT NULL AND trial_end_date < CURRENT_DATE AND trial_extension_declined_at IS NULL',
+  scheduled_due: 'scheduled_plan_id IS NOT NULL AND end_date IS NOT NULL AND end_date < CURRENT_DATE',
+};
+
+/**
+ * Move a module to its free plan. With `onlyIf`, the UPDATE repeats the condition that selected the
+ * row; if nothing changed (e.g. a payment landed meanwhile) no event is logged, no cache is touched
+ * and `false` is returned. Without `onlyIf` the move is unconditional and returns `true`.
+ */
 export async function moveModuleSubscriptionToFree(
   businessId: string,
   moduleKey: PlatformModule,
   fromPlanId: string,
   eventType: string,
-): Promise<void> {
+  onlyIf?: MoveToFreeOnlyIf,
+): Promise<boolean> {
   const freePlanId = getFreePlanIdForModule(moduleKey);
+  const guard = onlyIf ? ` AND ${MOVE_TO_FREE_CONDITIONS[onlyIf]}` : '';
 
-  await query(
+  const result = await query(
     `UPDATE business_module_subscriptions
      SET plan_id = $3,
          status = 'active',
@@ -175,9 +199,10 @@ export async function moveModuleSubscriptionToFree(
          cancelled_at = NULL,
          downgraded_from = $4,
          updated_at = CURRENT_TIMESTAMP
-     WHERE business_id = $1 AND module_key = $2`,
+     WHERE business_id = $1 AND module_key = $2${guard}`,
     [businessId, moduleKey, freePlanId, fromPlanId],
   );
+  if (onlyIf && (result.rowCount ?? 0) === 0) return false;
 
   await logSubscriptionEvent(businessId, eventType, {
     module_key: moduleKey,
@@ -196,4 +221,5 @@ export async function moveModuleSubscriptionToFree(
     );
     await ensureComplimentaryHrForBilling(businessId);
   }
+  return true;
 }

@@ -2,12 +2,17 @@
  * WhatsApp add-on checkout via Razorpay Payment Links.
  */
 
-import { query, queryOne } from '@/lib/db';
+import type { PoolClient } from 'pg';
+import { getPool, query } from '@/lib/db';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
 import {
+  notifyBillingTransactionStatus,
   recordBillingTransaction,
-  updateBillingTransactionStatus,
 } from '@/lib/platform-billing';
+import {
+  assertBillingTransactionTransition,
+  type BillingTxStatus,
+} from '@/lib/platform-billing-transaction-state';
 import {
   clearAddonCache,
   type WhatsAppAddonType,
@@ -59,15 +64,21 @@ export async function activateWhatsAppAddon(
   businessId: string,
   addonType: WhatsAppAddonType,
   price: number,
+  client?: PoolClient,
 ): Promise<Record<string, unknown>> {
-  const existingAddon = await queryOne<{ id: string; status: string }>(
+  const run = (sql: string, values: unknown[]) =>
+    client ? client.query(sql, values) : query(sql, values);
+  const runOne = async <T extends Record<string, unknown>>(sql: string, values: unknown[]) =>
+    ((await run(sql, values)).rows[0] as T | undefined) ?? null;
+
+  const existingAddon = await runOne<{ id: string; status: string }>(
     `SELECT id, status FROM whatsapp_addons
      WHERE business_id = $1 AND addon_type = $2`,
     [businessId, addonType],
   );
 
   if (existingAddon) {
-    await query(
+    await run(
       `UPDATE whatsapp_addons
        SET status = 'active',
            start_date = CURRENT_DATE,
@@ -78,7 +89,7 @@ export async function activateWhatsAppAddon(
       [price, businessId, addonType],
     );
   } else {
-    await query(
+    await run(
       `INSERT INTO whatsapp_addons (
          business_id, addon_type, status, price_monthly, start_date, end_date
        ) VALUES ($1, $2, 'active', $3, CURRENT_DATE, NULL)`,
@@ -86,13 +97,13 @@ export async function activateWhatsAppAddon(
     );
   }
 
-  const addon = await queryOne(
+  const addon = await runOne(
     `SELECT * FROM whatsapp_addons
      WHERE business_id = $1 AND addon_type = $2`,
     [businessId, addonType],
   );
 
-  clearAddonCache(businessId);
+  if (!client) clearAddonCache(businessId);
   return addon ?? {};
 }
 
@@ -191,25 +202,10 @@ export async function completeAddonCheckoutPayment(params: {
   amount: number;
   gatewayResponse?: unknown;
   paymentMethod?: PlatformPaymentProviderId;
-}): Promise<void> {
+}): Promise<'activated' | 'already_completed'> {
   const price = WHATSAPP_ADDON_PRICING[params.addonType] ?? params.amount;
 
-  if (params.billingTransactionId) {
-    await updateBillingTransactionStatus(
-      params.billingTransactionId,
-      'completed',
-      params.gatewayResponse,
-    );
-
-    if (params.providerPaymentId) {
-      await query(
-        `UPDATE billing_transactions
-         SET payment_reference = COALESCE(payment_reference, $2)
-         WHERE id = $1`,
-        [params.billingTransactionId, params.providerPaymentId],
-      );
-    }
-  } else {
+  if (!params.billingTransactionId) {
     await recordBillingTransaction({
       businessId: params.businessId,
       planId: CONNECT_PLAN_ID,
@@ -222,18 +218,80 @@ export async function completeAddonCheckoutPayment(params: {
       description: `${WHATSAPP_ADDON_LABELS[params.addonType]} add-on — monthly`,
       gatewayResponse: params.gatewayResponse,
     });
+    await activateAddonForCheckout(params.businessId, params.addonType, price);
+    return 'activated';
   }
 
-  if (params.addonType === 'khatario_ai') {
-    await activateWhatsAppAddon(params.businessId, params.addonType, price);
+  const billingTransactionId = params.billingTransactionId;
+  const client: PoolClient = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const locked = await client.query<{ status: BillingTxStatus }>(
+      `SELECT status FROM billing_transactions
+       WHERE id = $1 AND business_id = $2
+       FOR UPDATE`,
+      [billingTransactionId, params.businessId],
+    );
+    const tx = locked.rows[0];
+    if (!tx) {
+      throw new Error('CHECKOUT_TRANSACTION_NOT_FOUND');
+    }
+    if (tx.status === 'completed') {
+      await client.query('ROLLBACK');
+      return 'already_completed';
+    }
+    assertBillingTransactionTransition(tx.status, 'completed');
+
+    await client.query(
+      `UPDATE billing_transactions
+       SET status = 'completed',
+           payment_reference = COALESCE(payment_reference, $2),
+           gateway_response = COALESCE($3::jsonb, gateway_response),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [
+        billingTransactionId,
+        params.providerPaymentId?.trim() || null,
+        params.gatewayResponse ? JSON.stringify(params.gatewayResponse) : null,
+      ],
+    );
+
+    await activateAddonForCheckout(params.businessId, params.addonType, price, client);
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  clearAddonCache(params.businessId);
+  try {
+    await notifyBillingTransactionStatus(billingTransactionId, 'completed');
+  } catch (err) {
+    console.error('[addon-checkout] payment success notification failed:', err);
+  }
+  return 'activated';
+}
+
+async function activateAddonForCheckout(
+  businessId: string,
+  addonType: WhatsAppAddonType,
+  price: number,
+  client?: PoolClient,
+): Promise<void> {
+  if (addonType === 'khatario_ai') {
+    await activateWhatsAppAddon(businessId, addonType, price, client);
   } else {
     // Checkouts opened before the Bot/Send add-ons were folded into Connect.
-    await grantConnectMonthForLegacyAddon(params.businessId);
+    await grantConnectMonthForLegacyAddon(businessId, client);
   }
 }
 
-async function grantConnectMonthForLegacyAddon(businessId: string): Promise<void> {
-  await query(
+async function grantConnectMonthForLegacyAddon(businessId: string, client?: PoolClient): Promise<void> {
+  const run = (sql: string, values: unknown[]) => (client ? client.query(sql, values) : query(sql, values));
+  await run(
     `INSERT INTO business_module_subscriptions
        (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
      VALUES ($1, 'connect', $2, 'active', CURRENT_DATE, (CURRENT_DATE + INTERVAL '1 month')::date, 'monthly')
@@ -255,13 +313,13 @@ async function grantConnectMonthForLegacyAddon(businessId: string): Promise<void
        updated_at = CURRENT_TIMESTAMP`,
     [businessId, CONNECT_PLAN_ID],
   );
-  await query(
+  await run(
     `INSERT INTO business_modules (business_id, module_key, enabled, source)
      VALUES ($1, 'connect', true, 'legacy_addon_checkout')
      ON CONFLICT (business_id, module_key) DO UPDATE SET enabled = true`,
     [businessId],
   );
-  clearAddonCache(businessId);
+  if (!client) clearAddonCache(businessId);
 }
 
 export function isWhatsAppAddonType(value: unknown): value is WhatsAppAddonType {

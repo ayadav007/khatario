@@ -31,6 +31,7 @@ import {
 } from '@/lib/platform-billing-transaction-state';
 import {
   completeSubscriptionCheckoutPayment,
+  type CheckoutCompletion,
   extractCheckoutMetaFromWebhookNotes,
   getPlatformEasebuzzProvider,
   getPlatformRazorpayProvider,
@@ -247,6 +248,17 @@ export async function updateBillingTransactionStatus(
   }
 }
 
+/**
+ * Customer email / WhatsApp, admin notice and the payment_succeeded / payment_failed event for a
+ * status that was already written (e.g. inside a checkout transaction). Call after COMMIT.
+ */
+export async function notifyBillingTransactionStatus(
+  transactionId: string,
+  status: BillingTxStatus,
+): Promise<void> {
+  await dispatchBillingEmails(transactionId, status);
+}
+
 async function dispatchBillingEmails(
   transactionId: string,
   status: BillingTxStatus,
@@ -449,6 +461,23 @@ function extractPlanMetaFromWebhook(verified: VerifyWebhookResult): {
   };
 }
 
+/**
+ * Webhook event states: `received` (inserted; in progress or crashed), `processed`, `failed`
+ * (gateway reported a failure), `pending`, `ignored`, `error` (processing threw).
+ */
+export type PlatformWebhookEventStatus =
+  | 'received'
+  | 'processed'
+  | 'failed'
+  | 'pending'
+  | 'ignored'
+  | 'error';
+
+/** An event is (re)processed when it is new or its last attempt never finished or threw. */
+export function shouldProcessWebhookEvent(logged: { isNew: boolean; status: string }): boolean {
+  return logged.isNew || logged.status === 'received' || logged.status === 'error';
+}
+
 export async function logPlatformWebhookEvent(params: {
   provider: string;
   idempotencyKey: string;
@@ -458,13 +487,13 @@ export async function logPlatformWebhookEvent(params: {
   status: string;
   payload: unknown;
   processingNotes?: string;
-}): Promise<boolean> {
-  const row = await queryOne(
+}): Promise<{ isNew: boolean; status: string }> {
+  const row = await queryOne<{ status: string }>(
     `INSERT INTO platform_billing_webhook_events
        (provider, idempotency_key, event_type, business_id, billing_transaction_id, status, payload, processing_notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (provider, idempotency_key) DO NOTHING
-     RETURNING id`,
+     RETURNING status`,
     [
       params.provider,
       params.idempotencyKey,
@@ -476,13 +505,26 @@ export async function logPlatformWebhookEvent(params: {
       params.processingNotes ?? null,
     ],
   );
-  return Boolean(row);
+  if (row) return { isNew: true, status: row.status ?? params.status };
+
+  const existing = await queryOne<{ status: string }>(
+    `SELECT status FROM platform_billing_webhook_events
+     WHERE provider = $1 AND idempotency_key = $2`,
+    [params.provider, params.idempotencyKey],
+  );
+  return { isNew: false, status: existing?.status ?? 'unknown' };
 }
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export type PlatformRazorpayWebhookResult = { ok: boolean; duplicate?: boolean; error?: string };
 
 export async function processPlatformRazorpayWebhook(
   rawBody: string,
   headers: Record<string, string | string[] | undefined>,
-): Promise<{ ok: boolean; duplicate?: boolean; error?: string }> {
+): Promise<PlatformRazorpayWebhookResult> {
   const provider = await getPlatformRazorpayProvider();
   if (!provider) {
     return { ok: false, error: 'Platform Razorpay not configured' };
@@ -499,7 +541,7 @@ export async function processPlatformRazorpayWebhook(
         .digest('hex')
     : createHash('sha256').update(`platform|razorpay|${rawBody}`).digest('hex');
 
-  const isNew = await logPlatformWebhookEvent({
+  const logged = await logPlatformWebhookEvent({
     provider: 'razorpay',
     idempotencyKey: idemKey,
     eventType: verified.eventType || 'unknown',
@@ -507,17 +549,56 @@ export async function processPlatformRazorpayWebhook(
     payload: verified.rawPayload ?? {},
   });
 
-  if (!isNew) {
+  if (!shouldProcessWebhookEvent(logged)) {
     return { ok: true, duplicate: true };
   }
 
+  try {
+    return await handleVerifiedRazorpayEvent(verified, idemKey);
+  } catch (err) {
+    // Leave the event retryable: the gateway's redelivery (or a manual replay) processes it again.
+    await query(
+      `UPDATE platform_billing_webhook_events SET status = 'error', processing_notes = $2
+       WHERE provider = 'razorpay' AND idempotency_key = $1`,
+      [idemKey, errorMessage(err)],
+    ).catch((markErr) => console.error('[platform-billing] could not mark webhook event error', markErr));
+    // Link the event to its checkout row (business taken from that row, not from notes) for the admin log.
+    const txRef = extractCheckoutMetaFromWebhookNotes(verified).billingTransactionId;
+    if (txRef) {
+      await query(
+        `UPDATE platform_billing_webhook_events e
+         SET billing_transaction_id = t.id, business_id = t.business_id
+         FROM billing_transactions t
+         WHERE e.provider = 'razorpay' AND e.idempotency_key = $1 AND t.id::text = $2`,
+        [idemKey, txRef],
+      ).catch(() => undefined);
+    }
+    throw err;
+  }
+}
+
+async function handleVerifiedRazorpayEvent(
+  verified: VerifyWebhookResult,
+  idemKey: string,
+): Promise<PlatformRazorpayWebhookResult> {
+  const markEvent = (
+    status: PlatformWebhookEventStatus,
+    notes: string,
+    businessId: string | null = null,
+    billingTransactionId: string | null = null,
+  ) =>
+    query(
+      `UPDATE platform_billing_webhook_events
+       SET status = $2, processing_notes = $3,
+           business_id = COALESCE($4, business_id),
+           billing_transaction_id = COALESCE($5, billing_transaction_id)
+       WHERE provider = 'razorpay' AND idempotency_key = $1`,
+      [idemKey, status, notes, businessId, billingTransactionId],
+    );
+
   const businessId = extractBusinessIdFromWebhook(verified);
   if (!businessId) {
-    await query(
-      `UPDATE platform_billing_webhook_events SET status = 'ignored', processing_notes = $2
-       WHERE provider = 'razorpay' AND idempotency_key = $1`,
-      [idemKey, 'No business_id in webhook notes'],
-    );
+    await markEvent('ignored', 'No business_id in webhook notes');
     return { ok: true, error: 'No business_id in payload' };
   }
 
@@ -539,7 +620,7 @@ export async function processPlatformRazorpayWebhook(
       checkoutMeta.checkoutType === 'whatsapp_addon' &&
       isWhatsAppAddonType(checkoutMeta.addonType)
     ) {
-      await completeAddonCheckoutPayment({
+      const completion = await completeAddonCheckoutPayment({
         businessId,
         addonType: checkoutMeta.addonType,
         billingTransactionId,
@@ -547,40 +628,86 @@ export async function processPlatformRazorpayWebhook(
         amount,
         gatewayResponse: verified.rawPayload,
       });
+      if (completion === 'already_completed') {
+        await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTxId);
+        return { ok: true, duplicate: true };
+      }
       notes = 'WhatsApp addon checkout completed';
     } else if (billingTransactionId) {
-      await completeSubscriptionCheckoutPayment({
-        businessId,
-        planId: checkoutMeta.planId || planId,
-        billingCycle,
-        billingTransactionId,
-        providerPaymentId: verified.providerPaymentId,
-        amount,
-        gatewayResponse: verified.rawPayload,
-      });
+      let completion: CheckoutCompletion;
+      try {
+        completion = await completeSubscriptionCheckoutPayment({
+          businessId,
+          planId: checkoutMeta.planId || planId,
+          billingCycle,
+          billingTransactionId,
+          providerPaymentId: verified.providerPaymentId,
+          // The verified paid amount; a missing amount must not match the stored total.
+          amount: verified.amount ?? Number.NaN,
+          gatewayResponse: verified.rawPayload,
+        });
+      } catch (err) {
+        if (errorMessage(err) === 'AMOUNT_MISMATCH') {
+          await markEvent(
+            'ignored',
+            `Amount mismatch: paid ${verified.amount ?? 'unknown'} INR does not match the checkout total`,
+            businessId,
+            billingTransactionId,
+          );
+          return { ok: false, error: 'Amount mismatch' };
+        }
+        throw err;
+      }
+      if (completion === 'already_completed') {
+        await markEvent('processed', 'Duplicate of a completed checkout', businessId, billingTransactionId);
+        return { ok: true, duplicate: true };
+      }
       notes = 'Subscription checkout completed';
     } else {
-      await query(
-        `UPDATE platform_billing_webhook_events SET status = 'ignored', processing_notes = $2
-         WHERE provider = 'razorpay' AND idempotency_key = $1`,
-        [
-          idemKey,
-          'Legacy webhook path disabled — missing billing_transaction_id and checkout plan metadata',
-        ],
+      await markEvent(
+        'ignored',
+        'Legacy webhook path disabled — missing billing_transaction_id and checkout plan metadata',
       );
       return {
         ok: true,
         error: 'Webhook ignored: checkout transaction reference required',
       };
     }
-  } else if (verified.status === 'failed') {
+  } else if (verified.status === 'failed' || verified.eventType === 'payment_link.expired') {
+    const closesCheckout =
+      verified.eventType === 'payment_link.cancelled' || verified.eventType === 'payment_link.expired';
+    if (billingTransactionId && !closesCheckout) {
+      // One failed attempt does not close the checkout: the customer can retry on the same link.
+      await logSubscriptionEvent(businessId, 'payment_attempt_failed', {
+        transaction_id: billingTransactionId,
+      });
+      await markEvent('processed', 'Attempt failed; checkout still open', businessId, billingTransactionId);
+      return { ok: true };
+    }
     if (billingTransactionId) {
+      const current = await queryOne<{ status: string }>(
+        `SELECT status FROM billing_transactions WHERE id = $1 AND business_id = $2`,
+        [billingTransactionId, businessId],
+      );
+      if (!current) {
+        await markEvent('ignored', 'Checkout transaction not found for this business', businessId);
+        return { ok: true };
+      }
+      billingTxId = billingTransactionId;
+      if (current.status !== 'pending') {
+        await markEvent(
+          'processed',
+          `Checkout already ${current.status}; no status change`,
+          businessId,
+          billingTransactionId,
+        );
+        return { ok: true };
+      }
       await updateBillingTransactionStatus(
         billingTransactionId,
         'failed',
         verified.rawPayload,
       );
-      billingTxId = billingTransactionId;
     } else {
       const { id } = await recordBillingTransaction({
         businessId,
@@ -600,8 +727,12 @@ export async function processPlatformRazorpayWebhook(
     notes = 'Pending — no billing email sent';
   }
 
-  const eventStatus =
-    verified.status === 'success' ? 'processed' : verified.status === 'failed' ? 'failed' : 'pending';
+  const eventStatus: PlatformWebhookEventStatus =
+    verified.status === 'success'
+      ? 'processed'
+      : verified.status === 'failed' || verified.eventType === 'payment_link.expired'
+        ? 'failed'
+        : 'pending';
   await query(
     `UPDATE platform_billing_webhook_events
      SET status = $2, business_id = $3, billing_transaction_id = $4, processing_notes = $5
@@ -663,7 +794,7 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
   const idemKey = createHash('sha256')
     .update(`platform|easebuzz|${txnid}|${verified.status}`)
     .digest('hex');
-  const isNew = await logPlatformWebhookEvent({
+  const logged = await logPlatformWebhookEvent({
     provider: 'easebuzz',
     idempotencyKey: idemKey,
     eventType: verified.eventType || 'easebuzz_transaction',
@@ -672,61 +803,91 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
     status: 'received',
     payload: verified.rawPayload ?? {},
   });
-  const settledOutcome =
-    tx.status === 'completed' ? 'paid' : tx.status === 'failed' ? 'failed' : null;
-  if (!isNew || settledOutcome) {
-    return { ok: true, outcome: settledOutcome ?? 'duplicate', ...base };
+  if (!shouldProcessWebhookEvent(logged)) {
+    return { ok: true, outcome: tx.status === 'completed' ? 'paid' : 'duplicate', ...base };
   }
 
-  const markEvent = (status: string, notes: string) =>
+  const markEvent = (status: PlatformWebhookEventStatus, notes: string) =>
     query(
       `UPDATE platform_billing_webhook_events SET status = $2, processing_notes = $3
         WHERE provider = 'easebuzz' AND idempotency_key = $1`,
       [idemKey, status, notes],
     );
 
-  if (verified.status === 'success') {
-    const expected = Math.round((parseFloat(tx.total_amount) || 0) * 100);
-    const paid = Math.round((verified.amount ?? -1) * 100);
-    if (expected !== paid) {
-      await markEvent('ignored', `Amount mismatch: expected ${expected} paise, got ${paid}`);
-      return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
-    }
-    if (checkoutType === 'whatsapp_addon' && isWhatsAppAddonType(addonType)) {
-      await completeAddonCheckoutPayment({
-        businessId: tx.business_id,
-        addonType,
-        billingTransactionId: tx.id,
-        providerPaymentId: verified.providerPaymentId,
-        amount: verified.amount ?? 0,
-        gatewayResponse: { ...gw, ...verified.rawPayload },
-        paymentMethod: 'easebuzz',
-      });
-      await markEvent('processed', 'WhatsApp addon checkout completed');
-    } else {
-      await completeSubscriptionCheckoutPayment({
-        businessId: tx.business_id,
-        planId: tx.plan_id || 'free',
-        billingCycle: normalizeBillingCycle(tx.billing_cycle),
-        billingTransactionId: tx.id,
-        providerPaymentId: verified.providerPaymentId,
-        amount: verified.amount ?? 0,
-        gatewayResponse: { ...gw, ...verified.rawPayload },
-        paymentMethod: 'easebuzz',
-      });
-      await markEvent('processed', 'Subscription checkout completed');
-    }
+  if (tx.status === 'completed') {
+    await markEvent('processed', 'Duplicate of a completed checkout');
     return { ok: true, outcome: 'paid', ...base };
   }
 
-  if (verified.status === 'failed') {
-    await updateBillingTransactionStatus(tx.id, 'failed', { ...gw, ...verified.rawPayload });
-    await markEvent('failed', 'Payment failed');
-    return { ok: true, outcome: 'failed', ...base };
-  }
+  try {
+    if (verified.status === 'success') {
+      const expected = Math.round((parseFloat(tx.total_amount) || 0) * 100);
+      const paid = Math.round((verified.amount ?? -1) * 100);
+      if (expected !== paid) {
+        await markEvent('ignored', `Amount mismatch: expected ${expected} paise, got ${paid}`);
+        return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
+      }
+      let completion: 'activated' | 'already_completed';
+      if (checkoutType === 'whatsapp_addon' && isWhatsAppAddonType(addonType)) {
+        completion = await completeAddonCheckoutPayment({
+          businessId: tx.business_id,
+          addonType,
+          billingTransactionId: tx.id,
+          providerPaymentId: verified.providerPaymentId,
+          amount: verified.amount ?? 0,
+          gatewayResponse: { ...gw, ...verified.rawPayload },
+          paymentMethod: 'easebuzz',
+        });
+      } else {
+        try {
+          completion = await completeSubscriptionCheckoutPayment({
+            businessId: tx.business_id,
+            planId: tx.plan_id || 'free',
+            billingCycle: normalizeBillingCycle(tx.billing_cycle),
+            billingTransactionId: tx.id,
+            providerPaymentId: verified.providerPaymentId,
+            amount: verified.amount ?? Number.NaN,
+            gatewayResponse: { ...gw, ...verified.rawPayload },
+            paymentMethod: 'easebuzz',
+          });
+        } catch (err) {
+          if (errorMessage(err) === 'AMOUNT_MISMATCH') {
+            await markEvent('ignored', 'Amount mismatch against the locked checkout row');
+            return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
+          }
+          throw err;
+        }
+      }
+      await markEvent(
+        'processed',
+        completion === 'already_completed'
+          ? 'Duplicate of a completed checkout'
+          : checkoutType === 'whatsapp_addon'
+            ? 'WhatsApp addon checkout completed'
+            : 'Subscription checkout completed',
+      );
+      return { ok: true, outcome: 'paid', ...base };
+    }
 
-  await markEvent('pending', 'Pending — no billing email sent');
-  return { ok: true, outcome: 'pending', ...base };
+    if (verified.status === 'failed') {
+      if (tx.status !== 'pending') {
+        // failed -> failed (or any other non-pending row) is not a transition; leave the row.
+        await markEvent('processed', `Checkout already ${tx.status}; no status change`);
+        return { ok: true, outcome: 'failed', ...base };
+      }
+      await updateBillingTransactionStatus(tx.id, 'failed', { ...gw, ...verified.rawPayload });
+      await markEvent('failed', 'Payment failed');
+      return { ok: true, outcome: 'failed', ...base };
+    }
+
+    await markEvent('pending', 'Pending — no billing email sent');
+    return { ok: true, outcome: 'pending', ...base };
+  } catch (err) {
+    await markEvent('error', errorMessage(err)).catch((markErr) =>
+      console.error('[platform-billing] could not mark easebuzz event error', markErr),
+    );
+    throw err;
+  }
 }
 
 export async function listPlatformBillingEvents(limit = 50, offset = 0) {

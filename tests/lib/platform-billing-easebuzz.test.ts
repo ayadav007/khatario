@@ -80,10 +80,11 @@ function billingRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function mockDb(row: Record<string, unknown> | null, eventIsNew = true) {
+function mockDb(row: Record<string, unknown> | null, eventIsNew = true, storedEventStatus = 'processed') {
   queryOne.mockImplementation(async (sql: string) => {
     if (sql.includes('FROM billing_transactions')) return row;
     if (sql.includes('INSERT INTO platform_billing_webhook_events')) return eventIsNew ? { id: 'evt' } : null;
+    if (sql.includes('SELECT status FROM platform_billing_webhook_events')) return { status: storedEventStatus };
     if (sql.includes('SELECT status FROM billing_transactions')) return { status: 'pending' };
     return null;
   });
@@ -93,8 +94,8 @@ describe('processPlatformEasebuzzCallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     updateStatusQueries.length = 0;
-    completeSubscriptionCheckoutPayment.mockResolvedValue(undefined);
-    completeAddonCheckoutPayment.mockResolvedValue(undefined);
+    completeSubscriptionCheckoutPayment.mockResolvedValue('activated');
+    completeAddonCheckoutPayment.mockResolvedValue('activated');
   });
 
   it('completes the subscription from the stored billing row, not the callback udfs', async () => {
@@ -159,6 +160,43 @@ describe('processPlatformEasebuzzCallback', () => {
     expect(
       updateStatusQueries.some(([sql]) => String(sql).includes('UPDATE billing_transactions')),
     ).toBe(true);
+  });
+
+  it('a failure callback on a row that is not pending leaves the row and marks the event processed', async () => {
+    mockDb(billingRow({ status: 'failed' }));
+    const r = await processPlatformEasebuzzCallback(body({ status: 'failure' }));
+    expect(r).toMatchObject({ ok: true, outcome: 'failed' });
+    expect(updateStatusQueries.some(([sql]) => String(sql).includes('UPDATE billing_transactions'))).toBe(false);
+    expect(updateStatusQueries.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'))?.[1]).toEqual([
+      expect.any(String),
+      'processed',
+      'Checkout already failed; no status change',
+    ]);
+  });
+
+  it('treats already_completed from the locked row as paid', async () => {
+    mockDb(billingRow());
+    completeSubscriptionCheckoutPayment.mockResolvedValueOnce('already_completed');
+    const r = await processPlatformEasebuzzCallback(body({}));
+    expect(r).toMatchObject({ ok: true, outcome: 'paid' });
+  });
+
+  it('marks the event error and rethrows when completion throws', async () => {
+    mockDb(billingRow());
+    completeSubscriptionCheckoutPayment.mockRejectedValueOnce(new Error('boom'));
+    await expect(processPlatformEasebuzzCallback(body({}))).rejects.toThrow('boom');
+    expect(updateStatusQueries.find(([sql]) => String(sql).includes('UPDATE platform_billing_webhook_events'))?.[1]).toEqual([
+      expect.any(String),
+      'error',
+      'boom',
+    ]);
+  });
+
+  it('reprocesses a redelivery whose earlier attempt ended in error', async () => {
+    mockDb(billingRow(), false, 'error');
+    const r = await processPlatformEasebuzzCallback(body({}));
+    expect(r).toMatchObject({ ok: true, outcome: 'paid' });
+    expect(completeSubscriptionCheckoutPayment).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a txnid that Khatario never issued', async () => {

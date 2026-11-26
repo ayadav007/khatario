@@ -72,8 +72,8 @@ function verifiedSuccessPayload() {
 describe('processPlatformRazorpayWebhook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    completeSubscriptionCheckoutPayment.mockResolvedValue(undefined);
-    completeAddonCheckoutPayment.mockResolvedValue(undefined);
+    completeSubscriptionCheckoutPayment.mockResolvedValue('activated');
+    completeAddonCheckoutPayment.mockResolvedValue('activated');
   });
 
   it('returns error when provider not configured', async () => {
@@ -175,6 +175,9 @@ describe('processPlatformRazorpayWebhook', () => {
       if (sql.includes('INSERT INTO platform_billing_webhook_events')) {
         return null;
       }
+      if (sql.includes('SELECT status FROM platform_billing_webhook_events')) {
+        return { status: 'processed' };
+      }
       return null;
     });
 
@@ -223,5 +226,69 @@ describe('processPlatformRazorpayWebhook', () => {
     expect(result.ok).toBe(true);
     expect(result.error).toMatch(/checkout transaction reference required/i);
     expect(completeSubscriptionCheckoutPayment).not.toHaveBeenCalled();
+  });
+  describe('event states (Task 5)', () => {
+    function eventUpdates(status: string) {
+      return query.mock.calls.filter(
+        ([sql, params]) =>
+          String(sql).includes('UPDATE platform_billing_webhook_events') &&
+          Array.isArray(params) &&
+          params[1] === status,
+      );
+    }
+
+    it.each(['error', 'received'])('reprocesses an event whose stored status is %s', async (stored) => {
+      mockVerifyWebhook.mockResolvedValueOnce(verifiedSuccessPayload());
+      queryOne.mockImplementation(async (sql: string) => {
+        if (sql.includes('INSERT INTO platform_billing_webhook_events')) return null;
+        if (sql.includes('SELECT status FROM platform_billing_webhook_events')) return { status: stored };
+        return null;
+      });
+      query.mockResolvedValue(undefined);
+
+      const result = await processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' });
+      expect(result).toEqual({ ok: true });
+      expect(completeSubscriptionCheckoutPayment).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the verified paid amount and reports an already completed checkout as a duplicate', async () => {
+      mockVerifyWebhook.mockResolvedValueOnce(verifiedSuccessPayload());
+      queryOne.mockImplementation(async (sql: string) =>
+        sql.includes('INSERT INTO platform_billing_webhook_events') ? { id: 'evt' } : null,
+      );
+      query.mockResolvedValue(undefined);
+      completeSubscriptionCheckoutPayment.mockResolvedValueOnce('already_completed');
+
+      const result = await processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' });
+      expect(result).toEqual({ ok: true, duplicate: true });
+      expect(completeSubscriptionCheckoutPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 499 }));
+      expect(eventUpdates('processed')[0][1][2]).toBe('Duplicate of a completed checkout');
+    });
+
+    it('answers Amount mismatch and marks the event ignored', async () => {
+      mockVerifyWebhook.mockResolvedValueOnce(verifiedSuccessPayload());
+      queryOne.mockImplementation(async (sql: string) =>
+        sql.includes('INSERT INTO platform_billing_webhook_events') ? { id: 'evt' } : null,
+      );
+      query.mockResolvedValue(undefined);
+      completeSubscriptionCheckoutPayment.mockRejectedValueOnce(new Error('AMOUNT_MISMATCH'));
+
+      const result = await processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' });
+      expect(result).toEqual({ ok: false, error: 'Amount mismatch' });
+      expect(eventUpdates('ignored')).toHaveLength(1);
+    });
+
+    it('marks the event error and rethrows when completion throws', async () => {
+      mockVerifyWebhook.mockResolvedValueOnce(verifiedSuccessPayload());
+      queryOne.mockImplementation(async (sql: string) =>
+        sql.includes('INSERT INTO platform_billing_webhook_events') ? { id: 'evt' } : null,
+      );
+      query.mockResolvedValue(undefined);
+      completeSubscriptionCheckoutPayment.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(processPlatformRazorpayWebhook('{}', { 'x-razorpay-signature': 'valid' })).rejects.toThrow('boom');
+      const errored = query.mock.calls.find(([sql]) => String(sql).includes("status = 'error'"));
+      expect(errored?.[1]).toEqual([expect.any(String), 'boom']);
+    });
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Strict billing_transactions status transitions.
- * Allowed: pending → completed | failed
- * Blocked: terminal → any other state (including completed → completed)
+ * Allowed: pending → completed | failed, and failed → completed (a retry on the same link can succeed)
+ * Blocked: completed/refunded → any other state (including completed → completed)
  */
 
 export type BillingTxStatus = 'pending' | 'completed' | 'failed' | 'refunded';
@@ -25,11 +25,7 @@ export class BillingTransactionStateError extends Error {
   }
 }
 
-const TERMINAL: ReadonlySet<BillingTxStatus> = new Set([
-  'completed',
-  'failed',
-  'refunded',
-]);
+const TERMINAL: ReadonlySet<BillingTxStatus> = new Set(['completed', 'refunded']);
 
 const ALLOWED_FROM_PENDING: ReadonlySet<BillingTxStatus> = new Set([
   'completed',
@@ -67,6 +63,10 @@ export function assertBillingTransactionTransition(
   }
 
   if (fromStatus === 'pending' && ALLOWED_FROM_PENDING.has(toStatus)) {
+    return;
+  }
+
+  if (fromStatus === 'failed' && toStatus === 'completed') {
     return;
   }
 

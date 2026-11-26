@@ -3,6 +3,7 @@
  * Signup / migrations assign trial plan ids; billing UI hides Trial unless user is already on it.
  */
 
+import { FREE_TIER_PLAN_IDS, comparePlanTier, type TierPlan } from '@/lib/subscription/plan-tier';
 import {
   CONNECT_FREE_PLAN_ID,
   HR_FREE_PLAN_ID,
@@ -36,24 +37,19 @@ export function includeTrialPlanInChangePlanPicker(currentPlanId: string | null 
 }
 
 /**
- * Upgrade vs downgrade for billing UI. DB `sort_order` alone is wrong when the current
- * plan is Trial (often highest sort_order); Trial → paid must be "Upgrade".
+ * Upgrade vs downgrade for billing UI. Tier order comes from `comparePlanTier` (never price).
+ * Trial needs special cases: it often has the highest sort_order, but Trial → paid is "Upgrade".
  */
-export function getPlanChangeAction(
-  currentPlanId: string,
-  currentSortOrder: number,
-  targetPlan: { id: string; sort_order: number },
-): PlanChangeAction {
-  if (targetPlan.id === currentPlanId) return 'current';
+export function getPlanChangeAction(current: TierPlan, target: TierPlan): PlanChangeAction {
+  if (target.id === current.id) return 'current';
 
-  if (isTrialPlanId(currentPlanId)) {
-    if (targetPlan.id === 'free') return 'downgrade';
-    return 'upgrade';
+  if (isTrialPlanId(current.id)) {
+    return FREE_TIER_PLAN_IDS.has(target.id) ? 'downgrade' : 'upgrade';
   }
 
-  if (isTrialPlanId(targetPlan.id)) {
+  if (isTrialPlanId(target.id)) {
     return 'downgrade';
   }
 
-  return targetPlan.sort_order > currentSortOrder ? 'upgrade' : 'downgrade';
+  return comparePlanTier(target, current) === 1 ? 'upgrade' : 'downgrade';
 }

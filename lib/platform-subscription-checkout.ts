@@ -6,7 +6,9 @@
 
 
 
-import { query, queryOne } from '@/lib/db';
+import type { PoolClient } from 'pg';
+
+import { getPool, query, queryOne } from '@/lib/db';
 
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 
@@ -30,18 +32,25 @@ import {
 
 import {
 
-  recordBillingTransaction,
+  notifyBillingTransactionStatus,
 
-  updateBillingTransactionStatus,
+  recordBillingTransaction,
 
 } from '@/lib/platform-billing';
 
-import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
+import { normalizeBillingCycle, type BillingCycle } from '@/lib/subscription/apply-plan-change';
 
-import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
+import {
+  afterPlanChangeCommitted,
+  applyModuleSubscriptionPlanChange,
+  type ApplyModulePlanChangeResult,
+} from '@/lib/subscription/apply-module-plan-change';
 
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
-import { BillingTransactionStateError } from '@/lib/platform-billing-transaction-state';
+import {
+  assertBillingTransactionTransition,
+  type BillingTxStatus,
+} from '@/lib/platform-billing-transaction-state';
 
 import { formatModulePlanReceiptLabel } from '@/lib/subscription/billing-labels';
 
@@ -408,8 +417,17 @@ export async function createSubscriptionCheckout(
 
 
 
-/** Complete upgrade after Razorpay webhook (or internal reconciliation). */
+export type CheckoutCompletion = 'activated' | 'already_completed';
 
+/**
+ * Complete a hosted checkout after a verified gateway payment (Razorpay webhook, Easebuzz callback).
+ *
+ * One transaction: lock the billing row, check status and paid amount, mark it completed and
+ * activate the plan stored on that row. A second event for the same payment waits on the row
+ * lock, then sees `completed` and returns `already_completed` without side effects.
+ * `planId` / `billingCycle` in params are accepted for compatibility and ignored.
+ * Throws `Error('AMOUNT_MISMATCH')` when the paid amount differs from the row's total.
+ */
 export async function completeSubscriptionCheckoutPayment(params: {
 
   businessId: string;
@@ -422,130 +440,171 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   providerPaymentId?: string | null;
 
+  /** Paid amount in rupees, from the verified gateway event. */
   amount: number;
 
   gatewayResponse?: unknown;
 
   paymentMethod?: PlatformPaymentProviderId;
 
-}): Promise<void> {
+}): Promise<CheckoutCompletion> {
 
   const paymentMethod = params.paymentMethod ?? 'razorpay';
-
-  const plan = await queryOne<{ display_name: string }>(
-
-    `SELECT display_name FROM subscription_plans WHERE id = $1`,
-
-    [params.planId],
-
-  );
-
-  const moduleKey = await resolveModuleKeyForPlan(params.planId);
-
-
-
-  let couponId: string | null = null;
 
   if (!params.billingTransactionId) {
     throw new Error('CHECKOUT_TRANSACTION_REQUIRED');
   }
+  const billingTransactionId = params.billingTransactionId;
+  const paymentReference = params.providerPaymentId?.trim() || null;
 
-  const tx = await queryOne<{ coupon_id: string | null; status: string }>(
-    `SELECT coupon_id, status FROM billing_transactions WHERE id = $1 AND business_id = $2`,
-    [params.billingTransactionId, params.businessId],
-  );
+  const client: PoolClient = await getPool().connect();
+  let committed: {
+    planId: string;
+    couponId: string | null;
+    totalAmount: number;
+    result: ApplyModulePlanChangeResult;
+  };
 
-  if (!tx) {
-    throw new Error('CHECKOUT_TRANSACTION_NOT_FOUND');
-  }
+  try {
+    await client.query('BEGIN');
 
-  if (tx.status !== 'pending') {
-    throw new BillingTransactionStateError(
-      'INVALID_STATUS_TRANSITION',
-      `Checkout transaction is already ${tx.status}`,
-      tx.status as 'pending' | 'completed' | 'failed' | 'refunded',
-      'completed',
+    const locked = await client.query<{
+      status: BillingTxStatus;
+      plan_id: string | null;
+      billing_cycle: string | null;
+      coupon_id: string | null;
+      total_amount: string | null;
+    }>(
+      `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount
+       FROM billing_transactions
+       WHERE id = $1 AND business_id = $2
+       FOR UPDATE`,
+      [billingTransactionId, params.businessId],
     );
-  }
+    const tx = locked.rows[0];
 
-  couponId = tx.coupon_id ?? null;
+    if (!tx) {
+      throw new Error('CHECKOUT_TRANSACTION_NOT_FOUND');
+    }
 
-  await updateBillingTransactionStatus(
-    params.billingTransactionId,
-    'completed',
-    params.gatewayResponse,
-  );
+    if (tx.status === 'completed') {
+      await client.query('ROLLBACK');
+      return 'already_completed';
+    }
 
-  if (params.providerPaymentId) {
-    await query(
+    // pending -> completed and failed -> completed only (Task 4 rules).
+    assertBillingTransactionTransition(tx.status, 'completed');
+
+    const expectedPaise = Math.round(Number(tx.total_amount) * 100);
+    const paidPaise = Number.isFinite(params.amount) ? Math.round(params.amount * 100) : Number.NaN;
+    if (!Number.isFinite(expectedPaise) || paidPaise !== expectedPaise) {
+      throw new Error('AMOUNT_MISMATCH');
+    }
+
+    if (!tx.plan_id) {
+      throw new Error('CHECKOUT_PLAN_MISSING');
+    }
+    const planId = tx.plan_id;
+    const billingCycle = normalizeBillingCycle(tx.billing_cycle);
+    const moduleKey = await resolveModuleKeyForPlan(planId);
+
+    await client.query(
       `UPDATE billing_transactions
-       SET payment_reference = COALESCE(payment_reference, $2)
+       SET status = 'completed',
+           payment_reference = COALESCE(payment_reference, $2),
+           gateway_response = COALESCE($3::jsonb, gateway_response),
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
-      [params.billingTransactionId, params.providerPaymentId],
-    );
-  }
-
-  await applyModuleSubscriptionPlanChange({
-    businessId: params.businessId,
-    moduleKey,
-    planId: params.planId,
-    billingCycle: params.billingCycle,
-    paymentMethod,
-    paymentReference: params.providerPaymentId,
-  });
-
-
-
-  if (couponId) {
-
-    await redeemCoupon(
-
-      couponId,
-
-      params.businessId,
-
-      params.planId,
-
-      params.billingTransactionId ?? undefined,
-
+      [
+        billingTransactionId,
+        paymentReference,
+        params.gatewayResponse ? JSON.stringify(params.gatewayResponse) : null,
+      ],
     );
 
+    const result = await applyModuleSubscriptionPlanChange(
+      {
+        businessId: params.businessId,
+        moduleKey,
+        planId,
+        billingCycle,
+        paymentMethod,
+        paymentReference,
+      },
+      client,
+    );
+
+    await client.query('COMMIT');
+
+    committed = {
+      planId,
+      couponId: tx.coupon_id ?? null,
+      totalAmount: Number(tx.total_amount) || 0,
+      result,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
   }
 
+  // ---- After COMMIT: each side effect on its own; none of them can undo the activation. ----
 
+  try {
+    await afterPlanChangeCommitted(committed.result, {
+      fromPlanId: committed.result.from_plan_id,
+      paymentMethod,
+      paymentReference,
+      trialDaysCarried: committed.result.trial_days_carried ?? 0,
+    });
+  } catch (err) {
+    console.error('[checkout] post-commit plan activation steps failed:', err);
+  }
 
-  const recipient = await getBusinessPlatformRecipient(params.businessId);
+  if (committed.couponId) {
+    try {
+      await redeemCoupon(committed.couponId, params.businessId, committed.planId, billingTransactionId);
+    } catch (err) {
+      console.error('[checkout] coupon redemption after payment failed:', err);
+    }
+  }
 
-  await notifyAdminsSubscriptionChange({
+  try {
+    await notifyBillingTransactionStatus(billingTransactionId, 'completed');
+  } catch (err) {
+    console.error('[checkout] payment success notification failed:', err);
+  }
 
-    businessId: params.businessId,
-
-    businessName: recipient?.businessName || params.businessId,
-
-    planDisplayName: plan?.display_name || params.planId,
-
-    event: 'upgraded',
-
-  });
+  try {
+    const plan = await queryOne<{ display_name: string }>(
+      `SELECT display_name FROM subscription_plans WHERE id = $1`,
+      [committed.planId],
+    );
+    const recipient = await getBusinessPlatformRecipient(params.businessId);
+    await notifyAdminsSubscriptionChange({
+      businessId: params.businessId,
+      businessName: recipient?.businessName || params.businessId,
+      planDisplayName: plan?.display_name || committed.planId,
+      event: 'upgraded',
+    });
+  } catch (err) {
+    console.error('[checkout] admin subscription notice failed:', err);
+  }
 
   // Partner commission: only when payment settled (not on free trial).
   try {
     const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
-    const saleAmount =
-      (await queryOne<{ total_amount: string | number }>(
-        `SELECT COALESCE(total_amount, amount, 0) AS total_amount
-         FROM billing_transactions WHERE id = $1`,
-        [params.billingTransactionId],
-      ))?.total_amount ?? params.amount;
     await maybeCreatePartnerCommissionOnPayment({
       businessId: params.businessId,
-      billingTransactionId: params.billingTransactionId,
-      saleAmount: Number(saleAmount) || params.amount,
+      billingTransactionId,
+      saleAmount: committed.totalAmount || params.amount,
     });
   } catch (partnerErr) {
     console.error('Partner commission on checkout settlement failed:', partnerErr);
   }
 
+  return 'activated';
 }
 
 
