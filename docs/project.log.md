@@ -2034,3 +2034,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 2 clicks, 70 impressions; the drop from 76 is the 28-day window losing 10-26 (6 `/guides` impressions), not lost rankings. `/book-demo` recrawled 11-24; health all green.
 - **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-25.{json,md}` and this entry. Nothing pushed or deployed.
 - **Open:** the writer job has saved no draft in 11 runs since 11-06 (today's Wed run not seen yet); no backlinks yet; owner to decide whether demo storefronts should be `noindex`.
+
+## 2026-11-26: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 2 clicks, 65 impressions; the drop from 70 is the 28-day window losing 10-27 (7 `/guides` impressions), offset by 2 new impressions on 11-24. `/blog` recrawled 11-26 and its inspection shows no user canonical although the live tag is served; treated as watch-only because the same thing cleared by itself after 11-06. Health all green.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-26.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job has saved no draft in 12 runs since 11-06; no backlinks yet; owner to decide whether demo storefronts should be `noindex`.
