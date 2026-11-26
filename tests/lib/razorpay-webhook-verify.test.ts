@@ -75,3 +75,28 @@ describe('RazorpayPaymentProvider.verifyWebhook', () => {
     expect(result.verified).toBe(false);
   });
 });
+
+describe('RazorpayPaymentProvider.createHostedPaymentLink expiry', () => {
+  const provider = new RazorpayPaymentProvider({ clientId: 'rzp_test_x', clientSecret: 'k' });
+  afterEach(() => jest.restoreAllMocks());
+
+  const stub = () =>
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'plink_x', short_url: 'https://rzp.io/x' })));
+
+  it('sends expire_by when expiresAt is given', async () => {
+    const fetchMock = stub();
+    const expiresAt = new Date('2027-01-01T00:00:00Z');
+    await provider.createHostedPaymentLink({ businessId: 'b', orderId: 'o', amount: 499, expiresAt });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).expire_by).toBe(
+      Math.floor(expiresAt.getTime() / 1000),
+    );
+  });
+
+  it('omits expire_by when expiresAt is not given', async () => {
+    const fetchMock = stub();
+    await provider.createHostedPaymentLink({ businessId: 'b', orderId: 'o', amount: 499 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).not.toHaveProperty('expire_by');
+  });
+});

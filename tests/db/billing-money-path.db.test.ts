@@ -72,6 +72,9 @@ import {
   findUnappliedPayments,
   reportBillingAnomalies,
 } from '@/lib/subscription/reconcile-payments';
+import { sendPlatformEmail } from '@/lib/platform-email';
+import { createSubscriptionCheckout } from '@/lib/platform-subscription-checkout';
+import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 import { POST as razorpayWebhookPost } from '@/app/api/webhooks/platform-billing/razorpay/route';
 
 const run = enabled ? describe : describe.skip;
@@ -1078,6 +1081,63 @@ run('billing money path (kh_phase2_test)', () => {
       await expect(reportBillingAnomalies()).resolves.toMatchObject({ unapplied: expect.any(Number) });
       err.mockRestore();
       warn.mockRestore();
+    });
+  });
+
+  describe('checkout expiry (SUB-26)', () => {
+    const age = (tx: string, interval: string) =>
+      query(`UPDATE billing_transactions SET created_at = NOW() - $2::interval WHERE id = $1`, [tx, interval]);
+
+    it('job closes a 3-day-old pending checkout without emailing', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await age(tx, '3 days');
+      (sendPlatformEmail as jest.Mock).mockClear();
+      const counts = await processExpiredModuleSubscriptions();
+      expect(counts.checkoutsExpired).toBeGreaterThanOrEqual(1);
+      const r = await txRow(tx);
+      expect(r!.status).toBe('failed');
+      expect(r!.description).toContain('(checkout expired)');
+      expect(sendPlatformEmail).not.toHaveBeenCalled();
+    });
+
+    it('a fresh pending checkout is left alone', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await processExpiredModuleSubscriptions();
+      expect((await txRow(tx))!.status).toBe('pending');
+    });
+
+    it('a 3-day-old manual pending row is not closed', async () => {
+      const { id } = await recordBillingTransaction({
+        businessId: biz, planId: 'billing_growth', amount: 499, billingCycle: 'monthly',
+        paymentMethod: 'manual', status: 'pending', skipEmails: true,
+      });
+      await age(id, '3 days');
+      await processExpiredModuleSubscriptions();
+      expect((await txRow(id))!.status).toBe('pending');
+    });
+
+    it('payment after expiry still activates', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await age(tx, '3 days');
+      await processExpiredModuleSubscriptions();
+      expect((await txRow(tx))!.status).toBe('failed');
+      await hook('payment.captured', 'pay_late_' + sfx(), 'captured', notesFor(biz, tx, 'billing_growth'), { amountPaise: 49900 });
+      expect((await row(biz, 'billing'))!.plan_id).toBe('billing_growth');
+    });
+
+    it('createSubscriptionCheckout asks for a 24-hour link expiry', async () => {
+      const spy = jest
+        .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+        .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_exp', paymentUrl: 'https://rzp.io/x' });
+      try {
+        await createSubscriptionCheckout({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+        const arg = spy.mock.calls[0][0] as { expiresAt?: Date };
+        const delta = arg.expiresAt!.getTime() - Date.now();
+        expect(delta).toBeGreaterThan((24 * 60 - 5) * 60000);
+        expect(delta).toBeLessThan((24 * 60 + 5) * 60000);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 });

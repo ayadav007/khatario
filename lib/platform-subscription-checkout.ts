@@ -34,6 +34,8 @@ import {
 
   notifyBillingTransactionStatus,
 
+  PLATFORM_LINK_EXPIRY_MS,
+
   recordBillingTransaction,
 
 } from '@/lib/platform-billing';
@@ -322,6 +324,8 @@ export async function createSubscriptionCheckout(
     customerEmail: recipient?.email ?? undefined,
 
     returnUrl,
+
+    expiresAt: new Date(Date.now() + PLATFORM_LINK_EXPIRY_MS),
 
     metadata: {
 

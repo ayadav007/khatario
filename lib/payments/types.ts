@@ -18,6 +18,8 @@ export type CreateUpiCollectParams = {
   notifyUrl?: string;
   /** idempotency / extra routing */
   metadata?: Record<string, unknown>;
+  /** Hosted link expiry. Honoured by Razorpay payment links only; omitted = provider default (no expiry). */
+  expiresAt?: Date;
 };
 
 export type CreateUpiCollectResult = {

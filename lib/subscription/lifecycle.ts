@@ -291,6 +291,7 @@ export interface ModuleExpiredSubscriptionCounts {
   graceStarted: number;
   graceExpired: number;
   addonsExpired: number;
+  checkoutsExpired: number;
 }
 
 /**
@@ -320,6 +321,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     graceStarted: 0,
     graceExpired: 0,
     addonsExpired: 0,
+    checkoutsExpired: 0,
   };
 
   const expiredTrials = await queryRows<{
@@ -516,6 +518,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     if ((expired.rowCount ?? 0) === 0) continue;
     clearAddonCache(row.business_id);
     counts.addonsExpired++;
+  }
+
+  // Gateway checkouts nobody paid within 48 hours (links expire after 24).
+  try {
+    const { expireStaleCheckouts } = await import('@/lib/platform-billing');
+    counts.checkoutsExpired = await expireStaleCheckouts(48);
+  } catch (err) {
+    console.error('Expiring stale checkouts failed:', err);
   }
 
   return counts;

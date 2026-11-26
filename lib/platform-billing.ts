@@ -208,6 +208,7 @@ export async function updateBillingTransactionStatus(
   transactionId: string,
   status: BillingTxStatus,
   gatewayResponse?: unknown,
+  options?: { notify?: boolean },
 ): Promise<void> {
   const current = await queryOne<{ status: BillingTxStatus }>(
     `SELECT status FROM billing_transactions WHERE id = $1`,
@@ -243,7 +244,9 @@ export async function updateBillingTransactionStatus(
       status,
     );
   }
-  await dispatchBillingEmails(transactionId, status);
+  if (options?.notify !== false) {
+    await dispatchBillingEmails(transactionId, status);
+  }
 
   if (status === 'refunded') {
     try {
@@ -280,6 +283,34 @@ export async function markCheckoutFailedIfPending(
   if (!updated?.rows?.length) return false;
   await dispatchBillingEmails(transactionId, 'failed');
   return true;
+}
+
+/** Hosted payment links on platform checkouts expire after this long. */
+export const PLATFORM_LINK_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Close gateway checkouts still `pending` after `olderThanHours` as failed. One guarded UPDATE, so a
+ * payment that completed at the same moment is never overwritten. Sends no email, WhatsApp or push
+ * (nobody needs a failure notice for a link they never opened). A later verified payment still
+ * activates through the `failed -> completed` transition. Returns the number of checkouts closed.
+ */
+export async function expireStaleCheckouts(olderThanHours = 48): Promise<number> {
+  const res = await query<{ id: string; business_id: string }>(
+    `UPDATE billing_transactions
+     SET status = 'failed',
+         description = COALESCE(description, '') || ' (checkout expired)',
+         updated_at = CURRENT_TIMESTAMP
+     WHERE status = 'pending'
+       AND payment_method IN ('razorpay', 'easebuzz')
+       AND created_at < NOW() - make_interval(hours => $1)
+     RETURNING id, business_id`,
+    [olderThanHours],
+  );
+  const rows = res?.rows ?? [];
+  for (const r of rows) {
+    await logSubscriptionEvent(r.business_id, 'checkout_expired', { transaction_id: r.id });
+  }
+  return rows.length;
 }
 
 /** Errors that no redelivery can fix: the event is ignored instead of retried. */

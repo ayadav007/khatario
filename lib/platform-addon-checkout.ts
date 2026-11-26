@@ -7,6 +7,7 @@ import { getPool, query } from '@/lib/db';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
 import {
   notifyBillingTransactionStatus,
+  PLATFORM_LINK_EXPIRY_MS,
   recordBillingTransaction,
 } from '@/lib/platform-billing';
 import {
@@ -138,6 +139,7 @@ export async function createAddonCheckout(
     customerName: recipient?.businessName,
     customerEmail: recipient?.email ?? undefined,
     returnUrl,
+    expiresAt: new Date(Date.now() + PLATFORM_LINK_EXPIRY_MS),
     metadata: {
       description: `Khatario ${label} add-on`,
       checkout_type: 'whatsapp_addon',

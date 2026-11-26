@@ -98,6 +98,10 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       },
     };
 
+    if (params.expiresAt) {
+      body.expire_by = Math.floor(params.expiresAt.getTime() / 1000);
+    }
+
     if (params.customerName || params.customerPhone || params.customerEmail) {
       body.customer = {
         name: params.customerName || undefined,
