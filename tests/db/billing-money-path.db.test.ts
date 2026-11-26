@@ -40,6 +40,8 @@ jest.mock('@/lib/platform-whatsapp-send', () => ({
   sendPlatformEventWhatsApp: jest.fn(async () => undefined),
 }));
 
+jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
+
 import { NextRequest } from 'next/server';
 import { query, queryOne, closePool, getPool } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
@@ -62,6 +64,12 @@ import {
   updateBillingTransactionStatus,
 } from '@/lib/platform-billing';
 import { completeAddonCheckoutPayment } from '@/lib/platform-addon-checkout';
+import { sendPlatformAdminPush } from '@/lib/platform-push';
+import {
+  findStuckWebhookEvents,
+  findUnappliedPayments,
+  reportBillingAnomalies,
+} from '@/lib/subscription/reconcile-payments';
 import { POST as razorpayWebhookPost } from '@/app/api/webhooks/platform-billing/razorpay/route';
 
 const run = enabled ? describe : describe.skip;
@@ -254,6 +262,24 @@ run('billing money path (kh_phase2_test)', () => {
   }
 
   const sfx = () => randomUUID().slice(0, 8);
+
+  /** Pending checkout at the plan's monthly price, paid via a signed payment.captured; returns the transaction id. */
+  async function paidAndActivated(businessId: string, planId: string, amount?: number): Promise<string> {
+    let price = amount;
+    if (price === undefined) {
+      const plan = await queryOne<{ price_monthly: string }>(
+        `SELECT price_monthly::text FROM subscription_plans WHERE id = $1`,
+        [planId],
+      );
+      price = Number(plan!.price_monthly);
+    }
+    const tx = await pendingCheckout(businessId, planId, price);
+    const r = await hook('payment.captured', 'pay_pa_' + sfx(), 'captured', notesFor(businessId, tx, planId), {
+      amountPaise: Math.round(price * 100),
+    });
+    expect(r).toMatchObject({ ok: true });
+    return tx;
+  }
 
   async function eventFor(txId: string) {
     return queryOne<{ status: string; processing_notes: string | null }>(
@@ -780,6 +806,128 @@ run('billing money path (kh_phase2_test)', () => {
       expect((await eventByPayment(payId))!.status).toBe('ignored');
       expect((await txRow(tx))!.status).toBe('pending');
       expect(await row(other, 'connect')).toBeNull();
+    });
+  });
+  describe('SUB-03: daily report of payments recorded but not applied', () => {
+    const ids = (l: { billing_transaction_id: string }[]) => l.map((p) => p.billing_transaction_id);
+    const insertedEvents: string[] = [];
+
+    async function insertEvent(status: string, ageMinutes: number): Promise<string> {
+      const r = await queryOne<{ id: string }>(
+        `INSERT INTO platform_billing_webhook_events (provider, idempotency_key, event_type, status, created_at)
+         VALUES ('razorpay', $1, 'payment.captured', $2, CURRENT_TIMESTAMP - ($3::int * INTERVAL '1 minute'))
+         RETURNING id`,
+        ['t6-' + randomUUID(), status, ageMinutes],
+      );
+      insertedEvents.push(r!.id);
+      return r!.id;
+    }
+
+    afterAll(async () => {
+      for (const id of insertedEvents) {
+        await query(`DELETE FROM platform_billing_webhook_events WHERE id = $1`, [id]).catch(() => undefined);
+      }
+    });
+
+    beforeEach(() => {
+      (sendPlatformAdminPush as jest.Mock).mockClear();
+    });
+
+    it('finds a completed payment whose plan was never applied', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [tx]);
+      expect(ids(await findUnappliedPayments())).toContain(tx);
+    });
+
+    it('does not report a payment that was applied', async () => {
+      const tx = await paidAndActivated(biz, 'billing_growth');
+      expect(ids(await findUnappliedPayments())).not.toContain(tx);
+    });
+
+    it('does not report an older payment superseded by a later plan change', async () => {
+      const old = await paidAndActivated(biz, 'billing_starter');
+      await paidAndActivated(biz, 'billing_growth');
+      expect(ids(await findUnappliedPayments())).not.toContain(old);
+    });
+
+    it('reports a payment whose module row is older and on a different plan', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [tx]);
+      await setPlan(biz, 'billing', 'billing_starter');
+      await query(
+        `UPDATE business_module_subscriptions SET updated_at = CURRENT_TIMESTAMP - INTERVAL '1 hour' WHERE business_id = $1`,
+        [biz],
+      );
+      expect(ids(await findUnappliedPayments())).toContain(tx);
+    });
+
+    it('does not report add-on checkouts, zero amounts or payments older than 35 days', async () => {
+      const addon = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(
+        `UPDATE billing_transactions SET status = 'completed', gateway_response = '{"checkout_type":"whatsapp_addon"}'::jsonb WHERE id = $1`,
+        [addon],
+      );
+      const zero = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'completed', total_amount = 0 WHERE id = $1`, [zero]);
+      const old = await pendingCheckout(biz, 'billing_growth', 499);
+      // A trigger stamps updated_at on every UPDATE; skip triggers for this one backdating write.
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL session_replication_role = replica`);
+        await client.query(
+          `UPDATE billing_transactions SET status = 'completed', updated_at = CURRENT_TIMESTAMP - INTERVAL '40 days' WHERE id = $1`,
+          [old],
+        );
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw e;
+      } finally {
+        client.release();
+      }
+      const found = ids(await findUnappliedPayments());
+      expect(found).not.toContain(addon);
+      expect(found).not.toContain(zero);
+      expect(found).not.toContain(old);
+    });
+
+    it('finds webhook events stuck in received or error, not fresh or processed ones', async () => {
+      const stuckReceived = await insertEvent('received', 30);
+      const stuckError = await insertEvent('error', 30);
+      const fresh = await insertEvent('received', 0);
+      const done = await insertEvent('processed', 30);
+      const found = (await findStuckWebhookEvents()).map((e) => e.id);
+      expect(found).toContain(stuckReceived);
+      expect(found).toContain(stuckError);
+      expect(found).not.toContain(fresh);
+      expect(found).not.toContain(done);
+    });
+
+    it('reportBillingAnomalies pushes once and changes no data', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [tx]);
+      const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const r = await reportBillingAnomalies();
+      err.mockRestore();
+      expect(r.unapplied).toBeGreaterThanOrEqual(1);
+      expect(sendPlatformAdminPush).toHaveBeenCalledTimes(1);
+      expect(sendPlatformAdminPush).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'incident', title: 'Billing: payments need attention', url: '/admin/billing' }),
+      );
+      expect((await txRow(tx))!.status).toBe('completed');
+      expect(await row(biz, 'billing')).toBeNull();
+    });
+
+    it('reportBillingAnomalies never throws when the push fails', async () => {
+      const tx = await pendingCheckout(biz, 'billing_growth', 499);
+      await query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [tx]);
+      (sendPlatformAdminPush as jest.Mock).mockRejectedValueOnce(new Error('push down'));
+      const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      await expect(reportBillingAnomalies()).resolves.toMatchObject({ unapplied: expect.any(Number) });
+      err.mockRestore();
+      warn.mockRestore();
     });
   });
 });

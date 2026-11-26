@@ -4,6 +4,7 @@ import { sendPendingNotifications } from '@/lib/subscription/notifications';
 import { queryRows, query } from '@/lib/db';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 import { getEntitlementPlanId } from '@/lib/subscription/effective-plan';
+import { reportBillingAnomalies } from '@/lib/subscription/reconcile-payments';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,12 +79,15 @@ async function runSubscriptionCron() {
     snapshotsInserted++;
   }
 
+  const billingAnomalies = await reportBillingAnomalies();
+
   return {
     success: true,
     summary: {
       moduleExpired: moduleExpiredCounts,
       notificationsSent,
       usageSnapshots: snapshotsInserted,
+      billingAnomalies,
     },
   };
 }
