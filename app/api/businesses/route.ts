@@ -3,6 +3,7 @@ import { getPool, queryOne } from '@/lib/db';
 import {
   assertUserSessionVersionMatches,
   getSessionVersionFromRequest,
+  requireTenantBusinessId,
 } from '@/lib/auth-helpers';
 import { clearSessionCookie, setSessionCookies, signAccessToken, signRefreshToken } from '@/lib/jwt';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -82,8 +83,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // The plan that counts is the one of the business this session works in, not the stored pointer
+  // users.business_id (which moves when the owner switches business in another session).
+  const tenant = requireTenantBusinessId(request);
+  if (!tenant.ok) {
+    return tenant.response;
+  }
+
   try {
-    await assertFeatureAccess(owner.business_id, 'multi_business');
+    await assertFeatureAccess(tenant.businessId, 'multi_business');
   } catch (error) {
     if (error instanceof FeatureAccessDeniedError) {
       return error.toNextResponse();
@@ -106,6 +114,7 @@ export async function POST(request: NextRequest) {
 
     const provisioned = await provisionBusiness(client, {
       ...parsed.value,
+      ownerUserId: userId,
       productLine: normalizeProductLine(owner.product_line),
     });
     await attachUserAsOwner(client, userId, provisioned.businessId);

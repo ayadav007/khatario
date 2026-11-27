@@ -4,7 +4,7 @@
  *     npx jest tests/db/plan-enforcement.db.test.ts --runInBand --forceExit
  *
  * Helpers (reused by every task in this file): newBusinessWithOwner, addUser, addEmployee, makeRole,
- * callRoute, userRow, setPlan, count, makeInvoiceWithCustomer, fillWhatsAppQuota.
+ * callRoute, userRow, setPlan, count, makeInvoiceWithCustomer, fillWhatsAppQuota, addOwnedBusiness, moduleRow.
  */
 import { randomUUID } from 'crypto';
 import { config as loadEnv } from 'dotenv';
@@ -38,16 +38,26 @@ jest.mock('@/lib/platform-whatsapp-send', () => ({
   sendPlatformEventWhatsApp: jest.fn(async () => undefined),
 }));
 jest.mock('@/lib/whatsapp', () => ({ sendWhatsAppMessage: jest.fn(async () => undefined) }));
-jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
+jest.mock('@/lib/jwt', () => ({
+  clearSessionCookie: jest.fn(),
+  setSessionCookies: jest.fn(),
+  signAccessToken: jest.fn(async () => 'access-token'),
+  signRefreshToken: jest.fn(async () => 'refresh-token'),
+}));
 jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
 
 // authorize() and assertSessionValidForCookieAuth() read the request headers through next/headers.
 // callRoute() stores the current request's headers here so those reads see the same session.
 const headerBag: { current: Record<string, string> } = { current: {} };
+// `noRequest.current` makes headers() carry nothing, as for a call with no request (cron, jobs). Real Next.js
+// throws there; that path is covered in tests/lib/authorization-business-context.test.ts, because
+// assertSessionValidForCookieAuth() reads headers() unguarded and would throw before the plan gates run.
+const noRequest: { current: boolean } = { current: false };
 jest.mock('next/headers', () => ({
-  headers: jest.fn(async () => ({
-    get: (name: string) => headerBag.current[name.toLowerCase()] ?? null,
-  })),
+  headers: jest.fn(async () => {
+    if (noRequest.current) return { get: () => null };
+    return { get: (name: string) => headerBag.current[name.toLowerCase()] ?? null };
+  }),
   cookies: jest.fn(async () => ({ get: () => undefined })),
 }));
 
@@ -61,6 +71,11 @@ import { PATCH as patchEmployeeRoute } from '@/app/api/employees/[id]/route';
 import { POST as postInvoiceWhatsApp } from '@/app/api/invoices/[id]/whatsapp/route';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { checkLimit, clearAddonCache } from '@/lib/subscription';
+import { GET as getLedgerRoute } from '@/app/api/ledger/route';
+import { POST as postBusinessRoute } from '@/app/api/businesses/route';
+import { authorize } from '@/lib/authorization';
+import { getPool } from '@/lib/db';
+import { ownerHasOtherBusiness, provisionBusiness } from '@/lib/businesses/provision-business';
 
 const run = enabled ? describe : describe.skip;
 
@@ -247,6 +262,45 @@ run('plan enforcement (kh_phase2_test)', () => {
     return Number(r!.n);
   }
 
+
+  /**
+   * A further business owned by the same login (one users row, many user_businesses rows). Gets a billing
+   * module on `planId` and its own primary_admin role. The trusted headers and session version of
+   * newBusinessWithOwner stay valid for requests on it. Returns the new business id.
+   */
+  async function addOwnedBusiness(ownerUserId: string, planId: string): Promise<string> {
+    const biz = randomUUID();
+    created.push(biz);
+    await query(
+      `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type, primary_module)
+       VALUES ($1, $2, '27AAAPA1234A1Z5', '27', 'regular', 'billing')`,
+      [biz, `Plan enforcement owned ${biz.slice(0, 6)}`],
+    );
+    await query(
+      `INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'billing', true, 'test')`,
+      [biz],
+    );
+    await setPlan(biz, 'billing', planId);
+    await makeRole(biz, 'primary_admin');
+    await query(`INSERT INTO user_businesses (user_id, business_id, role) VALUES ($1, $2, 'owner')`, [ownerUserId, biz]);
+    return biz;
+  }
+
+  /** The subscription row of one module of a business, or null. */
+  async function moduleRow(biz: string, moduleKey: string) {
+    return queryOne<{ plan_id: string; status: string; trial_end_date: string | null }>(
+      `SELECT plan_id, status, trial_end_date FROM business_module_subscriptions WHERE business_id = $1 AND module_key = $2`,
+      [biz, moduleKey],
+    );
+  }
+
+  const getLedger = (biz: string, userId: string) =>
+    callRoute(getLedgerRoute as unknown as RouteHandler, { biz, userId, method: 'GET', path: '/api/ledger' });
+  const createBusiness = (biz: string, userId: string, body: Record<string, unknown>) =>
+    callRoute(postBusinessRoute as unknown as RouteHandler, {
+      biz, userId, method: 'POST', path: '/api/businesses',
+      body: { businessType: 'retail', industry: 'other', ...body },
+    });
 
   /** A customer with a phone number and an invoice for it. Returns the invoice id. */
   async function makeInvoiceWithCustomer(biz: string): Promise<string> {
@@ -487,5 +541,138 @@ run('plan enforcement (kh_phase2_test)', () => {
       expect(text).toMatch(/^Hello! Please find your invoice INV-/);
     });
   });
-});
+  describe('SUB-12: plan checks use the session business; one trial per owner', () => {
+    let freeBiz: string;
+    let paidBiz: string;
+    let owner: string;
 
+    beforeEach(async () => {
+      noRequest.current = false;
+      ({ biz: freeBiz, owner } = await newBusinessWithOwner('free', { label: 'sub12' }));
+      paidBiz = await addOwnedBusiness(owner, 'billing_business');
+    });
+    afterEach(() => {
+      noRequest.current = false;
+    });
+
+    it('a session on the Free business is judged on the Free business even after switching elsewhere', async () => {
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [paidBiz, owner]);
+      const res = await getLedger(freeBiz, owner);
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+    });
+
+    it('the paid business is not refused while the stored pointer is on the Free one', async () => {
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [freeBiz, owner]);
+      const res = await getLedger(paidBiz, owner);
+      expect(res.status).toBe(200);
+    });
+
+    it('a session business the user does not belong to is denied', async () => {
+      const { biz: strangerBiz } = await newBusinessWithOwner('billing_business', { label: 'stranger' });
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [freeBiz, owner]);
+      const res = await getLedger(strangerBiz, owner);
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('CROSS_TENANT_DENIED');
+    });
+
+    it('authorize works with no request (cron)', async () => {
+      noRequest.current = true;
+      await expect(authorize(owner, 'invoices', 'read', { businessId: paidBiz })).resolves.toBeUndefined();
+    });
+
+    it('authorize with no request and no business falls back to the stored pointer', async () => {
+      noRequest.current = true;
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [paidBiz, owner]);
+      await expect(authorize(owner, 'invoices', 'read')).resolves.toBeUndefined();
+    });
+
+    it('a second business starts on Free, not on a new trial', async () => {
+      const { biz: trialBiz, owner: trialOwner } = await newBusinessWithOwner('trial', { label: 'trial2' });
+      // A running trial, as signup seeds it.
+      await query(
+        `UPDATE business_module_subscriptions SET status = 'trial', trial_end_date = CURRENT_DATE + 20
+         WHERE business_id = $1 AND module_key = 'billing'`,
+        [trialBiz],
+      );
+      clearSubscriptionCache(trialBiz);
+      clearModuleSubscriptionCache(trialBiz);
+      const res = await createBusiness(trialBiz, trialOwner, { businessName: 'Second shop' });
+      expect(res.status).toBe(201);
+      const id = (await res.json()).businessId as string;
+      created.push(id);
+      expect(await moduleRow(id, 'billing')).toMatchObject({ plan_id: 'free', status: 'active', trial_end_date: null });
+    });
+
+    it('multi-business is checked on the session business', async () => {
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [paidBiz, owner]);
+      const before = await count(`user_businesses WHERE user_id = $1`, [owner]);
+      const res = await createBusiness(freeBiz, owner, { businessName: 'Third shop' });
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+      expect(await count(`user_businesses WHERE user_id = $1`, [owner])).toBe(before);
+    });
+
+    it('a paid session business may add a business even while the stored pointer is on the Free one', async () => {
+      await query(`UPDATE users SET business_id = $1 WHERE id = $2`, [freeBiz, owner]);
+      const res = await createBusiness(paidBiz, owner, { businessName: 'Fourth shop' });
+      expect(res.status).toBe(201);
+      const id = (await res.json()).businessId as string;
+      created.push(id);
+      expect(await moduleRow(id, 'billing')).toMatchObject({ plan_id: 'free', status: 'active', trial_end_date: null });
+    });
+
+    describe('provisioning', () => {
+      const input = {
+        businessName: 'Provision test', businessType: 'retail', industry: 'other', productLine: 'billing' as const,
+      };
+      async function provision(ownerUserId?: string) {
+        const client = await getPool().connect();
+        try {
+          await client.query('BEGIN');
+          const r = await provisionBusiness(client, { ...input, ownerUserId });
+          await client.query('COMMIT');
+          created.push(r.businessId);
+          return r;
+        } catch (e) {
+          await client.query('ROLLBACK');
+          throw e;
+        } finally {
+          client.release();
+        }
+      }
+
+      it('a brand-new account keeps the 30-day trial on its first business', async () => {
+        const r = await provision(randomUUID());
+        const row = await moduleRow(r.businessId, 'billing');
+        expect(row).toMatchObject({ plan_id: 'trial', status: 'trial' });
+        expect(row!.trial_end_date).not.toBeNull();
+        expect(r.trialDays).toBe(30);
+      });
+
+      it('signup (no owner yet) keeps the trial', async () => {
+        const r = await provision();
+        expect(await moduleRow(r.businessId, 'billing')).toMatchObject({ plan_id: 'trial', status: 'trial' });
+      });
+
+      it('an owner who already owns a business gets Free, active, no trial dates', async () => {
+        const r = await provision(owner);
+        expect(await moduleRow(r.businessId, 'billing')).toMatchObject({ plan_id: 'free', status: 'active', trial_end_date: null });
+        expect(r.trialDays).toBeNull();
+      });
+
+      it('ownerHasOtherBusiness is true only for an owner row, and runs on the given client', async () => {
+        const client = await getPool().connect();
+        try {
+          expect(await ownerHasOtherBusiness(client, owner)).toBe(true);
+          expect(await ownerHasOtherBusiness(client, randomUUID())).toBe(false);
+          const staff = await addUser(freeBiz);
+          await query(`INSERT INTO user_businesses (user_id, business_id, role) VALUES ($1, $2, 'staff')`, [staff, freeBiz]);
+          expect(await ownerHasOtherBusiness(client, staff)).toBe(false);
+        } finally {
+          client.release();
+        }
+      });
+    });
+  });
+});

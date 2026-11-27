@@ -13,6 +13,10 @@ jest.mock('@/lib/db', () => ({
 jest.mock('@/lib/auth-helpers', () => ({
   assertUserSessionVersionMatches: jest.fn(),
   getSessionVersionFromRequest: jest.fn(),
+  requireTenantBusinessId: jest.fn((req: { headers: Headers }) => {
+    const businessId = req.headers.get('x-authenticated-business-id');
+    return businessId ? { ok: true, businessId } : { ok: false, response: new Response(null, { status: 401 }) };
+  }),
 }));
 
 jest.mock('@/lib/subscription/feature-access', () => {
@@ -42,9 +46,14 @@ const sessionMock = assertUserSessionVersionMatches as jest.Mock;
 const featureMock = assertFeatureAccess as jest.Mock;
 const getPoolMock = getPool as jest.Mock;
 
+const SESSION_BUSINESS = '44444444-4444-4444-8444-444444444444';
+
 function request(body: unknown, userId?: string) {
   const headers = new Headers({ 'content-type': 'application/json' });
-  if (userId) headers.set('x-authenticated-user-id', userId);
+  if (userId) {
+    headers.set('x-authenticated-user-id', userId);
+    headers.set('x-authenticated-business-id', SESSION_BUSINESS);
+  }
   return new NextRequest('http://localhost:3000/api/businesses', {
     method: 'POST',
     headers,
@@ -111,6 +120,8 @@ describe('POST /api/businesses', () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.code).toBe('FEATURE_NOT_IN_PLAN');
+    // Judged on the session business, not on users.business_id (…3333…).
+    expect(featureMock).toHaveBeenCalledWith(SESSION_BUSINESS, 'multi_business');
     expect(getPoolMock).not.toHaveBeenCalled();
   });
 });

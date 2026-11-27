@@ -116,6 +116,52 @@ const TABLE_NAME_MAP: Record<string, string> = {
   'salary': 'salary_payments',
 };
 
+/**
+ * Business that the plan gates (module gate, plan path gate, HR feature gate) are judged on.
+ * Order: explicit context.businessId, then the business of the signed session (header
+ * x-authenticated-business-id, set by middleware from the JWT), then the stored pointer
+ * users.business_id. The pointer only says which business the user last switched to; it moves
+ * without ending other sessions, so it must not decide the entitlements of a session on another
+ * business. A session business other than the pointer needs the same user_businesses membership
+ * that an explicit cross-business context.businessId needs.
+ */
+async function resolveBusinessForPlanChecks(
+  userId: string,
+  context: AuthorizationContext | undefined,
+  callingUser: { business_id: string } | null | undefined,
+): Promise<string | undefined> {
+  if (context?.businessId) return context.businessId;
+
+  let sessionBusinessId: string | null = null;
+  try {
+    const { headers } = await import('next/headers');
+    const headerList = await headers();
+    sessionBusinessId = headerList.get('x-authenticated-business-id')?.trim() || null;
+  } catch {
+    sessionBusinessId = null; // outside a request (jobs, tests)
+  }
+
+  if (sessionBusinessId) {
+    if (callingUser && sessionBusinessId !== callingUser.business_id) {
+      const membership = await queryOne<{ one: number }>(
+        'SELECT 1 AS one FROM user_businesses WHERE user_id = $1 AND business_id = $2 LIMIT 1',
+        [userId, sessionBusinessId]
+      );
+      if (!membership) {
+        throw new AuthorizationError(
+          'You do not have access to this business',
+          'CROSS_TENANT_DENIED',
+          { businessId: sessionBusinessId },
+          403
+        );
+      }
+    }
+    return sessionBusinessId;
+  }
+
+  return callingUser?.business_id;
+}
+
 export async function authorize(
   userId: string,
   moduleKey: string,
@@ -162,7 +208,7 @@ export async function authorize(
   // Platform module gate — applies to all users including primary admin.
   const platformModule = resolvePlatformModuleForAuthModule(moduleKey);
   if (platformModule && platformModule !== 'core') {
-    const businessIdForModule = context?.businessId || callingUser?.business_id;
+    const businessIdForModule = await resolveBusinessForPlanChecks(userId, context, callingUser);
     if (!businessIdForModule) {
       throw new AuthorizationError(
         'businessId is required for module access',
@@ -198,7 +244,7 @@ export async function authorize(
     throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
   }
   if (pathFeature) {
-    const businessIdForPath = context?.businessId || callingUser?.business_id;
+    const businessIdForPath = await resolveBusinessForPlanChecks(userId, context, callingUser);
     if (!businessIdForPath) {
       throw new AuthorizationError(
         'businessId is required for plan feature access',
@@ -225,7 +271,7 @@ export async function authorize(
   // Subscription plan must include HR features (applies to all users, including primary admin)
   const hrRegistryFeature = getHrRegistryFeatureForAuthModule(moduleKey);
   if (hrRegistryFeature) {
-    const businessIdForFeature = context?.businessId || callingUser?.business_id;
+    const businessIdForFeature = await resolveBusinessForPlanChecks(userId, context, callingUser);
     if (!businessIdForFeature) {
       throw new AuthorizationError(
         'businessId is required for HR operations',

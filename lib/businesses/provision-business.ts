@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import type { Business } from '@/types/database';
 import { getBusinessWorkflowDefaults, applyWorkflowDefaults } from '@/lib/business-workflows';
 import { getDefaultTemplateSettings } from '@/lib/template-defaults';
-import { getSignupPlanConfig, normalizeProductLine, type ProductLine } from '@/lib/product-lines';
+import { getPostTrialFreePlanId, getSignupPlanConfig, normalizeProductLine, type ProductLine } from '@/lib/product-lines';
 import { productLineToModule } from '@/lib/platform-modules';
 import { seedInitialBusinessModules } from '@/lib/business-modules';
 import { seedInitialModuleSubscription } from '@/lib/subscription/module-subscriptions';
@@ -48,6 +48,12 @@ export type ProvisionBusinessInput = {
   industry: string;
   businessModel?: string | null;
   productLine: ProductLine;
+  /**
+   * The login that will own the new business, when it already exists (adding a business).
+   * An owner who already owns any business gets the free plan, not another trial.
+   * Absent for signup: a brand-new account's first business takes the trial.
+   */
+  ownerUserId?: string;
 };
 
 export type ProvisionBusinessResult = {
@@ -59,8 +65,18 @@ export type ProvisionBusinessResult = {
   trialDays: number | null;
 };
 
+/** True when this user already owns a business (a user_businesses row with role owner). */
+export async function ownerHasOtherBusiness(client: PgClient, userId: string): Promise<boolean> {
+  const res = await client.query(
+    `SELECT 1 FROM user_businesses WHERE user_id = $1 AND role = 'owner' LIMIT 1`,
+    [userId],
+  );
+  return res.rows.length > 0;
+}
+
 /**
- * Empty company: books, roles, main branch, chart of accounts, and its own trial.
+ * Empty company: books, roles, main branch, chart of accounts, and a trial when it is the owner's
+ * first business (otherwise the product's free plan).
  * Does not create a login. Caller attaches the existing user.
  */
 export async function provisionBusiness(
@@ -68,7 +84,17 @@ export async function provisionBusiness(
   input: ProvisionBusinessInput,
 ): Promise<ProvisionBusinessResult> {
   const productLine = normalizeProductLine(input.productLine);
-  const signupPlan = getSignupPlanConfig(productLine);
+  // Decided before this business exists, so it is never counted as "another" business.
+  const ownerHasBusiness = input.ownerUserId ? await ownerHasOtherBusiness(client, input.ownerUserId) : false;
+  const trialSignupPlan = getSignupPlanConfig(productLine);
+  const signupPlan = ownerHasBusiness
+    ? {
+        ...trialSignupPlan,
+        planId: getPostTrialFreePlanId(productLine),
+        status: 'active' as const,
+        trialDays: null,
+      }
+    : trialSignupPlan;
   const softFailures: string[] = [];
 
   const businessRes = await client.query(
