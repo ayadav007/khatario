@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import { query, queryRows, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
@@ -12,6 +13,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
+
+  try {
+    await authorize(auth.userId, 'purchases', 'read', { businessId: auth.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -73,6 +81,13 @@ export async function POST(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
 
+  try {
+    await authorize(auth.userId, 'purchases', 'update', { businessId: auth.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
+
   // Retired: reorder levels now come from the customer's own items (min_stock) and alerts go
   // to the item's default supplier. See lib/low-stock-checker.ts.
   return NextResponse.json(
@@ -91,6 +106,13 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
+
+  try {
+    await authorize(auth.userId, 'purchases', 'update', { businessId: auth.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   try {
     const { searchParams } = new URL(request.url);

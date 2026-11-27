@@ -151,7 +151,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     try {
-      await authorize(actorId, 'leave_requests', 'delete', { businessId: businessId });
+      // 'update', not 'delete': managing leave types is configuration (like /api/hr/leave/year-end), and this
+      // handler only soft-deactivates a type in use. The seeded HR Admin role has no can_delete on leave_requests.
+      await authorize(actorId, 'leave_requests', 'update', { businessId: businessId });
     } catch (error) {
       if (error instanceof AuthorizationError) return error.toNextResponse();
       throw error;

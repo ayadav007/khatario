@@ -112,6 +112,12 @@ import { POST as spawnUpstreamStockRequest } from '@/app/api/stock-requests/[id]
 import { GET as supplierDashboard } from '@/app/api/suppliers/dashboard/route';
 import { GET as supplierDashboardAnalytics } from '@/app/api/suppliers/dashboard/analytics/route';
 import { GET as supplierRequests } from '@/app/api/suppliers/requests/route';
+import {
+  GET as supplierThresholdsGet,
+  POST as supplierThresholdsPost,
+  DELETE as supplierThresholdsDelete,
+} from '@/app/api/suppliers/thresholds/route';
+import { POST as dismissLowStockAlert } from '@/app/api/suppliers/dashboard/dismiss-alert/route';
 import { GET as supplierLookupCustomer } from '@/app/api/suppliers/lookup-customer/route';
 
 const run = enabled ? describe : describe.skip;
@@ -1247,6 +1253,14 @@ run('plan enforcement (kh_phase2_test)', () => {
         path: () => '/api/suppliers/requests', passed: [200] },
       { name: 'GET suppliers/lookup-customer', group: 'hub', method: 'GET', handler: h(supplierLookupCustomer),
         path: (biz) => `/api/suppliers/lookup-customer?supplier_business_id=${biz}&customer_name=nobody`, passed: [404] },
+      { name: 'GET suppliers/thresholds', group: 'hub', method: 'GET', handler: h(supplierThresholdsGet),
+        path: () => '/api/suppliers/thresholds', passed: [200] },
+      { name: 'POST suppliers/thresholds', group: 'hub', method: 'POST', handler: h(supplierThresholdsPost),
+        path: () => '/api/suppliers/thresholds', body: () => ({}), passed: [410] },
+      { name: 'DELETE suppliers/thresholds', group: 'hub', method: 'DELETE', handler: h(supplierThresholdsDelete),
+        path: () => `/api/suppliers/thresholds?id=${ghost}`, passed: [404] },
+      { name: 'POST suppliers/dashboard/dismiss-alert', group: 'hub', method: 'POST', handler: h(dismissLowStockAlert),
+        path: () => `/api/suppliers/dashboard/dismiss-alert?alert_id=${ghost}`, passed: [404] },
     ];
 
     const fx = {} as Record<Group, {
@@ -1300,6 +1314,48 @@ run('plan enforcement (kh_phase2_test)', () => {
         const { full } = fx[r.group];
         const res = await call(r, full.biz, full.owner);
         expect(r.passed).toContain(res.status);
+      });
+    });
+
+    describe('leave types: the seeded HR Admin shape (view, add, modify; no delete) can manage them', () => {
+      const asRole = async (viewOnly: boolean) => {
+        const { full } = fx.leave;
+        const roleId = await makeRole(full.biz, viewOnly ? 'lt_viewer' : 'lt_hr_admin');
+        await query(
+          `INSERT INTO permission_modules (module_key, module_name, is_active) VALUES ('leave_requests', 'leave_requests', true)
+           ON CONFLICT (module_key) DO NOTHING`,
+        );
+        await query(`DELETE FROM role_permissions WHERE role_id = $1`, [roleId]);
+        await query(
+          `INSERT INTO role_permissions (role_id, module_key, can_view, can_add, can_modify, can_delete, can_share)
+           VALUES ($1, 'leave_requests', true, $2, $2, false, false)`,
+          [roleId, !viewOnly],
+        );
+        return { biz: full.biz, user: await addUser(full.biz, { roleId }) };
+      };
+      const doAll = async (biz: string, user: string) => {
+        const codeA = `HA${randomUUID().slice(0, 4)}`;
+        const post = await callRoute(postLeaveType as unknown as RouteHandler, {
+          biz, userId: user, method: 'POST', path: '/api/leave-types', sessionVersion: 1,
+          body: { leave_name: 'HA', leave_code: codeA },
+        });
+        const id = post.status === 201 ? (await post.json()).leave_type.id : randomUUID();
+        const patch = await callRoute(patchLeaveType as unknown as RouteHandler, {
+          biz, userId: user, method: 'PATCH', path: `/api/leave-types/${id}`, params: { id }, sessionVersion: 1,
+          body: { leave_name: 'HA2' },
+        });
+        const del = await callRoute(deleteLeaveType as unknown as RouteHandler, {
+          biz, userId: user, method: 'DELETE', path: `/api/leave-types/${id}`, params: { id }, sessionVersion: 1,
+        });
+        return [post.status, patch.status, del.status];
+      };
+      it('HR Admin: create, edit and delete all succeed', async () => {
+        const { biz, user } = await asRole(false);
+        expect(await doAll(biz, user)).toEqual([201, 200, 200]);
+      });
+      it('a view-only role gets 403 on all three', async () => {
+        const { biz, user } = await asRole(true);
+        expect(await doAll(biz, user)).toEqual([403, 403, 403]);
       });
     });
 
