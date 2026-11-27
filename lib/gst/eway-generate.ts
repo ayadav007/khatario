@@ -57,7 +57,7 @@ const SUB_SUPPLY_BY_CODE = Object.fromEntries(
 const noAnswer = () =>
   new EwayBillInputError('Masters India did not answer. Check the e-way bill portal before trying again.', 502, 'GSP_NO_ANSWER');
 
-function gspFailure(e: unknown, fromGstin: string): unknown {
+export function gspFailure(e: unknown, fromGstin: string): unknown {
   if (!(e instanceof GspError)) return e;
   switch (e.kind) {
     case 'timeout':

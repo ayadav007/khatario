@@ -189,10 +189,21 @@ export async function createEwayBill(
 }
 
 export type EwayBillAction =
-  | { action: 'cancel'; reason?: string }
+  | { action: 'cancel'; reason?: string; reason_code?: 'duplicate' | 'order_cancelled' | 'data_entry' | 'others' }
   | { action: 'reject'; reason?: string }
-  | { action: 'close' }
-  | { action: 'extend'; remaining_km: number; reason?: string }
+  | { action: 'close'; remarks?: string }
+  | {
+      action: 'extend';
+      remaining_km: number;
+      reason?: string;
+      from_place?: string;
+      from_state_code?: string;
+      from_pincode?: string;
+      reason_code?: 'natural_calamity' | 'law_and_order' | 'transhipment' | 'accident' | 'others';
+      in_transit?: 'road' | 'warehouse' | 'others' | null;
+      vehicle_number?: string;
+      transport_mode?: 'road' | 'rail' | 'air' | 'ship';
+    }
   | {
       action: 'vehicle';
       vehicle_number?: string;
@@ -200,7 +211,32 @@ export type EwayBillAction =
       transporter_gstin?: string;
       transport_mode?: 'road' | 'rail' | 'air' | 'ship';
       reason?: string;
+      from_place?: string;
+      from_state_code?: string;
+      reason_code?: 'breakdown' | 'transhipment' | 'others' | 'first_time';
+      transport_doc_number?: string;
+      transport_doc_date?: string;
     };
+
+/** The local rules every action obeys. Shared by the database write and by the check made before calling the provider. */
+export function assertOpenFor(status: string, verb: string): void {
+  if (status !== 'active') throw new EwayBillInputError(`A ${status} e-way bill cannot ${verb}`, 409);
+}
+export function assertCancelWindow(generatedAt: Date, now: Date): void {
+  if (!canCancel(generatedAt, now)) {
+    throw new EwayBillInputError('An e-way bill can only be cancelled within 24 hours of generation', 409);
+  }
+}
+export function assertExtendWindow(validUntil: Date | null, now: Date): void {
+  if (!canExtend(validUntil, now)) {
+    throw new EwayBillInputError('Validity can only be extended from 8 hours before expiry to 8 hours after it', 409);
+  }
+}
+export function assertRemainingKm(v: unknown): number {
+  const km = Number(v);
+  if (!Number.isFinite(km) || km <= 0 || km > 4000) throw new EwayBillInputError('Enter the distance still to go');
+  return km;
+}
 
 /** Cancel, reject, close, extend, or update Part B (vehicle). */
 export async function updateEwayBill(
@@ -209,20 +245,18 @@ export async function updateEwayBill(
   id: string,
   a: EwayBillAction,
   userId: string | null,
-  now = new Date()
+  now = new Date(),
+  override?: { validUntil?: Date | null }
 ): Promise<EwayBillView> {
   const r = await client.query(`SELECT * FROM eway_bills WHERE id = $1 AND business_id = $2 FOR UPDATE`, [id, businessId]);
   const row = r.rows[0];
   if (!row) throw new EwayBillInputError('E-way bill not found', 404);
   const validUntil = row.valid_until ? new Date(row.valid_until) : null;
-  const open = row.status === 'active';
 
   switch (a.action) {
     case 'cancel':
-      if (!open) throw new EwayBillInputError(`A ${row.status} e-way bill cannot be cancelled`, 409);
-      if (!canCancel(new Date(row.generated_at), now)) {
-        throw new EwayBillInputError('An e-way bill can only be cancelled within 24 hours of generation', 409);
-      }
+      assertOpenFor(row.status, 'be cancelled');
+      assertCancelWindow(new Date(row.generated_at), now);
       await client.query(
         `UPDATE eway_bills SET status = 'cancelled', cancelled_at = $3, notes = COALESCE($4, notes), updated_at = NOW()
           WHERE id = $1 AND business_id = $2`,
@@ -230,7 +264,7 @@ export async function updateEwayBill(
       );
       break;
     case 'reject':
-      if (!open) throw new EwayBillInputError(`A ${row.status} e-way bill cannot be rejected`, 409);
+      assertOpenFor(row.status, 'be rejected');
       await client.query(
         `UPDATE eway_bills SET status = 'rejected', rejected_at = $3, notes = COALESCE($4, notes), updated_at = NOW()
           WHERE id = $1 AND business_id = $2`,
@@ -238,20 +272,17 @@ export async function updateEwayBill(
       );
       break;
     case 'close':
-      if (!open) throw new EwayBillInputError(`A ${row.status} e-way bill cannot be closed`, 409);
+      assertOpenFor(row.status, 'be closed');
       await client.query(
         `UPDATE eway_bills SET status = 'closed', closed_at = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
         [id, businessId, now]
       );
       break;
     case 'extend': {
-      if (!open) throw new EwayBillInputError(`A ${row.status} e-way bill cannot be extended`, 409);
-      if (!canExtend(validUntil, now)) {
-        throw new EwayBillInputError('Validity can only be extended from 8 hours before expiry to 8 hours after it', 409);
-      }
-      const km = Number(a.remaining_km);
-      if (!Number.isFinite(km) || km <= 0 || km > 4000) throw new EwayBillInputError('Enter the distance still to go');
-      const next = extendedValidUntil(validUntil as Date, km, !!row.is_odc);
+      assertOpenFor(row.status, 'be extended');
+      assertExtendWindow(validUntil, now);
+      const km = assertRemainingKm(a.remaining_km);
+      const next = override?.validUntil ?? extendedValidUntil(validUntil as Date, km, !!row.is_odc);
       await client.query(
         `UPDATE eway_bills SET valid_until = $3, extension_count = extension_count + 1, updated_at = NOW()
           WHERE id = $1 AND business_id = $2`,
@@ -260,7 +291,7 @@ export async function updateEwayBill(
       break;
     }
     case 'vehicle': {
-      if (!open) throw new EwayBillInputError(`A ${row.status} e-way bill cannot take a new vehicle`, 409);
+      assertOpenFor(row.status, 'take a new vehicle');
       const vehicle = String(a.vehicle_number ?? '').trim().toUpperCase().replace(/\s+/g, '') || null;
       if (!vehicle && !a.transporter_name) throw new EwayBillInputError('Enter the vehicle number or transporter');
       await client.query(
@@ -268,6 +299,9 @@ export async function updateEwayBill(
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [id, a.transport_mode || 'road', vehicle, a.transporter_name || null, a.transporter_gstin || null, a.reason || 'Vehicle changed', userId]
       );
+      if (override?.validUntil) {
+        await client.query(`UPDATE eway_bills SET valid_until = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`, [id, businessId, override.validUntil]);
+      }
       break;
     }
     default:
