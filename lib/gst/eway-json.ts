@@ -49,6 +49,9 @@ export function splitAddress(text: string | null | undefined, max = 120): [strin
   return [t.slice(0, i).trim(), t.slice(i).replace(/^[\s,]+/, '').slice(0, max)];
 }
 
+/** Ship-to city, PIN code and state code typed for a document whose address is not saved on the customer. */
+export type ShipToPlace = { place: string; pincode: string; stateCode: string };
+
 const norm = (s: string | null | undefined) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 interface Party {
@@ -111,7 +114,7 @@ async function seller(db: Queryable, businessId: string, branchId: string | null
 }
 
 async function party(
-  db: Queryable, businessId: string, kind: 'customer' | 'supplier', id: string | null, docShipping?: string | null, shipToGstin?: string | null
+  db: Queryable, businessId: string, kind: 'customer' | 'supplier', id: string | null, docShipping?: string | null, shipToGstin?: string | null, shipTo?: ShipToPlace | null
 ): Promise<Party> {
   if (!id) throw new EwayBillInputError('The document has no party to send the goods to');
   const r = await db.query(
@@ -126,18 +129,27 @@ async function party(
   if (!x) throw new EwayBillInputError('Party not found', 404);
   const shipAddr = String(docShipping || x.ship_addr || '').trim();
   const differs = (!!shipAddr && norm(shipAddr) !== norm(x.billing)) || !!shipToGstin;
-  const useShip = differs && !!shipAddr;
-  const [addr1, addr2] = splitAddress(useShip ? shipAddr : x.billing);
   const state = STATE(x.st);
+  // Where the goods go: typed by the caller, else the customer's saved shipping place, else (a gstin-only ship-to) the billing place.
+  let place = { addr: x.billing as string, city: x.city as string, pin: x.pin as string, act: undefined as number | undefined };
+  if (differs && shipTo) {
+    place = { addr: shipAddr || x.billing, city: shipTo.place, pin: shipTo.pincode, act: STATE(shipTo.stateCode) || state };
+  } else if (differs && shipAddr) {
+    if (norm(shipAddr) !== norm(x.ship_addr)) {
+      throw new EwayBillInputError('This document ships to an address that is not saved on the customer. Enter the ship-to city, PIN code and state.');
+    }
+    place = { addr: shipAddr, city: x.ship_city || x.city, pin: x.ship_pin || x.pin, act: STATE(stateCodeFromName(x.ship_state)) || state };
+  }
+  const [addr1, addr2] = splitAddress(place.addr);
   return {
     gstin: x.gstin || 'URP',
     name: cut(x.name, 100),
     addr1,
     addr2,
-    place: cut(useShip ? x.ship_city || x.city : x.city, 50),
-    pincode: PIN(useShip ? x.ship_pin || x.pin : x.pin),
+    place: cut(place.city, 50),
+    pincode: PIN(place.pin),
     state,
-    actState: useShip ? STATE(stateCodeFromName(x.ship_state)) || state : undefined,
+    actState: place.act,
     shipTo: differs ? { gstin: shipToGstin || x.gstin || 'URP', tradeName: cut(x.name, 100) } : null,
   };
 }
@@ -257,7 +269,7 @@ export async function buildEwayBill(
   businessId: string,
   sourceType: 'delivery_challan' | 'invoice',
   sourceId: string,
-  opts: { distanceKm: number; shipToGstin?: string | null }
+  opts: { distanceKm: number; shipToGstin?: string | null; shipTo?: ShipToPlace | null }
 ): Promise<NicEwayBill> {
   if (!Number.isFinite(opts.distanceKm) || opts.distanceKm < 0 || opts.distanceKm > 4000) {
     throw new EwayBillInputError('Enter the distance in km (0 to 4000)');
@@ -291,8 +303,8 @@ export async function buildEwayBill(
     const to = transferEnds
       ? transferEnds.to
       : c.supplier_id
-        ? await party(db, businessId, 'supplier', c.supplier_id, null, opts.shipToGstin)
-        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address, opts.shipToGstin);
+        ? await party(db, businessId, 'supplier', c.supplier_id, null, opts.shipToGstin, opts.shipTo)
+        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address, opts.shipToGstin, opts.shipTo);
     return finish({
       docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
       from, to, lines,
@@ -313,7 +325,7 @@ export async function buildEwayBill(
   return finish({
     docType: inv.document_type === 'bill_of_supply' ? 'BIL' : 'INV', docNo: inv.invoice_number, docDate: inv.invoice_date,
     sub: { code: inv.export_type ? 3 : 1, desc: '' }, from: await seller(db, businessId, inv.branch_id, lines.find((l: any) => l.location_id)?.location_id),
-    to: await party(db, businessId, 'customer', inv.customer_id, inv.shipping_address, opts.shipToGstin), lines,
+    to: await party(db, businessId, 'customer', inv.customer_id, inv.shipping_address, opts.shipToGstin, opts.shipTo), lines,
     totInvValue: Number(inv.grand_total) || 0,
   });
 }
@@ -324,7 +336,7 @@ export async function ewayBulkJson(
   businessId: string,
   sourceType: 'delivery_challan' | 'invoice',
   sourceId: string,
-  opts: { distanceKm: number }
+  opts: { distanceKm: number; shipTo?: ShipToPlace | null }
 ) {
   const { shipToGstin: _g, shipToTradeName: _n, ...b } = await buildEwayBill(db, businessId, sourceType, sourceId, opts);
   return { version: '1.0.0621', billLists: [b] };

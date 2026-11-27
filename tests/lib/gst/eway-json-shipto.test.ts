@@ -46,7 +46,8 @@ function db(o: {
 }
 
 const pune: Ship = { address: 'Plot 9, MIDC', city: 'Pune', state: 'Maharashtra', pincode: '411019' };
-const run = (d: any, extra: { shipToGstin?: string | null } = {}) => buildEwayBill(d, 'biz', 'invoice', 'inv', { distanceKm: 10, ...extra });
+const nashik = { place: 'Nashik', pincode: '422001', stateCode: '27' };
+const run = (d: any, extra: { shipToGstin?: string | null; shipTo?: typeof nashik | null } = {}) => buildEwayBill(d, 'biz', 'invoice', 'inv', { distanceKm: 10, ...extra });
 
 describe('e-way bill builder ship-to and dispatch-from', () => {
   it('refuses a document number over 16 characters', async () => {
@@ -68,8 +69,20 @@ describe('e-way bill builder ship-to and dispatch-from', () => {
     expect([b.shipToGstin, b.shipToTradeName]).toEqual(['33ADVFS4469F1ZJ', 'Chennai Buyer']);
   });
   it('prefers the document shipping address over the customer one', async () => {
-    const b = await run(db({ docShipping: 'Gate 4, Chakan', shipping: pune }));
+    const b = await run(db({ docShipping: 'Gate 4, Chakan', shipping: pune }), { shipTo: nashik });
     expect([b.transactionType, b.toAddr1]).toEqual([2, 'Gate 4, Chakan']);
+  });
+  it('refuses a document address that is not the customer saved one, unless the ship-to place is typed', async () => {
+    await expect(run(db({ docShipping: 'Gate 4, Chakan', shipping: pune }))).rejects.toThrow(/not saved on the customer/);
+    const b = await run(db({ docShipping: 'Gate 4, Chakan', shipping: pune }), { shipTo: nashik });
+    expect([b.transactionType, b.toPlace, b.toPincode, b.actToStateCode]).toEqual([2, 'Nashik', 422001, 27]);
+  });
+  it('uses the customer saved shipping place when the document address matches it, and a typed place wins', async () => {
+    const same = db({ docShipping: 'plot 9 midc', shipping: pune });
+    const b = await run(same);
+    expect([b.toPlace, b.toPincode, b.actToStateCode]).toEqual(['Pune', 411019, 27]);
+    const typed = await run(same, { shipTo: nashik });
+    expect([typed.toPlace, typed.toPincode]).toEqual(['Nashik', 422001]);
   });
   it('uses URP when the customer has no GSTIN, and the typed GSTIN when one is given', async () => {
     expect((await run(db({ customerGstin: null, shipping: pune }))).shipToGstin).toBe('URP');
@@ -94,6 +107,7 @@ describe('e-way bill builder ship-to and dispatch-from', () => {
     expect([a.length, b.length]).toEqual([100, 60]);
     expect(splitAddress('  Short   one ')).toEqual(['Short one', '']);
     expect(splitAddress(null)).toEqual(['', '']);
+    expect(splitAddress('AAAA, BBBB CCCC', 8)).toEqual(['AAAA,', 'BBBB CCC']);
   });
   it('puts the second part of a long billing address in addr2', async () => {
     const b = await run(db({ shipping: { ...pune, address: 'A'.repeat(100) + ' ' + 'B'.repeat(60) } }));
@@ -104,5 +118,9 @@ describe('e-way bill builder ship-to and dispatch-from', () => {
     expect(j.billLists[0]).not.toHaveProperty('shipToGstin');
     expect(j.billLists[0]).not.toHaveProperty('shipToTradeName');
     expect(j.billLists[0].transactionType).toBe(2);
+  });
+  it('the portal bulk JSON forwards the typed ship-to place', async () => {
+    const j = await ewayBulkJson(db({ docShipping: 'Gate 4, Chakan', shipping: pune }), 'biz', 'invoice', 'inv', { distanceKm: 10, shipTo: nashik });
+    expect([j.billLists[0].toPlace, j.billLists[0].toPincode]).toEqual(['Nashik', 422001]);
   });
 });
