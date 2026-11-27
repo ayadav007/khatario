@@ -13,6 +13,7 @@ Use the spelling the PDF samples show where several are accepted.
 - Success shape: `results.code` is the number `200`, `results.status` is `"Success"`, `results.message` is an object.
 - `ewayBillNo` is a number in generate/by-consigner responses and a string in cancel/closure responses.
 - Generating the same `document_number` a second time is NOT rejected: it returns code 200 with the original `ewayBillNo` and an `alert` text ("E-way bill number already generated on this document number ..."). See `eway-generate-duplicate.json`. Callers must check `alert` or look the document up first.
+- Generating again on the same `document_number` AFTER its bill was cancelled returns code 200 with a NEW `ewayBillNo` and an empty `alert` (not the cancelled number, not a rejection). Probed once on 2026-11-27 by `scripts/gsp/sandbox-probe-regenerate.ts` (login, generate, cancel, generate again); see `eway-regenerate-after-cancel.json`. So after a cancel, Generate on the same document gives a new bill on the sandbox. Whether the live portal allows this is still to be checked before production.
 - The PDF sample (Mumbai dispatch address, Uttarakhand GSTIN, `transaction_type: 3`) was accepted as is.
 - Wrong consignor pincode (999999): rejected, `437: Invalid Supplier ship from State Code for the given pincode`.
 

@@ -1,0 +1,15 @@
+{
+  "results": {
+    "message": {
+      "ewayBillNo": 371010926784,
+      "ewayBillDate": "27/11/2026 10:16:00 PM",
+      "validUpto": "06/12/2026 11:59:00 PM",
+      "alert": "",
+      "error": false,
+      "url": "sandb-api.mastersindia.co/api/v1/detailPrintPdf/b2N0X2RlY18yMDI2LTI3-6b09b3dba157428ddc7e1a10/"
+    },
+    "status": "Success",
+    "code": 200,
+    "requestId": "ERP1795797979_KR/1795797976"
+  }
+}
