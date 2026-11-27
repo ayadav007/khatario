@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic';
 /**
  * POST — refund (all or part of) a completed platform subscription payment.
  *
- * Body: { end_plan: 'now' | 'period_end', amount?: number (rupees), notes?: string, idempotency_key?: string }
- * The money goes back through the payment gateway the customer paid with; only then is the plan changed
- * (end_plan 'now' moves the product to its free plan, 'period_end' lets it run to the end of the paid
- * period). Partner commission on a fully refunded payment is cancelled.
+ * Body: { end_plan?: 'now' | 'period_end', amount?: number (rupees), notes?: string, idempotency_key?: string }
+ * The money goes back through the payment gateway the customer paid with; only then is the plan changed, and only
+ * when the refund brings the payment to fully refunded (end_plan 'now' moves the product to its free plan,
+ * 'period_end' lets it run to the end of the paid period). A partial refund never changes the plan. Partner commission on a fully refunded payment is cancelled.
  * Returns { success, refund } or { error, code } with code REFUND_EXCEEDS_PAYMENT, NOT_REFUNDABLE,
  * GATEWAY_REFUSED, INVALID_REQUEST or NOT_FOUND. The business comes from the payment row and the
  * admin from the session, never from the body.
@@ -26,10 +26,12 @@ export async function POST(
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ error: 'Send a JSON body.', code: 'INVALID_REQUEST' }, { status: 400 });
   }
-  const endPlan = body.end_plan;
-  if (endPlan !== 'now' && endPlan !== 'period_end') {
+  // end_plan is needed only for the refund that returns everything that can be refunded on the payment (the server
+  // decides that); a partial refund never changes the plan and ignores it.
+  const endPlan = body.end_plan === undefined || body.end_plan === null || body.end_plan === '' ? undefined : body.end_plan;
+  if (endPlan !== undefined && endPlan !== 'now' && endPlan !== 'period_end') {
     return NextResponse.json(
-      { error: "Choose whether the plan ends now ('now') or at the end of the paid period ('period_end').", code: 'INVALID_REQUEST' },
+      { error: "end_plan must be 'now' (end the plan today) or 'period_end' (let it run to the end of the paid period).", code: 'INVALID_REQUEST' },
       { status: 400 },
     );
   }

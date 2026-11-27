@@ -2034,18 +2034,21 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The local test database was built before the schema seed fix and lacks five feature rows a fresh build has; tests that depend on them could behave differently on a freshly built database. Not checked.
   - `docs/HOW_TO_MODIFY_SUBSCRIPTION_PLANS.md` still points at the retired table.
 
-## 2026-11-27: Optional GST on subscription charges (plan renewal-refund-gst, task 6)
-- **Asked:** an optional GST line on Khatario's own subscription charges, numbered tax invoices and a receipt the customer can open, with the default changing nothing.
+## 2026-11-27: Renewal, refunds and GST (fourth fix plan after the audit)
+- **Asked:** "go ahead with the next plans" after the audit; standing requirement that a plan priced at Rs 1 works end to end.
 - **Decided:**
-  - Mode `none` (default), `inclusive`, `exclusive`; tax is applied last (after coupon, upgrade credit and the Rs 1 floor), in integer paise, rounding half up, taxable + tax = amount charged. The mode, rate and breakdown are stored on the pending row and completion uses those, never today's setting.
-  - Document numbers (`KH/2026-27/000001`, credit notes `KH/CN/...`) only for payments and refunds that carry GST, issued as the last statement of the completion transaction, gap-free per April-March year (IST). Mode `none` issues no number and never touches the counter table; its document is a plain Receipt (or Refund receipt) identified by payment reference and date.
-  - Partial refunds split tax head by head (CGST, SGST, IGST) with a cumulative rule, so every head sums exactly to the invoice.
-  - Upgrade credit uses the pre-tax (taxable) amount of each source payment; rows from before this have no breakdown and count as tax-free.
-  - Migration 481 (480 stays as committed). Admin setting at `/api/admin/settings/billing-tax` (super admin to change; who and when stored on the setting and in the admin log). No admin screen yet (UI task).
-- **Shipped:** nothing committed here (the controller commits). Migration 481 written, run only on the local test database.
+  - A same-plan renewal extends from the current end date; paying during grace starts a new period today. Period dates are computed by the database.
+  - An upgrade gets credit for unused paid time on the current plan, after any coupon; the charge never goes below Rs 1 and credit above the price is not carried forward (the screen asks the customer to confirm). The credit is re-checked when the payment arrives; if it is no longer valid the payment buys proportionally fewer days and the customer is told.
+  - Grace is 7 days from the end date, judged on the database's date by access checks, plan screens and the nightly job alike. Trials get no grace.
+  - Reminders 7, 3 and 1 days before a paid plan ends and once after, per product; email and in-app only. Plans are reported as not auto-renewing. Cancel at period end can be undone while the period runs; paying clears it.
+  - Refunds: admin only; count only when the gateway confirms; a partial refund never changes the plan; a full refund ends the plan now or at period end as the admin chooses; refundable = paid, less credit used from it, less already refunded; a fully refunded upgrade releases the credit it used. The customer is emailed when a refund completes. The nightly job checks refunds pending over an hour.
+  - GST is a platform setting: `none` (default, charges unchanged, plain receipt, nothing numbered), `inclusive`, `exclusive`; only a super admin can change it; the breakdown stored at checkout is what applies at payment. I chose default `none` over my earlier recommendation of 18% on top, because adding tax changes what customers pay.
+- **Shipped:** on branch `claude/gifted-gates-jx4rbn`, not merged, not deployed. Migrations 480 (refund indexes) and 481 (GST settings, tax columns, invoice counters) written, run only on the local test database. 233 database tests in `tests/db/renewal-refund-gst.db.test.ts`; the billing and security suites pass locally (1,181 tests); `tsc` clean. Nothing was run on staging, in a browser, or against a real gateway; the repo has no lint configuration so lint was not run; the new screens have no component tests.
 - **Open:**
-  - Migration 481 must run before the code (see SERVER_INFRASTRUCTURE.md).
-  - Owner to confirm: the default SAC 998314; that inclusive mode takes the pre-tax credit off a tax-inclusive price; seller details before switching GST on.
-  - Payments recorded by an admin ("record payment") and Rs 0 coupon activations get no tax breakdown and no number, even when GST is on.
-  - Receipts of deleted businesses (archived rows) cannot be opened by anyone yet.
-  - A refund still pending when an earlier one fails keeps the tax share computed at its creation; shares can differ by a few paise from the invoice in that rare case.
+  - Apply 477 to 481 on staging before the code; 481 is required even with GST off (see SERVER_INFRASTRUCTURE.md). 480 and 481 each hold a table lock on `billing_transactions` while they run.
+  - Owner to confirm before switching GST on: seller GSTIN, legal name and state; the default SAC 998314; that in inclusive mode upgrade credit is the pre-tax amount.
+  - With GST on, admin-recorded payments and Rs 0 coupon activations get no tax breakdown or number.
+  - Receipts of deleted businesses (archived rows) cannot be opened by anyone yet. Flagged refunds have no "mark reviewed" action.
+  - The admin subscription editor still computes dates in JavaScript.
+  - Existing customer flows (upgrade, cancel, coupon validate) still send `business_id` from the browser; the server ignores it in favour of the session.
+  - One test-mode refund on Razorpay and on Easebuzz is owed; Easebuzz has no refund webhook here, so its refunds settle through the nightly check or an admin retry.

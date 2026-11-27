@@ -71,17 +71,28 @@ export function allocateCredit(sources: CreditSource[], appliedPaise: number): C
 }
 
 /**
- * What a payment can still be refunded in cash, in paise: the amount paid minus the credit that was
- * taken from it for an upgrade (`metadata.credit_used_paise`), never below 0. The refund code calls this.
+ * What a payment can still be refunded in cash, in paise: the amount paid (including any GST) minus the part of it
+ * that an upgrade took as credit, never below 0. The refund code calls this.
+ *
+ * `metadata.credit_used_paise` is pre-tax (credit is worked out on the taxable amount). The customer saved the tax on
+ * it too, so on a row with a recorded breakdown the credit is taken off at its gross value:
+ * credit_used x total / taxable (rounded to paise, never more than the total). A row with no breakdown, or a
+ * tax-free one (taxable = total), is unchanged: the gross value is the credit itself.
  */
 export function refundableAmountPaise(row: {
   total_amount: string | number | null;
+  taxable_amount?: string | number | null;
   metadata?: { credit_used_paise?: number | string | null } | null;
 }): number {
   const paid = Math.round(Number(row.total_amount ?? 0) * 100);
-  const used = Math.round(Number(row.metadata?.credit_used_paise ?? 0));
   if (!Number.isFinite(paid)) return 0;
-  return Math.max(0, paid - (Number.isFinite(used) ? used : 0));
+  let used = Math.round(Number(row.metadata?.credit_used_paise ?? 0));
+  if (!Number.isFinite(used) || used < 0) used = 0;
+  if (used > 0 && row.taxable_amount != null) {
+    const taxable = Math.round(Number(row.taxable_amount) * 100);
+    if (Number.isFinite(taxable) && taxable > 0 && taxable !== paid) used = Math.min(paid, Math.round((used * paid) / taxable));
+  }
+  return Math.max(0, paid - used);
 }
 
 type Runner = (sql: string, values: unknown[]) => Promise<{ rows: any[] }>;

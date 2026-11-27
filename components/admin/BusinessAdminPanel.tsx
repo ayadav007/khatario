@@ -61,6 +61,7 @@ type BillingTx = {
   pending_refund_amount?: number;
   sent_through_gateway?: boolean;
   plan_end_date?: string | null;
+  plan_effects?: { now: string; period_end: string } | null;
   /** Set by the server on refund rows. */
   refund_of?: string | null;
   can_cancel_refund?: boolean;
@@ -652,6 +653,7 @@ export function BusinessAdminPanel({
                             refundable_amount: tx.refundable_amount ?? 0,
                             sent_through_gateway: tx.sent_through_gateway ?? true,
                             plan_end_date: tx.plan_end_date ?? null,
+                            plan_effects: tx.plan_effects ?? null,
                           }}
                           onDone={() => {
                             void loadBilling();

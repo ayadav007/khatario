@@ -590,8 +590,10 @@ export function SubscriptionChangePlanModal({
                     </div>
                     Your current plan will remain active until{' '}
                     <strong>{formatDate(scheduledDate)}</strong>. After that, you&apos;ll
-                    automatically be moved to {confirmPlan.display_name}. You will be asked to
-                    pay for {confirmPlan.display_name} when your current period ends.
+                    automatically be moved to {confirmPlan.display_name}.
+                    {Number(confirmPlan.price_monthly) > 0
+                      ? ` You will be asked to pay for ${confirmPlan.display_name} when your current period ends.`
+                      : ' It is free, so there is nothing to pay.'}
                   </div>
 
                   {warningsLoading ? (

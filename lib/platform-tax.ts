@@ -330,7 +330,8 @@ async function saveLocked(client: PoolClient, input: SaveTaxSettingsInput, chang
     next.mode = input.mode as GstMode;
   }
   if (has(input.rate_percent)) {
-    const r = typeof input.rate_percent === 'string' ? Number(input.rate_percent) : input.rate_percent;
+    // An empty box is not 0 %: refuse it (Number('') would save a zero rate).
+    const r = typeof input.rate_percent === 'string' ? (input.rate_percent.trim() === '' ? Number.NaN : Number(input.rate_percent)) : input.rate_percent;
     if (typeof r !== 'number' || !Number.isFinite(r) || r < 0 || r > 28) {
       throw new TaxSettingsError('The GST rate must be a number from 0 to 28.');
     }

@@ -68,7 +68,7 @@ export function AdminBillingTaxSettings({ canEdit }: { canEdit: boolean }) {
   if (!saved || !form) return <p className="text-sm text-red-700">{loadError}</p>;
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setForm({ ...form, [key]: value });
-  const typedNeeded = needsTypedConfirm(saved.mode, form.mode);
+  const typedNeeded = needsTypedConfirm(saved.mode, form.mode, String(form.rate_percent).trim() !== String(saved.rate_percent).trim());
   const canSave = canEdit && !saving && (!typedNeeded || typed.trim() === GST_CONFIRM_PHRASE);
   const errField: GstField | null = error ? gstErrorField(error) : null;
   const fieldError = (f: GstField) => (errField === f ? <p role="alert" className="mt-1 text-xs text-red-600">{error}</p> : null);
@@ -86,7 +86,7 @@ export function AdminBillingTaxSettings({ canEdit }: { canEdit: boolean }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: form.mode,
-          rate_percent: Number(form.rate_percent),
+          rate_percent: String(form.rate_percent).trim(),
           seller_gstin: form.seller_gstin ?? '',
           seller_legal_name: form.seller_legal_name ?? '',
           seller_address: form.seller_address ?? '',

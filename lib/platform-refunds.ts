@@ -31,6 +31,8 @@ import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lif
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
 import { isTaxedMode, issueInvoiceNumber } from '@/lib/platform-tax';
+import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
+import { escapeHtml } from '@/lib/platform-receipt';
 import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { getBusinessPlatformRecipient, sendPlatformEmail } from '@/lib/platform-email';
@@ -43,7 +45,8 @@ export type RefundRequest = {
   adminId: string;
   /** Rupees. Omitted = everything that can still be refunded. */
   amount?: number;
-  endPlan: 'now' | 'period_end';
+  /** What happens to the plan. Needed only for the refund that brings the payment to fully refunded; a partial refund never changes the plan. */
+  endPlan?: 'now' | 'period_end';
   notes?: string;
   /** Optional caller key: a repeat with the same key returns the same refund instead of making a new one. */
   idempotencyKey?: string;
@@ -107,6 +110,7 @@ type PaymentRow = {
   igst_amount: string | null;
   gst_rate: string | null;
   gst_mode: string | null;
+  taxable_amount: string | null;
 };
 
 type RefundRow = PaymentRow & { amount: string };
@@ -115,7 +119,8 @@ const PAYMENT_COLUMNS = `id::text AS id, business_id::text AS business_id, type,
   total_amount::text AS total_amount, currency, plan_id, billing_cycle, module_key, coupon_id::text AS coupon_id,
   period_start::text AS period_start, period_end::text AS period_end, gateway_response, metadata,
   tax_amount::text AS tax_amount, cgst_amount::text AS cgst_amount, sgst_amount::text AS sgst_amount,
-  igst_amount::text AS igst_amount, gst_rate::text AS gst_rate, gst_mode`;
+  igst_amount::text AS igst_amount, gst_rate::text AS gst_rate, gst_mode,
+  taxable_amount::text AS taxable_amount`;
 
 const toPaise = (v: string | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
 const rupees = (paise: number) => paise / 100;
@@ -310,7 +315,7 @@ type Prepared = { refundId: string; paymentId: string; businessId: string };
 
 /** Transaction 1: lock the payment, validate, reserve the amount with a pending refund row (or find the one to resume). */
 async function prepareRefund(req: RefundRequest): Promise<Prepared> {
-  if (req.endPlan !== 'now' && req.endPlan !== 'period_end') {
+  if (req.endPlan !== undefined && req.endPlan !== 'now' && req.endPlan !== 'period_end') {
     throw new PlatformRefundError('INVALID_REQUEST', 'Choose whether the plan ends now or at the end of the paid period.', 400);
   }
   const key = req.idempotencyKey?.trim() || null;
@@ -381,13 +386,23 @@ async function prepareRefund(req: RefundRequest): Promise<Prepared> {
     if (GATEWAY_METHODS.has(payment.payment_method ?? '')) gatewayPaymentId(payment);
     const paise = validateAmount(req.amount, remaining);
 
+    // Only the refund that brings the payment to fully refunded can change the plan, so only it needs the choice.
+    const isFinal = totals.completed + totals.pending + paise >= refundable;
+    if (isFinal && !req.endPlan) {
+      throw new PlatformRefundError(
+        'INVALID_REQUEST',
+        'This refund returns everything that can be refunded on the payment. Choose whether the plan ends now or at the end of the paid period.',
+        400,
+      );
+    }
+
     const refundId = randomUUID();
     await insertRefundRow(client, payment, {
       id: refundId,
       paise,
       reference: null,
       metadata: {
-        end_plan: req.endPlan,
+        end_plan: isFinal ? req.endPlan : null,
         requested_by_admin: req.adminId,
         notes: req.notes?.trim() || null,
         gateway_idempotency_key: gatewayRefundKey(refundId),
@@ -422,26 +437,40 @@ type AfterCommit = {
   deferred: (() => Promise<void>)[];
 };
 
+type PlanDecision =
+  | { kind: 'none'; effect: string }
+  | { kind: 'free'; detail?: Record<string, unknown> }
+  | { kind: 'cancel'; endDate: string | null }
+  | { kind: 'shorten'; len: number; clampTomorrow: boolean; oldEnd: string; newEnd: string; keptForOthers: boolean };
+
+type Queryable = Pick<PoolClient, 'query'>;
+
 /**
- * The plan rule, run inside the finalize transaction after the module lock is held.
- *  - Only a payment for the plan the module is on can touch it (a later upgrade moved the module on).
- *  - The payment that covers today: 'now' moves the module to its free plan, unless another un-refunded
- *    payment still has days left (a renewal), in which case the end date is shortened by this payment's
- *    period; 'period_end' sets cancel_at_period_end.
+ * What a FULL refund of this payment does to the plan, read-only (the finalize step runs it under the module lock
+ * and then applies it; the admin billing list runs it to say what each choice would do).
+ *
+ *  - Only a payment for the plan the module is on can touch it.
+ *  - "Other payments" are completed, un-refunded subscription payments for the same product AND the module's current
+ *    plan, whose unused time was not taken as upgrade credit (`credit_consumed_by`). An upgraded-from payment is not
+ *    one of them.
+ *  - The current payment is the one covering today, or the last one bought (its period reaches the module's end date,
+ *    so it also covers a lapsed row in grace). 'now': nothing else with days left means the plan moves to Free today
+ *    (no grace); a later renewal still paid for means the end date is shortened by this payment's period instead.
+ *    'period_end': the plan is set to end with its period (a lapsed row in grace ends at the next nightly run).
  *  - A wholly future renewal: the end date is shortened by its period (both choices).
  *  - An older payment: 'now' shortens the end date by its period; 'period_end' changes nothing.
- *  The shortened end date never goes below tomorrow while another un-refunded payment covers today, and never below today.
+ *  - The end date is only ever moved earlier. A shortened date that would land on or before today with nothing else
+ *    covering today moves the plan to Free instead; with another payment covering today it is held at tomorrow.
  */
-async function applyPlanEffect(
-  client: PoolClient,
+async function decidePlanEffect(
+  client: Queryable,
   payment: PaymentRow,
   moduleKey: PlatformModule | null,
-  p: { endPlan: 'now' | 'period_end'; requiresFull: boolean; fullyRefunded: boolean },
-  after: AfterCommit,
-): Promise<PlanEffect> {
-  if (!moduleKey || !payment.plan_id) return { effect: 'none_no_plan' };
+  endPlan: 'now' | 'period_end',
+): Promise<PlanDecision> {
+  if (!moduleKey || !payment.plan_id) return { kind: 'none', effect: 'none_no_plan' };
   if (((payment.gateway_response?.checkout_type as string | undefined) ?? 'subscription') !== 'subscription') {
-    return { effect: 'none_not_a_plan_payment' };
+    return { kind: 'none', effect: 'none_not_a_plan_payment' };
   }
   const bms = (
     await client.query<{ plan_id: string; status: string; end_date: string | null; cancel_at_period_end: boolean | null }>(
@@ -450,14 +479,19 @@ async function applyPlanEffect(
       [payment.business_id, moduleKey],
     )
   ).rows[0];
-  if (!bms || bms.plan_id !== payment.plan_id || bms.status !== 'active') return { effect: 'none_plan_changed' };
-  if (p.requiresFull && !p.fullyRefunded) return { effect: 'none_partial_gateway_refund' };
+  if (!bms || bms.plan_id !== payment.plan_id || bms.status !== 'active') return { kind: 'none', effect: 'none_plan_changed' };
 
+  const othersSql = `FROM billing_transactions o
+                      WHERE o.business_id = p.business_id AND COALESCE(o.module_key, $2) = $2 AND o.id <> p.id
+                        AND o.plan_id = p.plan_id AND o.type = 'payment' AND o.status = 'completed'
+                        AND COALESCE(o.gateway_response->>'checkout_type', 'subscription') = 'subscription'
+                        AND (o.metadata->>'credit_consumed_by') IS NULL`;
   const c = (
     await client.query<{
       has_period: boolean;
       covers_today: boolean;
       is_future: boolean;
+      is_last: boolean;
       len: number | null;
       other_covers_today: boolean;
       other_has_days_left: boolean;
@@ -466,73 +500,102 @@ async function applyPlanEffect(
       `SELECT (p.period_start IS NOT NULL AND p.period_end IS NOT NULL AND p.period_end > p.period_start) AS has_period,
               COALESCE(p.period_start <= CURRENT_DATE AND p.period_end > CURRENT_DATE, false) AS covers_today,
               COALESCE(p.period_start > CURRENT_DATE, false) AS is_future,
+              COALESCE(p.period_end >= $3::date, false) AS is_last,
               (p.period_end - p.period_start) AS len,
-              EXISTS (SELECT 1 FROM billing_transactions o
-                       WHERE o.business_id = p.business_id AND COALESCE(o.module_key, $2) = $2 AND o.id <> p.id
-                         AND o.type = 'payment' AND o.status = 'completed'
-                         AND COALESCE(o.gateway_response->>'checkout_type', 'subscription') = 'subscription'
-                         AND o.period_start <= CURRENT_DATE AND o.period_end > CURRENT_DATE) AS other_covers_today,
-              EXISTS (SELECT 1 FROM billing_transactions o
-                       WHERE o.business_id = p.business_id AND COALESCE(o.module_key, $2) = $2 AND o.id <> p.id
-                         AND o.type = 'payment' AND o.status = 'completed'
-                         AND COALESCE(o.gateway_response->>'checkout_type', 'subscription') = 'subscription'
-                         AND o.period_end > CURRENT_DATE) AS other_has_days_left,
-              EXISTS (SELECT 1 FROM billing_transactions o
-                       WHERE o.business_id = p.business_id AND COALESCE(o.module_key, $2) = $2 AND o.id <> p.id
-                         AND o.type = 'payment' AND o.status = 'completed'
-                         AND COALESCE(o.gateway_response->>'checkout_type', 'subscription') = 'subscription') AS other_any
+              EXISTS (SELECT 1 ${othersSql} AND o.period_start <= CURRENT_DATE AND o.period_end > CURRENT_DATE) AS other_covers_today,
+              EXISTS (SELECT 1 ${othersSql} AND o.period_end > CURRENT_DATE) AS other_has_days_left,
+              EXISTS (SELECT 1 ${othersSql}) AS other_any
        FROM billing_transactions p WHERE p.id = $1`,
-      [payment.id, moduleKey],
+      [payment.id, moduleKey, bms.end_date],
     )
   ).rows[0];
 
-  const shorten = async (): Promise<PlanEffect> => {
-    if (!c.has_period || !bms.end_date) return { effect: 'none_no_period' };
+  // A payment with no recorded period (legacy) is taken to be the current one only when it is the only payment.
+  if (!c.has_period && c.other_any) return { kind: 'none', effect: 'none_no_period' };
+  const isCurrent = c.covers_today || (c.is_last && !c.is_future) || !c.has_period;
+
+  const shorten = async (kept: boolean): Promise<PlanDecision> => {
+    if (!c.has_period || !bms.end_date) return { kind: 'none', effect: 'none_no_period' };
+    const r = (
+      await client.query<{ new_end: string; past: boolean }>(
+        `SELECT LEAST($1::date, GREATEST($1::date - $2::int, CASE WHEN $3::boolean THEN CURRENT_DATE + 1 ELSE CURRENT_DATE END))::text AS new_end,
+                (LEAST($1::date, GREATEST($1::date - $2::int, CASE WHEN $3::boolean THEN CURRENT_DATE + 1 ELSE CURRENT_DATE END)) <= CURRENT_DATE) AS past`,
+        [bms.end_date, c.len, c.other_covers_today],
+      )
+    ).rows[0];
+    if (r.past && !c.other_covers_today) return { kind: 'free', detail: { days: c.len, old_end_date: bms.end_date } };
+    return { kind: 'shorten', len: c.len as number, clampTomorrow: c.other_covers_today, oldEnd: bms.end_date, newEnd: r.new_end, keptForOthers: kept };
+  };
+
+  if (isCurrent) {
+    if (endPlan === 'now') {
+      if (!c.other_has_days_left) return { kind: 'free' };
+      return shorten(true);
+    }
+    return { kind: 'cancel', endDate: bms.end_date };
+  }
+  if (c.is_future) return shorten(false);
+  return endPlan === 'now' ? shorten(false) : { kind: 'none', effect: 'none_older_payment' };
+}
+
+function decisionToEffect(d: PlanDecision): PlanEffect {
+  switch (d.kind) {
+    case 'none':
+      return { effect: d.effect };
+    case 'free':
+      return { effect: 'ended_now', detail: d.detail };
+    case 'cancel':
+      return { effect: 'cancel_at_period_end', detail: { end_date: d.endDate } };
+    case 'shorten':
+      return {
+        effect: 'end_date_shortened',
+        detail: { days: d.len, old_end_date: d.oldEnd, new_end_date: d.newEnd, kept_for_other_payments: d.keptForOthers },
+      };
+  }
+}
+
+/**
+ * Runs the plan rule for a refund that brought the payment to fully refunded; a partial refund never changes the plan.
+ * Inside the finalize transaction, after the module lock is held.
+ */
+async function applyPlanEffect(
+  client: PoolClient,
+  payment: PaymentRow,
+  moduleKey: PlatformModule | null,
+  p: { endPlan: 'now' | 'period_end' | null; requiresFull: boolean; fullyRefunded: boolean },
+  after: AfterCommit,
+): Promise<PlanEffect> {
+  if (!p.fullyRefunded) return { effect: p.requiresFull ? 'none_partial_gateway_refund' : 'none_partial_refund' };
+  if (!p.endPlan) return { effect: 'none_no_choice' };
+  const d = await decidePlanEffect(client, payment, moduleKey, p.endPlan);
+  if (!moduleKey || !payment.plan_id) return decisionToEffect(d);
+  if (d.kind === 'free') {
+    // The existing move-to-Free path, on this transaction (module lock and payment row lock still held, nothing left
+    // half done if the commit fails). Its event, cache and bundle steps run after the commit. No grace follows.
+    const moved = await moveModuleSubscriptionToFree(payment.business_id, moduleKey, payment.plan_id, 'refunded', undefined, {
+      client,
+      afterCommit: (fn) => after.deferred.push(fn),
+    });
+    return moved ? decisionToEffect(d) : { effect: 'none_plan_changed' };
+  }
+  if (d.kind === 'shorten') {
     const r = await client.query<{ end_date: string }>(
       `UPDATE business_module_subscriptions
-       SET end_date = GREATEST(end_date - $3::int,
-                               CASE WHEN $4::boolean THEN CURRENT_DATE + 1 ELSE CURRENT_DATE END),
+       SET end_date = LEAST(end_date, GREATEST(end_date - $3::int, CASE WHEN $4::boolean THEN CURRENT_DATE + 1 ELSE CURRENT_DATE END)),
            updated_at = CURRENT_TIMESTAMP
        WHERE business_id = $1 AND module_key = $2 AND plan_id = $5 AND status = 'active' AND end_date IS NOT NULL
        RETURNING end_date::text AS end_date`,
-      [payment.business_id, moduleKey, c.len, c.other_covers_today, payment.plan_id],
+      [payment.business_id, moduleKey, d.len, d.clampTomorrow, payment.plan_id],
     );
     if (!r.rows[0]) return { effect: 'none_plan_changed' };
     after.events.push({
       type: 'refund_end_date_shortened',
-      details: { module_key: moduleKey, transaction_id: payment.id, days: c.len, old_end_date: bms.end_date, new_end_date: r.rows[0].end_date },
+      details: { module_key: moduleKey, transaction_id: payment.id, days: d.len, old_end_date: d.oldEnd, new_end_date: r.rows[0].end_date },
     });
     after.clearCacheFor = payment.business_id;
-    return {
-      effect: 'end_date_shortened',
-      detail: {
-        days: c.len,
-        old_end_date: bms.end_date,
-        new_end_date: r.rows[0].end_date,
-        // 'now' was asked for but a later renewal payment was not refunded, so the plan could not end today.
-        kept_for_other_payments: p.endPlan === 'now' && coversToday,
-      },
-    };
-  };
-
-  // A payment with no recorded period (legacy) is taken to cover today only when it is the only subscription payment.
-  if (!c.has_period && c.other_any) return { effect: 'none_no_period' };
-  const coversToday = c.covers_today || !c.has_period;
-  if (coversToday) {
-    if (p.endPlan === 'now') {
-      if (!c.other_has_days_left) {
-        // The existing move-to-Free path, on this transaction (so the module lock and the payment row lock are
-        // still held for the UPDATE, and nothing is left half done if the commit fails). Its event, cache and
-        // bundle steps run after the commit.
-        const moved = await moveModuleSubscriptionToFree(payment.business_id, moduleKey, payment.plan_id, 'refunded', undefined, {
-          client,
-          afterCommit: (fn) => after.deferred.push(fn),
-        });
-        return { effect: moved ? 'ended_now' : 'none_plan_changed' };
-      }
-      return shorten();
-    }
-    if (bms.cancel_at_period_end) return { effect: 'cancel_at_period_end', detail: { end_date: bms.end_date } };
+    return decisionToEffect({ ...d, newEnd: r.rows[0].end_date });
+  }
+  if (d.kind === 'cancel') {
     await client.query(
       `UPDATE business_module_subscriptions
        SET cancel_at_period_end = true, cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
@@ -541,13 +604,26 @@ async function applyPlanEffect(
     );
     after.events.push({
       type: 'refund_cancel_scheduled',
-      details: { module_key: moduleKey, transaction_id: payment.id, scheduled_date: bms.end_date },
+      details: { module_key: moduleKey, transaction_id: payment.id, scheduled_date: d.endDate },
     });
     after.clearCacheFor = payment.business_id;
-    return { effect: 'cancel_at_period_end', detail: { end_date: bms.end_date } };
   }
-  if (c.is_future) return shorten();
-  return p.endPlan === 'now' ? shorten() : { effect: 'none_older_payment' };
+  return decisionToEffect(d);
+}
+
+/** For the admin billing list: what refunding this payment IN FULL would do to the plan under each choice, in words. */
+export async function previewFullRefundPlanEffects(paymentId: string): Promise<{ now: string; period_end: string } | null> {
+  const payment = await queryOne<PaymentRow>(`SELECT ${PAYMENT_COLUMNS} FROM billing_transactions WHERE id = $1`, [paymentId]);
+  if (!payment || payment.type !== 'payment') return null;
+  const moduleKey: PlatformModule | null = payment.plan_id
+    ? ((payment.module_key as PlatformModule | null) ?? (await resolveModuleKeyForPlan(payment.plan_id)))
+    : null;
+  const pool = getPool() as unknown as Queryable;
+  const say = async (endPlan: 'now' | 'period_end') => {
+    const e = decisionToEffect(await decidePlanEffect(pool, payment, moduleKey, endPlan));
+    return planSentence({ planEffect: e.effect, planDetail: e.detail ?? null }, endPlan, 'admin', true);
+  };
+  return { now: await say('now'), period_end: await say('period_end') };
 }
 
 export type SettledRefund = {
@@ -636,12 +712,40 @@ export async function completePlatformRefund(refundId: string, providerRefundId:
       );
     }
 
-    const endPlan = refund.metadata?.end_plan === 'now' ? 'now' : 'period_end';
+    // I3: when a payment that was bought with upgrade credit is fully refunded, the sources it consumed are released
+    // (under the module lock, sources locked in id order after it), so what was taken from them can be refunded or
+    // used as credit again where the normal source rules allow. A history entry stays on each source.
+    let creditReleased: { id: string; paise: number }[] = [];
+    if (fullyRefunded) {
+      const srcs = (
+        await client.query<{ id: string; used: string | null }>(
+          `SELECT id::text AS id, metadata->>'credit_used_paise' AS used
+           FROM billing_transactions
+           WHERE business_id = $1 AND metadata->>'credit_consumed_by' = $2
+           ORDER BY id FOR UPDATE`,
+          [payment.business_id, payment.id],
+        )
+      ).rows;
+      for (const src of srcs) {
+        await client.query(
+          `UPDATE billing_transactions
+           SET metadata = (metadata - 'credit_consumed_by' - 'credit_used_paise')
+                          || jsonb_build_object('credit_released_by', $2::text, 'credit_released_paise', COALESCE($3::bigint, 0),
+                                                'credit_released_at', CURRENT_TIMESTAMP::text),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND metadata->>'credit_consumed_by' = $2`,
+          [src.id, payment.id, src.used],
+        );
+        creditReleased.push({ id: src.id, paise: Number(src.used ?? 0) });
+      }
+    }
+
+    const planChoice = refund.metadata?.end_plan === 'now' ? 'now' : refund.metadata?.end_plan === 'period_end' ? 'period_end' : null;
     const effect = await applyPlanEffect(
       client,
       payment,
       moduleKey,
-      { endPlan, requiresFull: refund.metadata?.end_plan_requires_full === true, fullyRefunded },
+      { endPlan: planChoice, requiresFull: refund.metadata?.end_plan_requires_full === true, fullyRefunded },
       after,
     );
 
@@ -672,6 +776,7 @@ export async function completePlatformRefund(refundId: string, providerRefundId:
           plan_effect_detail: effect.detail ?? null,
           fully_refunded: fullyRefunded,
           coupon_redemption: couponFlag,
+          ...(creditReleased.length ? { credit_released: creditReleased } : {}),
           ...(reasons.length ? { needs_review: true, review_reasons: reasons } : {}),
         }),
       ],
@@ -896,23 +1001,49 @@ function resultOf(s: SettledRefund, status: 'processed' | 'pending', message: st
   };
 }
 
-/** What happened to the plan, in words. `who` picks "their"/"your". */
-function planSentence(s: Pick<SettledRefund, 'planEffect' | 'planDetail'>, endPlan: string, who: 'admin' | 'customer'): string {
+/** What happened (or, with `preview`, would happen) to the plan, in words. `who` picks "their"/"your". */
+function planSentence(
+  s: Pick<SettledRefund, 'planEffect' | 'planDetail'>,
+  endPlan: string,
+  who: 'admin' | 'customer',
+  preview = false,
+): string {
   const their = who === 'admin' ? 'Their' : 'Your';
   const d = (s.planDetail ?? {}) as Record<string, unknown>;
   switch (s.planEffect) {
     case 'ended_now':
+      if (preview) return 'The customer moves to the free plan today, with no grace period, and loses paid features straight away.';
       return who === 'admin'
-        ? 'Their plan has ended and they are now on the free plan.'
-        : 'Your plan has ended and you are now on the free plan.';
+        ? 'Their plan has ended today and they are now on the free plan, with no grace period.'
+        : 'Your plan has ended today and you are now on the free plan.';
     case 'cancel_at_period_end':
+      if (preview) {
+        return d.end_date
+          ? `The customer keeps their plan until ${d.end_date} and it is not renewed after that.`
+          : 'The customer keeps their plan until the end of the period they paid for and it is not renewed after that.';
+      }
       return `${their} plan stays until ${d.end_date ? `its end date, ${d.end_date}` : 'the end of the paid period'} and then ends.`;
-    case 'end_date_shortened':
+    case 'end_date_shortened': {
+      const grace = ` The usual ${GRACE_DAYS} days of grace then apply.`;
+      if (preview) {
+        return d.kept_for_other_payments
+          ? `The plan cannot end today because a later renewal payment is not refunded. The refunded payment's ${d.days} days are taken off the end instead: the plan will end on ${d.new_end_date}.${grace}`
+          : `The refunded payment's ${d.days} days are taken off the end of the paid period: the plan will end on ${d.new_end_date}.${grace}`;
+      }
       return d.kept_for_other_payments
-        ? `The plan did not end today because a later renewal payment was not refunded. The refunded payment's ${d.days} days were taken off the end instead: the plan now ends on ${d.new_end_date}.`
-        : `The refunded payment's ${d.days} days were taken off the end of the paid period: the plan now ends on ${d.new_end_date}.`;
+        ? `The plan did not end today because a later renewal payment was not refunded. The refunded payment's ${d.days} days were taken off the end instead: the plan now ends on ${d.new_end_date}.${grace}`
+        : `The refunded payment's ${d.days} days were taken off the end of the paid period: the plan now ends on ${d.new_end_date}.${grace}`;
+    }
+    case 'none_partial_refund':
+      return who === 'admin' ? 'Partial refund. The plan is unchanged.' : 'Your plan is unchanged.';
     case 'none_partial_gateway_refund':
       return `${their} plan was not changed (only part of the payment was refunded).`;
+    case 'none_no_period':
+      return `${their} plan was not changed: this payment has no recorded period and other payments exist, so Khatario could not tell which days it paid for.`;
+    case 'none_older_payment':
+      return `${their} plan is not changed: this payment covered a period that has already passed.`;
+    case 'none_plan_changed':
+      return `${their} plan was not changed because this payment is not for the plan the customer is on now.`;
     default:
       return endPlan === 'now'
         ? `${their} plan was not changed because this payment does not cover the current plan.`
@@ -944,7 +1075,7 @@ async function notifyRefundCompleted(s: SettledRefund, paise: number, endPlan: s
       await sendPlatformEmail({
         to: recipient.email,
         subject: 'Your Khatario refund',
-        html: `<p>${text}</p>`,
+        html: `<p>${escapeHtml(text)}</p>`,
         text,
         templateKey: 'subscription_lifecycle',
         businessId: s.businessId,

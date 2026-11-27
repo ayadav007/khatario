@@ -3,6 +3,8 @@ import {
   validateRefundForm,
   refundConfirmText,
   needsTypedConfirm,
+  isFullRefund,
+  PARTIAL_REFUND_NOTE,
   gstErrorField,
   GST_MODE_OPTIONS,
 } from '@/lib/subscription/refund-view';
@@ -13,6 +15,11 @@ describe('end-plan choices', () => {
     expect(keep.value).toBe('period_end');
     expect(keep.explain).toContain('20 Dec 2026');
     expect(now.explain).toMatch(/free plan today/);
+  });
+  it('uses what the server says each choice does, word for word', () => {
+    const [keep, now] = endPlanChoices('2026-12-20', { now: 'NOW TEXT', period_end: 'KEEP TEXT' });
+    expect(keep.explain).toBe('KEEP TEXT');
+    expect(now.explain).toBe('NOW TEXT');
   });
   it('without a date it still explains', () => {
     expect(endPlanChoices(null)[0].explain).toMatch(/end of the period they paid for/);
@@ -46,6 +53,25 @@ describe('refundConfirmText', () => {
   });
 });
 
+describe('a partial refund never changes the plan', () => {
+  it('only the amount that equals everything refundable is a full refund', () => {
+    expect(isFullRefund(249, 249)).toBe(true);
+    expect(isFullRefund(249.0, 249.001)).toBe(true); // paise comparison
+    expect(isFullRefund(50, 299)).toBe(false);
+    expect(isFullRefund(0, 299)).toBe(false);
+  });
+  it('the confirm text for a partial refund says the plan is not changed and shows no end-plan wording', () => {
+    const t = refundConfirmText({ amount: 50, viaGateway: true, endPlan: 'now', planEndDate: null, partial: true });
+    expect(t).toContain(PARTIAL_REFUND_NOTE);
+    expect(PARTIAL_REFUND_NOTE).toBe("Partial refund. The customer's plan is not changed.");
+    expect(t.join(' ')).not.toMatch(/free plan|normally left/);
+  });
+  it('the confirm text for a full refund explains the chosen end-plan option', () => {
+    const t = refundConfirmText({ amount: 299, viaGateway: true, endPlan: 'now', planEndDate: null, effects: { now: 'NOW TEXT', period_end: 'KEEP' } });
+    expect(t).toContain('NOW TEXT');
+  });
+});
+
 describe('GST settings helpers', () => {
   it('typed confirmation when moving to a taxed mode, not when staying or going back to none', () => {
     expect(needsTypedConfirm('none', 'exclusive')).toBe(true);
@@ -53,6 +79,12 @@ describe('GST settings helpers', () => {
     expect(needsTypedConfirm('inclusive', 'exclusive')).toBe(true);
     expect(needsTypedConfirm('exclusive', 'exclusive')).toBe(false);
     expect(needsTypedConfirm('exclusive', 'none')).toBe(false);
+  });
+  it('a rate change while tax is charged or shown needs it too; going to none never does', () => {
+    expect(needsTypedConfirm('exclusive', 'exclusive', true)).toBe(true);
+    expect(needsTypedConfirm('inclusive', 'inclusive', true)).toBe(true);
+    expect(needsTypedConfirm('none', 'none', true)).toBe(false);
+    expect(needsTypedConfirm('exclusive', 'none', true)).toBe(false);
   });
   it('maps the server messages to their field', () => {
     expect(gstErrorField('Seller GSTIN: check digit is wrong')).toBe('seller_gstin');

@@ -6,19 +6,29 @@ import { formatPlanDate, formatRupees } from '@/lib/subscription/renewal-view';
 
 export type EndPlanChoice = 'now' | 'period_end';
 
-export function endPlanChoices(planEndDate: string | null): { value: EndPlanChoice; label: string; explain: string }[] {
+/**
+ * `effects` is what the server says each choice would do to this payment's plan (admin billing list, same rule as the
+ * refund itself); without it the wording is general.
+ */
+export function endPlanChoices(
+  planEndDate: string | null,
+  effects?: { now: string; period_end: string } | null,
+): { value: EndPlanChoice; label: string; explain: string }[] {
   return [
     {
       value: 'period_end',
       label: 'Let it run to the end of the period',
-      explain: planEndDate
-        ? `The customer keeps their plan until ${formatPlanDate(planEndDate)}. It is not renewed after that.`
-        : 'The customer keeps their plan until the end of the period they paid for. It is not renewed after that.',
+      explain:
+        effects?.period_end ??
+        (planEndDate
+          ? `The customer keeps their plan until ${formatPlanDate(planEndDate)}. It is not renewed after that.`
+          : 'The customer keeps their plan until the end of the period they paid for. It is not renewed after that.'),
     },
     {
       value: 'now',
       label: 'End the plan now',
       explain:
+        effects?.now ??
         'The customer moves to the free plan today and loses paid features straight away. If a later renewal payment is not refunded, the days of this payment are taken off the end date instead, and the result message says so.',
     },
   ];
@@ -39,13 +49,28 @@ export function validateRefundForm(f: RefundForm): { ok: true; amount: number } 
   return { ok: true, amount };
 }
 
-export function refundConfirmText(p: { amount: number; viaGateway: boolean; endPlan: EndPlanChoice; planEndDate: string | null }): string[] {
+export const PARTIAL_REFUND_NOTE = "Partial refund. The customer's plan is not changed.";
+
+/** True when the entered amount is everything that can still be refunded, the only refund that can change the plan. */
+export function isFullRefund(amount: number, refundable: number): boolean {
+  return amount > 0 && Math.round(amount * 100) >= Math.round(refundable * 100);
+}
+
+export function refundConfirmText(p: {
+  amount: number;
+  viaGateway: boolean;
+  endPlan: EndPlanChoice;
+  planEndDate: string | null;
+  /** True when the amount is less than everything that can still be refunded: the plan is not changed. */
+  partial?: boolean;
+  effects?: { now: string; period_end: string } | null;
+}): string[] {
   const lines = [
     p.viaGateway
       ? `You are about to refund ${formatRupees(p.amount)}. The money will be sent back to the customer through the payment gateway they paid with.`
       : `You are about to record a refund of ${formatRupees(p.amount)}. This payment was recorded by hand, so no money moves automatically: return it to the customer yourself.`,
-    endPlanChoices(p.planEndDate).find((c) => c.value === p.endPlan)!.explain,
-    'A refund cannot be undone. If only part of the payment is refunded, the plan is normally left as it is.',
+    p.partial ? PARTIAL_REFUND_NOTE : endPlanChoices(p.planEndDate, p.effects).find((c) => c.value === p.endPlan)!.explain,
+    'A refund cannot be undone.',
   ];
   return lines;
 }
@@ -64,9 +89,10 @@ export const GST_MODE_OPTIONS: { value: GstMode; label: string; explain: string 
 
 export const GST_CONFIRM_PHRASE = 'CHANGE GST';
 
-/** Typing the phrase is needed when the new mode charges or shows tax: it changes what customers are charged or shown. */
-export function needsTypedConfirm(saved: GstMode, next: GstMode): boolean {
-  return next !== saved && next !== 'none';
+/** Typing the phrase is needed when the new mode charges or shows tax, or the rate changes while tax is charged or shown: it changes what customers are charged or shown. */
+export function needsTypedConfirm(saved: GstMode, next: GstMode, rateChanged = false): boolean {
+  if (next === 'none') return false;
+  return next !== saved || rateChanged;
 }
 
 export type GstField = 'mode' | 'rate_percent' | 'seller_gstin' | 'seller_legal_name' | 'seller_address' | 'seller_state_code' | 'sac_code' | 'invoice_prefix';

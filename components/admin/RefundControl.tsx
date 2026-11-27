@@ -6,6 +6,8 @@ import { platformAdminFetchInit } from '@/lib/admin-client-headers';
 import { formatRupees } from '@/lib/subscription/renewal-view';
 import {
   endPlanChoices,
+  isFullRefund,
+  PARTIAL_REFUND_NOTE,
   refundConfirmText,
   validateRefundForm,
   type EndPlanChoice,
@@ -16,6 +18,8 @@ export type RefundablePayment = {
   refundable_amount: number;
   sent_through_gateway: boolean;
   plan_end_date: string | null;
+  /** What a full refund would do to the plan under each choice, from the server. */
+  plan_effects?: { now: string; period_end: string } | null;
 };
 
 /**
@@ -80,7 +84,7 @@ export function RefundControl({
         ...platformAdminFetchInit,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: v.amount, end_plan: endPlan, notes: reason.trim(), idempotency_key: keyRef.current }),
+        body: JSON.stringify({ amount: v.amount, ...(isFullRefund(v.amount, payment.refundable_amount) ? { end_plan: endPlan } : {}), notes: reason.trim(), idempotency_key: keyRef.current }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
@@ -101,9 +105,10 @@ export function RefundControl({
     }
   }
 
-  const choices = endPlanChoices(payment.plan_end_date);
+  const choices = endPlanChoices(payment.plan_end_date, payment.plan_effects);
   const validated = validateRefundForm({ amountText, reason: 'xxx', max: payment.refundable_amount });
   const amountNow = validated.ok ? validated.amount : 0;
+  const partial = amountNow > 0 && !isFullRefund(amountNow, payment.refundable_amount);
 
   return (
     <>
@@ -131,23 +136,24 @@ export function RefundControl({
                     Up to {formatRupees(payment.refundable_amount)} can still be refunded on this payment.
                   </p>
                 </div>
-                <fieldset>
-                  <legend className="mb-1 text-sm font-medium">What happens to the customer&apos;s plan</legend>
-                  <div className="space-y-2">
-                    {choices.map((c) => (
-                      <label key={c.value} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 ${endPlan === c.value ? 'border-primary-600 ring-1 ring-primary-600' : 'border-gray-200'}`}>
-                        <input type="radio" name={`end-plan-${payment.id}`} className="mt-1" checked={endPlan === c.value} onChange={() => setEndPlan(c.value)} />
-                        <span>
-                          <span className="block text-sm font-medium">{c.label}</span>
-                          <span className="block text-xs text-gray-600">{c.explain}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  {amountNow > 0 && amountNow < payment.refundable_amount ? (
-                    <p className="mt-2 text-xs text-gray-600">This is only part of the payment, so the plan is normally left as it is. The result message says what happened.</p>
-                  ) : null}
-                </fieldset>
+                {partial ? (
+                  <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">{PARTIAL_REFUND_NOTE}</p>
+                ) : (
+                  <fieldset>
+                    <legend className="mb-1 text-sm font-medium">What happens to the customer&apos;s plan</legend>
+                    <div className="space-y-2">
+                      {choices.map((c) => (
+                        <label key={c.value} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 ${endPlan === c.value ? 'border-primary-600 ring-1 ring-primary-600' : 'border-gray-200'}`}>
+                          <input type="radio" name={`end-plan-${payment.id}`} className="mt-1" checked={endPlan === c.value} onChange={() => setEndPlan(c.value)} />
+                          <span>
+                            <span className="block text-sm font-medium">{c.label}</span>
+                            <span className="block text-xs text-gray-600">{c.explain}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
                 <div>
                   <label className="mb-1 block text-sm font-medium" htmlFor={`refund-reason-${payment.id}`}>
                     Reason (required)
@@ -175,7 +181,7 @@ export function RefundControl({
             {step === 'confirm' ? (
               <div className="space-y-3">
                 <h3 className="text-lg font-bold">Confirm the refund</h3>
-                {refundConfirmText({ amount: amountNow, viaGateway: payment.sent_through_gateway, endPlan, planEndDate: payment.plan_end_date }).map((line) => (
+                {refundConfirmText({ amount: amountNow, viaGateway: payment.sent_through_gateway, endPlan, planEndDate: payment.plan_end_date, partial, effects: payment.plan_effects }).map((line) => (
                   <p key={line} className="text-sm text-gray-700">{line}</p>
                 ))}
                 <p className="text-sm text-gray-700"><span className="font-medium">Reason:</span> {reason.trim()}</p>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
+import { previewFullRefundPlanEffects } from '@/lib/platform-refunds';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ export async function GET(
       type: string;
       status: string;
       total_amount: string | number | null;
+      taxable_amount: string | number | null;
       metadata: Record<string, unknown> | null;
       payment_method: string | null;
       payment_reference: string | null;
@@ -30,6 +32,7 @@ export async function GET(
          status,
          amount,
          total_amount,
+         taxable_amount,
          currency,
          plan_id,
          module_key,
@@ -64,6 +67,11 @@ export async function GET(
       );
       planEnds.set(key, cur?.end_date ?? null);
     }
+    // What refunding each refundable payment IN FULL would do to the plan, for each choice (same rule as the refund itself).
+    const effects = new Map<string, { now: string; period_end: string } | null>();
+    for (const r of rows) {
+      if (r.type === 'payment' && r.status === 'completed') effects.set(r.id, await previewFullRefundPlanEffects(r.id).catch(() => null));
+    }
     const transactions = rows.map((r) => {
       const { metadata, ...rest } = r;
       if (r.type === 'refund') {
@@ -78,7 +86,7 @@ export async function GET(
       const mine = refundRows.filter((x) => x.metadata?.refund_of === r.id);
       const sum = (status: string) =>
         mine.filter((x) => x.status === status).reduce((a, x) => a + Math.round(Number(x.total_amount ?? 0) * 100), 0);
-      const refundable = refundableAmountPaise({ total_amount: r.total_amount, metadata: metadata as { credit_used_paise?: number } | null });
+      const refundable = refundableAmountPaise({ total_amount: r.total_amount, taxable_amount: r.taxable_amount, metadata: metadata as { credit_used_paise?: number } | null });
       const remaining = Math.max(0, refundable - sum('completed') - sum('pending'));
       const method = r.payment_method ?? '';
       return {
@@ -88,6 +96,7 @@ export async function GET(
         refunded_amount: sum('completed') / 100,
         pending_refund_amount: sum('pending') / 100,
         sent_through_gateway: method === 'razorpay' || method === 'easebuzz',
+        plan_effects: effects.get(r.id) ?? null,
         plan_end_date: r.plan_id ? planEnds.get(`${r.module_key ?? ''}|${r.plan_id}`) ?? null : null,
       };
     });

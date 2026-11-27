@@ -37,6 +37,26 @@ export async function POST(request: NextRequest) {
     }
     const moduleKey = requested ?? (await getBusinessPlatformContext(tenant.businessId)).primaryModule;
 
+    // A plan that was set to end because a payment was refunded is not the customer's cancellation to undo.
+    const byRefund = await query(
+      `SELECT 1 FROM business_module_subscriptions m
+       WHERE m.business_id = $1 AND m.module_key = $2 AND m.cancel_at_period_end = true
+         AND EXISTS (SELECT 1 FROM subscription_events e
+                      WHERE e.business_id = m.business_id AND e.event_type = 'refund_cancel_scheduled'
+                        AND e.details->>'module_key' = m.module_key
+                        AND e.created_at >= COALESCE(m.cancelled_at, '-infinity'::timestamptz) - INTERVAL '1 minute')`,
+      [tenant.businessId, moduleKey],
+    );
+    if ((byRefund.rowCount ?? 0) > 0) {
+      return NextResponse.json(
+        {
+          error: 'This plan is set to end because a payment was refunded, so the cancellation cannot be undone here. Please contact support if you want to keep the plan.',
+          code: 'CANCELLED_BY_REFUND',
+        },
+        { status: 409 },
+      );
+    }
+
     // The UPDATE carries the whole condition, so a period that ended (or a cancellation already undone)
     // since the request started changes nothing.
     const result = await query(

@@ -27,7 +27,11 @@ export type StuckWebhookEvent = {
 export async function findUnappliedPayments(): Promise<UnappliedPayment[]> {
   return queryRows<UnappliedPayment>(
     `WITH pay AS (
-       SELECT bt.id, bt.business_id, bt.plan_id, bt.updated_at,
+       -- When it was paid: the time stamped at completion. Refund bookkeeping and credit consumption touch updated_at
+       -- on old payments later, which must not make an old payment look like the newest one (rows from before the
+       -- stamp fall back to updated_at).
+       SELECT bt.id, bt.business_id, bt.plan_id,
+              COALESCE((bt.metadata->>'paid_at')::timestamptz, bt.updated_at) AS updated_at,
               COALESCE(bt.module_key,
                        CASE sp.product_line WHEN 'hr' THEN 'hr' WHEN 'connect' THEN 'connect' ELSE 'billing' END
               ) AS module_key
@@ -37,7 +41,7 @@ export async function findUnappliedPayments(): Promise<UnappliedPayment[]> {
          AND bt.status = 'completed'
          AND bt.total_amount > 0
          AND bt.plan_id IS NOT NULL
-         AND bt.updated_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
+         AND COALESCE((bt.metadata->>'paid_at')::timestamptz, bt.updated_at) > CURRENT_TIMESTAMP - INTERVAL '35 days'
          AND bt.gateway_response->>'checkout_type' = 'subscription'
      ),
      latest AS (

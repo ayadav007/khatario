@@ -85,7 +85,7 @@ import {
 } from '@/lib/platform-refunds';
 import { updateBillingTransactionStatus } from '@/lib/platform-billing';
 import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
-import { findRefundsNeedingReview } from '@/lib/subscription/reconcile-payments';
+import { findRefundsNeedingReview, findUnappliedPayments } from '@/lib/subscription/reconcile-payments';
 import { archiveBusinessBillingTransactions } from '@/lib/platform-billing-archive';
 import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
 import { POST as refundPost } from '@/app/api/admin/businesses/[id]/billing/[txId]/refund/route';
@@ -244,6 +244,23 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
   }
 
   const sfx = () => randomUUID().slice(0, 10);
+
+  /**
+   * Runs `fn` with the process (JavaScript) clock moved to `iso`, while the database clock stays real. Code that takes
+   * "today" from the JavaScript clock gets a different day from the database; code that uses the database's does not.
+   * Only Date is faked: timers stay real so the database driver keeps working.
+   */
+  async function withJsClock<T>(iso: string, fn: () => Promise<T>): Promise<T> {
+    jest.useFakeTimers({
+      now: new Date(iso),
+      doNotFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask', 'hrtime', 'performance'],
+    });
+    try {
+      return await fn();
+    } finally {
+      jest.useRealTimers();
+    }
+  }
 
   /** One real payment through the signed webhook. Returns the billing transaction id. */
   async function paidAndActivated(
@@ -446,17 +463,31 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       expect(nonTrial.trialDaysCarried).toBe(0);
     });
 
-    it('a change period starts at the database CURRENT_DATE', async () => {
+    it('a change period starts at the database CURRENT_DATE, whatever the process clock says', async () => {
       const dbToday = await queryOne<{ d: string }>(`SELECT CURRENT_DATE::text AS d`);
-      const p = await resolveNewPeriod({
-        current: { ...base, plan_id: 'billing_starter', end_date: await daysFromToday(3) },
-        targetPlanId: 'billing_growth', billingCycle: 'monthly', currentPlanIsPaid: true,
-      });
+      const end = await daysFromToday(3);
+      // The process clock is set 20 years away: an implementation that took today from JavaScript would start in 2006.
+      const p = await withJsClock('2006-03-04T10:00:00Z', () =>
+        resolveNewPeriod({
+          current: { ...base, plan_id: 'billing_starter', end_date: end },
+          targetPlanId: 'billing_growth', billingCycle: 'monthly', currentPlanIsPaid: true,
+        }),
+      );
       expect(p.kind).toBe('change');
       expect(p.startDate).toBe(dbToday!.d);
+      const fresh = await withJsClock('2006-03-04T10:00:00Z', () =>
+        resolveNewPeriod({ current: null, targetPlanId: 'billing_growth', billingCycle: 'yearly', currentPlanIsPaid: false }),
+      );
+      expect(fresh).toMatchObject({ startDate: dbToday!.d, endDate: await monthsFromToday(12) });
     });
 
-    it('period code uses no JavaScript clock for period values', () => {
+    it('a real payment records DB-date periods even when the process clock is 20 years off', async () => {
+      const tx = await withJsClock('2006-03-04T10:00:00Z', () => paidAndActivated(biz, 'billing_growth'));
+      expect(await txRow(tx)).toMatchObject({ period_start: await daysFromToday(0), period_end: await monthsFromToday(1) });
+      expect(await moduleRow(biz)).toMatchObject({ start_date: await daysFromToday(0), end_date: await monthsFromToday(1) });
+    });
+
+    it('(extra, source check) period code does not read the JavaScript clock', () => {
       for (const f of ['lib/subscription/period.ts', 'lib/subscription/apply-module-plan-change.ts']) {
         const src = readFileSync(join(process.cwd(), f), 'utf8');
         expect(src).not.toMatch(/new Date\(/);
@@ -829,7 +860,17 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       });
     });
 
-    it('credit code uses SQL date maths, never the JavaScript clock', () => {
+    it('credit is worked out on database dates even when the process clock is years off', async () => {
+      await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+      await insertPaid(biz, 'billing_starter', 299, -10, 20);
+      for (const clock of ['2006-03-04T10:00:00Z', '2099-12-31T23:00:00Z']) {
+        const c = await withJsClock(clock, () => computeUpgradeCredit(biz, 'billing', 'billing_growth'));
+        expect(c.amount).toBe(199.33); // 20 unused days of 30, by the database's today
+        expect(c.unusedDays).toBe(20);
+      }
+    });
+
+    it('(extra, source check) credit code does not read the JavaScript clock', () => {
       const src = readFileSync(join(process.cwd(), 'lib/subscription/upgrade-credit.ts'), 'utf8');
       expect(src).not.toMatch(/new Date\(/);
       expect(src).not.toMatch(/Date\.now\(/);
@@ -973,7 +1014,27 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       expect(s.created).toHaveLength(1);
     });
 
-    it('one function answers it: the lifecycle job and routes do not keep their own grace maths', () => {
+    it('grace is decided by the database date, not the process clock (route answers agree under a far-future clock)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
+      const call = async () => {
+        const res = await currentGet(new NextRequest('http://localhost/api/subscriptions/current', {
+          headers: { 'x-authenticated-business-id': biz, 'x-authenticated-user-id': adminOf.get(biz)! },
+        }));
+        expect(res.status).toBe(200);
+        return (await res.json()).subscription;
+      };
+      const normal = await call();
+      expect(normal).toMatchObject({ in_grace: true });
+      // A process clock 70 years ahead would put the row long past grace if the route used it.
+      const far = await withJsClock('2099-01-01T00:00:00Z', async () => {
+        clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
+        return call();
+      });
+      expect(far).toMatchObject({ in_grace: true, grace_ends_on: normal.grace_ends_on });
+    });
+
+    it('(extra, source check) the lifecycle job and routes do not keep their own grace maths', () => {
       const route = readFileSync(join(process.cwd(), 'app/api/subscriptions/current/route.ts'), 'utf8');
       expect(route).toMatch(/getSubscriptionUsability/);
       const src = readFileSync(join(process.cwd(), 'lib/subscription/effective-plan.ts'), 'utf8');
@@ -1454,6 +1515,21 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
     const count = async (from: string, params: unknown[] = []) =>
       Number((await queryOne<{ c: string }>(`SELECT COUNT(*)::text AS c FROM ${from}`, params))!.c);
 
+    /** A real upgrade checkout (credit from the business's payments) paid through the signed webhook; the gateway call is stubbed. */
+    async function realUpgrade(planId: string) {
+      const spy = jest
+        .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+        .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+      try {
+        const r = await createSubscriptionCheckout({ businessId: biz, planId, billingCycle: 'monthly' });
+        const done = await hook('payment.captured', 'pay_up_' + sfx(), 'captured', notesFor(biz, r.billingTransactionId, planId), Math.round(r.amount * 100));
+        expect(done).toMatchObject({ ok: true });
+        return { tx: r.billingTransactionId, amount: r.amount };
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
     type Call = { url: string; method: string; headers: Record<string, string>; body: any };
     let calls: Call[] = [];
     type Reply = { status?: number; json?: unknown; reject?: boolean };
@@ -1670,10 +1746,15 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       it('a partial refund leaves the payment completed; the second partial completes it', async () => {
         const tx = await pay(biz, 'billing_growth', 499, -5, 25);
         await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const planBefore = await planOf(biz);
         stubGateway(razorpayOk());
+        // The default choice is 'period_end' (which would cancel the plan on a full refund): a partial refund ignores it.
         const a = await refundPlatformPayment(req(biz, tx, { amount: 150.5 }));
         expect(calls[0].body).toEqual({ amount: 15050 });
         expect(a).toMatchObject({ status: 'processed', refundedTotal: 150.5, fullyRefunded: false });
+        expect(a.message).toContain('The plan is unchanged.');
+        expect(await planOf(biz)).toEqual(planBefore);
+        expect((await planOf(biz))!.cancel_at_period_end).toBe(false);
         expect((await payRow(tx))!.status).toBe('completed');
         expect((await payRow(tx))!.metadata.refunded_paise).toBe(15050);
 
@@ -1683,6 +1764,8 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         expect(b).toMatchObject({ refundedTotal: 499, fullyRefunded: true });
         expect((await payRow(tx))!.status).toBe('refunded');
         expect(await refundsOf(tx)).toHaveLength(2);
+        // The refund that brings the payment to fully refunded applies the choice.
+        expect((await planOf(biz))!.cancel_at_period_end).toBe(true);
       });
 
       it('a partly refunded payment gives upgrade credit only on what remains', async () => {
@@ -1728,13 +1811,18 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         expect((await payRow(tx))!.status).toBe('refunded');
       });
 
-      it('a payment that was itself bought with credit refunds only what was paid', async () => {
-        await setRow(biz, 'billing_growth', { startOffset: -1, endOffset: 29 });
-        const tx = await pay(biz, 'billing_growth', 299.67, -1, 29, { metadata: { upgrade_credit: { amount: 200, allocation: [] } } });
+      it('a payment that was itself bought with credit (a real upgrade) refunds only what was paid, and refunding it with now ends the plan', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        await pay(biz, 'billing_starter', 299, -10, 20);
+        const q = await realUpgrade('billing_growth');
+        expect(q.amount).toBe(299.67); // 499 - 199.33 credit
+        const growth = q.tx;
         stubGateway(razorpayOk());
-        await expect(refundPlatformPayment(req(biz, tx, { amount: 499 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
-        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        await expect(refundPlatformPayment(req(biz, growth, { amount: 499 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+        const res = await refundPlatformPayment(req(biz, growth, { endPlan: 'now' }));
         expect(calls[0].body).toEqual({ amount: 29967 });
+        expect(res).toMatchObject({ fullyRefunded: true });
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null, cancel_at_period_end: false });
       });
 
       it('a coupon-only (₹0) payment, a pending, a failed and a refund row are NOT_REFUNDABLE', async () => {
@@ -1862,8 +1950,9 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         const settled = await settlePlatformRefund(row.id);
         expect(calls).toHaveLength(1);
         expect(calls[0].method).toBe('GET');
-        expect(settled).toMatchObject({ status: 'processed', refundedTotal: 200 });
-        expect((await planOf(biz))!.plan_id).toBe('free');
+        expect(settled).toMatchObject({ status: 'processed', refundedTotal: 200, fullyRefunded: false });
+        // Only 200 of 499 came back: a partial refund never changes the plan, whatever was asked.
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', cancel_at_period_end: false });
       });
 
       it('refund.failed marks a pending refund failed and leaves the plan alone', async () => {
@@ -2027,16 +2116,17 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         expect(after!.end_date).toBe(await daysFromToday(1)); // 5 - 30 days is in the past: held at tomorrow
       });
 
-      it('with two payments covering today, refunding one with endPlan now does not end the plan', async () => {
-        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 30 });
-        const a = await pay(biz, 'billing_growth', 499, -5, 25);
-        await pay(biz, 'billing_growth', 499, -2, 30);
+      it('an old plan\'s payment whose time was used as credit is not "another payment": refunding the upgrade with now ends the plan (real flow)', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        const starter = await pay(biz, 'billing_starter', 299, -10, 20);
+        const q = await realUpgrade('billing_growth');
+        // The real overlap: the Starter payment still shows 20 days ahead, but its time was consumed as credit.
+        expect((await payRow(starter))!.metadata.credit_consumed_by).toBe(q.tx);
         stubGateway(razorpayOk());
-        await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
-        const p = await planOf(biz);
-        expect(p!.plan_id).toBe('billing_growth');
-        expect(p!.status).toBe('active');
-        expect(p!.end_date! > (await daysFromToday(0))).toBe(true);
+        const res = await refundPlatformPayment(req(biz, q.tx, { endPlan: 'now' }));
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null, status: 'active' });
+        expect(res.message).toMatch(/free plan/);
+        expect(res.message).not.toMatch(/did not end today/);
       });
 
       it('refunding the only payment of the current plan moves it to Free; a payment for an older plan does not touch the plan', async () => {
@@ -2451,7 +2541,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
             const mail = (sendPlatformEmail as jest.Mock).mock.calls[0][0];
             expect(mail.to).toBe('owner@example.test');
             expect(mail.text).toMatch(/refunded ₹100/);
-            expect(mail.text).toMatch(/plan was not changed|plan stays/);
+            expect(mail.text).toMatch(/Your plan is unchanged\./);
             const ev = await query(`SELECT details FROM subscription_events WHERE business_id = $1 AND event_type = 'refund_completed'`, [biz]);
             expect(ev.rows).toHaveLength(1);
             await settlePlatformRefund(p.id);
@@ -2541,6 +2631,371 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
           const { NextResponse } = await import('next/server');
           (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'no' }, { status: 403 }) });
           expect((await cancelCall(biz, tx, { refund_id: unsent })).status).toBe(403);
+        });
+      });
+    });
+
+    describe('final fix wave: end now ends, partial changes nothing, credit is releasable, tax in the cap', () => {
+      const SELLER = (() => {
+        const first14 = '27AAAAA0000A1Z';
+        return first14 + gstinCheckChar(first14);
+      })();
+      const SELLER_FOR_SHORTEN = SELLER;
+      const txMetaOf = async (id: string) =>
+        (await queryOne<{ metadata: Record<string, any> }>(`SELECT metadata FROM billing_transactions WHERE id = $1`, [id]))!.metadata;
+      const planRowJson = async (businessId: string) =>
+        (await queryOne<{ j: string }>(
+          `SELECT to_jsonb(m)::text AS j FROM business_module_subscriptions m WHERE business_id = $1 AND module_key = 'billing'`, [businessId],
+        ))!.j;
+      const periodOf = (id: string) =>
+        queryOne<{ period_start: string; period_end: string; len: number }>(
+          `SELECT period_start::text, period_end::text, (period_end - period_start) AS len FROM billing_transactions WHERE id = $1`, [id],
+        );
+
+      describe('I1 end now ends the plan', () => {
+        it('full refund of an upgrade bought with credit: Free today, no grace, the message says so', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          await pay(biz, 'billing_starter', 299, -10, 20);
+          const q = await realUpgrade('billing_growth');
+          stubGateway(razorpayOk());
+          const res = await refundPlatformPayment(req(biz, q.tx, { endPlan: 'now' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'free', status: 'active', end_date: null, cancel_at_period_end: false });
+          const g = await queryOne<{ grace_period_end: string | null }>(
+            `SELECT grace_period_end::text FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz],
+          );
+          expect(g!.grace_period_end).toBeNull();
+          expect((await refundsOf(q.tx))[0].metadata.plan_effect).toBe('ended_now');
+          expect(res.message).toContain('ended today');
+          expect(res.message).toContain('no grace period');
+        });
+
+        it('refund while the row is in grace: Free today, and the end date is never moved forward', async () => {
+          await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+          const tx = await pay(biz, 'billing_growth', 499, -33, -3);
+          const before = await planOf(biz);
+          expect(before!.end_date).toBe(await daysFromToday(-3));
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null, status: 'active' });
+        });
+
+        it('refund in grace with "let it run to the end": the cancel flag is set and the end date stays in the past (never moved forward)', async () => {
+          await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+          const tx = await pay(biz, 'billing_growth', 499, -33, -3);
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, tx, { endPlan: 'period_end' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', cancel_at_period_end: true, end_date: await daysFromToday(-3) });
+        });
+
+        it('refund of the current payment while a later renewal exists (real renewals): end date shortened by that period, plan still active; the message states the date', async () => {
+          const a = await paidAndActivated(biz, 'billing_growth');
+          const b = await paidAndActivated(biz, 'billing_growth'); // early renewal: starts where A ends
+          const before = await planOf(biz);
+          const pa = await periodOf(a);
+          const pb = await periodOf(b);
+          expect(pb!.period_start).toBe(pa!.period_end);
+          stubGateway(razorpayOk());
+          const res = await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
+          const exp = await queryOne<{ d: string }>(`SELECT ($1::date - $2::int)::text AS d`, [before!.end_date, pa!.len]);
+          const after = await planOf(biz);
+          expect(after).toMatchObject({ plan_id: 'billing_growth', status: 'active', cancel_at_period_end: false, end_date: exp!.d });
+          expect(res.message).toContain(`the plan now ends on ${exp!.d}`);
+          expect(res.message).toContain('later renewal payment was not refunded');
+        });
+
+        it('refund of the future renewal payment: the end date goes back to the first period\'s end', async () => {
+          const a = await paidAndActivated(biz, 'billing_growth');
+          const b = await paidAndActivated(biz, 'billing_growth');
+          const pa = await periodOf(a);
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, b, { endPlan: 'now' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', status: 'active', end_date: pa!.period_end });
+        });
+
+        it('both renewals refunded one after the other end the plan (last one moves to Free)', async () => {
+          const a = await paidAndActivated(biz, 'billing_growth');
+          const b = await paidAndActivated(biz, 'billing_growth');
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, b, { endPlan: 'now' }));
+          await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null });
+        });
+
+        it('what the admin list says each choice would do matches what the refund then does', async () => {
+          (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          await pay(biz, 'billing_starter', 299, -10, 20);
+          const q = await realUpgrade('billing_growth');
+          const { GET } = await import('@/app/api/admin/businesses/[id]/billing/route');
+          const res = await GET(new NextRequest(`http://localhost/api/admin/businesses/${biz}/billing`), { params: { id: biz } });
+          const row = (await res.json()).transactions.find((t: any) => t.id === q.tx);
+          expect(row.plan_effects.now).toMatch(/free plan today, with no grace period/);
+          expect(row.plan_effects.period_end).toMatch(/keeps their plan until \d{4}-\d{2}-\d{2}/);
+        });
+      });
+
+      describe('I2 a partial refund never changes the plan', () => {
+        it('₹50 goodwill refund on a ₹299 payment leaves the module row byte-identical; refunding the remainder with end-now moves to Free', async () => {
+          const tx = await paidAndActivated(biz, 'billing_starter');
+          const before = await planRowJson(biz);
+          stubGateway(razorpayOk());
+          const goodwill = await refundPlatformPayment(req(biz, tx, { amount: 50, endPlan: 'now' })); // even an explicit choice is ignored
+          expect(goodwill).toMatchObject({ status: 'processed', fullyRefunded: false });
+          expect(goodwill.message).toBe('₹50 has been refunded to the customer. Partial refund. The plan is unchanged.');
+          expect(await planRowJson(biz)).toBe(before);
+          expect((await refundsOf(tx))[0].metadata).toMatchObject({ plan_effect: 'none_partial_refund', end_plan: null });
+
+          // The remainder needs the choice (it ends the plan if it is "now").
+          await expect(refundPlatformPayment(req(biz, tx, { endPlan: undefined }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+          expect(await planRowJson(biz)).toBe(before);
+          const rest = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+          expect(rest).toMatchObject({ fullyRefunded: true, refundedTotal: 299 });
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null });
+        });
+
+        it('the route needs no end_plan for a partial refund, and refuses a final refund without one', async () => {
+          (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
+          const tx = await paidAndActivated(biz, 'billing_starter');
+          const before = await planRowJson(biz);
+          const { POST } = await import('@/app/api/admin/businesses/[id]/billing/[txId]/refund/route');
+          const go = (body: unknown) =>
+            POST(new NextRequest('http://localhost/x', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }), { params: { id: biz, txId: tx } });
+          stubGateway(razorpayOk());
+          const partial = await go({ amount: 50 });
+          expect(partial.status).toBe(200);
+          expect((await partial.json()).refund.message).toContain('The plan is unchanged.');
+          expect(await planRowJson(biz)).toBe(before);
+          const final = await go({ amount: 249 });
+          expect(final.status).toBe(400);
+          expect(await final.json()).toMatchObject({ code: 'INVALID_REQUEST' });
+          expect((await go({ amount: 249, end_plan: 'soon' })).status).toBe(400);
+          expect((await go({ amount: 249, end_plan: 'period_end' })).status).toBe(200);
+        });
+      });
+
+      describe('I3 credit can be released', () => {
+        async function upgradeFromStarter() {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          const starter = await pay(biz, 'billing_starter', 299, -10, 20);
+          const q = await realUpgrade('billing_growth');
+          return { starter, growth: q.tx, paid: q.amount };
+        }
+
+        it("the ₹598.67 example: refunding the upgrade releases the credit, so the Starter payment can be refunded in full too", async () => {
+          const { starter, growth, paid } = await upgradeFromStarter();
+          expect(paid).toBe(299.67);
+          const consumed = (await payRow(starter))!.metadata;
+          expect(consumed).toMatchObject({ credit_consumed_by: growth, credit_used_paise: 19933 });
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: consumed as any })).toBe(9967); // capped while the credit is spent
+          stubGateway(razorpayOk());
+          await expect(refundPlatformPayment(req(biz, starter, { amount: 299 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+
+          await refundPlatformPayment(req(biz, growth, { endPlan: 'now' }));
+          const released = (await payRow(starter))!.metadata;
+          expect(released.credit_consumed_by).toBeUndefined();
+          expect(released.credit_used_paise).toBeUndefined();
+          expect(released).toMatchObject({ credit_released_by: growth, credit_released_paise: 19933 });
+          expect(released.credit_released_at).toBeTruthy();
+          expect((await refundsOf(growth))[0].metadata.credit_released).toEqual([{ id: starter, paise: 19933 }]);
+
+          // Everything the customer paid (299 + 299.67 = 598.67) can now go back.
+          const res = await refundPlatformPayment(req(biz, starter, { endPlan: 'now' }));
+          expect(res).toMatchObject({ fullyRefunded: true, refundedTotal: 299 });
+          expect(calls.filter((c) => c.method === 'POST').map((c) => c.body.amount)).toEqual([29967, 29900]);
+          expect((await payRow(starter))!.status).toBe('refunded');
+          expect((await payRow(growth))!.status).toBe('refunded');
+        });
+
+        it('a partial refund of the credit-bought payment releases nothing', async () => {
+          const { starter, growth } = await upgradeFromStarter();
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, growth, { amount: 100 }));
+          expect((await payRow(starter))!.metadata).toMatchObject({ credit_consumed_by: growth, credit_used_paise: 19933 });
+          expect((await payRow(starter))!.metadata.credit_released_by).toBeUndefined();
+        });
+
+        it('a released source is not usable as credit when the business is no longer on its plan; the normal source rules decide', async () => {
+          const { growth } = await upgradeFromStarter();
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, growth, { endPlan: 'now' })); // the business is on Free now
+          expect((await computeUpgradeCredit(biz, 'billing', 'billing_growth')).amount).toBe(0);
+          // Control: put the business back on Starter and the released source gives credit again, by the existing rules.
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          expect((await computeUpgradeCredit(biz, 'billing', 'billing_growth')).amount).toBe(199.33);
+        });
+      });
+
+      describe('I4 tax in the cash cap on a credit source', () => {
+        it('refundableAmountPaise: exclusive and inclusive examples, a row with no breakdown, and a tax-free row', () => {
+          const used = { credit_used_paise: 19933 };
+          // Exclusive 18%: ₹299 + ₹53.82 = ₹352.82; credit 199.33 pre-tax is worth 199.33 x 352.82 / 299 = 235.21 gross.
+          expect(refundableAmountPaise({ total_amount: '352.82', taxable_amount: '299.00', metadata: used })).toBe(11761);
+          // Inclusive 18%: ₹299 paid, taxable 253.39; credit 168.92 pre-tax = 199.33 gross.
+          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: '253.39', metadata: { credit_used_paise: 16892 } })).toBe(9967);
+          // No breakdown, or tax-free: exactly as before.
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: used })).toBe(9967);
+          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: null, metadata: used })).toBe(9967);
+          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: '299.00', metadata: used })).toBe(9967);
+          // Never more than the total, never below zero.
+          expect(refundableAmountPaise({ total_amount: '352.82', taxable_amount: '299.00', metadata: { credit_used_paise: 29900 } })).toBe(0);
+          expect(refundableAmountPaise({ total_amount: '10.00', taxable_amount: '1.00', metadata: { credit_used_paise: 100 } })).toBe(0);
+        });
+
+        async function realTaxedUpgrade(mode: 'exclusive' | 'inclusive') {
+          await saveTaxSettings({ mode, rate_percent: 18, seller_gstin: SELLER, seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' });
+          try {
+            const spy = jest
+              .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+              .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+            const pay1 = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_starter', billingCycle: 'monthly' });
+            expect(await hook('payment.captured', 'pay_tx_' + sfx(), 'captured', notesFor(biz, pay1.billingTransactionId, 'billing_starter'), Math.round(pay1.amount * 100))).toMatchObject({ ok: true });
+            // 10 of its 30 days used.
+            await query(`UPDATE billing_transactions SET period_start = CURRENT_DATE - 10, period_end = CURRENT_DATE + 20 WHERE id = $1`, [pay1.billingTransactionId]);
+            await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+            const up = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+            expect(await hook('payment.captured', 'pay_tx_' + sfx(), 'captured', notesFor(biz, up.billingTransactionId, 'billing_growth'), Math.round(up.amount * 100))).toMatchObject({ ok: true });
+            spy.mockRestore();
+            return { starter: pay1.billingTransactionId, growth: up.billingTransactionId, starterPaid: pay1.amount };
+          } finally {
+            await query(`UPDATE platform_settings SET subscription_gst_mode = 'none', subscription_seller_gstin = NULL WHERE id = 'default'`);
+          }
+        }
+
+        it('exclusive, through the real flow: the Starter payment can be refunded ₹117.61, not ₹153.49', async () => {
+          const { starter, starterPaid } = await realTaxedUpgrade('exclusive');
+          expect(starterPaid).toBe(352.82);
+          const meta = (await payRow(starter))!.metadata;
+          expect(meta.credit_used_paise).toBe(19933);
+          stubGateway(razorpayOk());
+          await expect(refundPlatformPayment(req(biz, starter, { amount: 117.62 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+          const res = await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          expect(calls.filter((c) => c.method === 'POST')[0].body.amount).toBe(11761);
+          expect(res.fullyRefunded).toBe(true);
+        });
+
+        it('inclusive, through the real flow: the Starter payment can be refunded ₹99.67 (the mode-none figure)', async () => {
+          const { starter, starterPaid } = await realTaxedUpgrade('inclusive');
+          expect(starterPaid).toBe(299);
+          stubGateway(razorpayOk());
+          await expect(refundPlatformPayment(req(biz, starter, { amount: 99.68 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+          await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          expect(calls.filter((c) => c.method === 'POST')[0].body.amount).toBe(9967);
+        });
+
+        it('mode none is unchanged: ₹299 with 199.33 used is ₹99.67', async () => {
+          const tx = await pay(biz, 'billing_starter', 299, -10, 20, { metadata: { credit_consumed_by: randomUUID(), credit_used_paise: 19933 } });
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, tx, { endPlan: 'period_end' }));
+          expect(calls[0].body.amount).toBe(9967);
+        });
+      });
+
+      describe('minor items', () => {
+        it('legacy payments with no period and others present: the plan is untouched and the message says why', async () => {
+          await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+          const legacy = await pay(biz, 'billing_growth', 499, null, null);
+          await pay(biz, 'billing_growth', 499, null, null);
+          stubGateway(razorpayOk());
+          const res = await refundPlatformPayment(req(biz, legacy, { endPlan: 'now' }));
+          expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+          expect(res.message).toContain('no recorded period');
+        });
+
+        it('a plan set to end by a refund cannot be undone by the customer; a customer\'s own cancellation still can', async () => {
+          const { POST: undo } = await import('@/app/api/subscriptions/cancel/undo/route');
+          const call = () =>
+            undo(new NextRequest('http://localhost/api/subscriptions/cancel/undo', {
+              method: 'POST', body: JSON.stringify({ module_key: 'billing' }),
+              headers: { 'content-type': 'application/json', 'x-authenticated-business-id': biz, 'x-authenticated-user-id': adminOf.get(biz)! },
+            }));
+          const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+          await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, tx, { endPlan: 'period_end' }));
+          expect((await planOf(biz))!.cancel_at_period_end).toBe(true);
+          const blocked = await call();
+          expect(blocked.status).toBe(409);
+          expect(await blocked.json()).toMatchObject({ code: 'CANCELLED_BY_REFUND' });
+          expect((await planOf(biz))!.cancel_at_period_end).toBe(true);
+
+          const b2 = await newBusiness('undo2');
+          await setRow(b2, 'billing_growth', { startOffset: -5, endOffset: 25 });
+          await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = CURRENT_TIMESTAMP WHERE business_id = $1`, [b2]);
+          const ok = await undo(new NextRequest('http://localhost/api/subscriptions/cancel/undo', {
+            method: 'POST', body: JSON.stringify({ module_key: 'billing' }),
+            headers: { 'content-type': 'application/json', 'x-authenticated-business-id': b2, 'x-authenticated-user-id': adminOf.get(b2)! },
+          }));
+          expect(ok.status).toBe(200);
+        });
+
+        it('unapplied-payment alerts ignore bookkeeping touches: refunding the cash left on a consumed source after an upgrade raises no alert', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          const starter = await pay(biz, 'billing_starter', 299, -10, 20);
+          const q = await realUpgrade('billing_growth');
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, starter, { amount: 50, endPlan: 'period_end' })); // touches the old row's updated_at
+          const mine = (await findUnappliedPayments()).filter((u) => u.business_id === biz);
+          expect(mine).toEqual([]);
+          expect((await moduleRow(biz))!.plan_id).toBe('billing_growth');
+          expect(q.tx).toBeTruthy();
+        });
+
+        it('a shortened period (credit gone) is priced on the pre-tax amount: GST buys no days', async () => {
+          await saveTaxSettings({ mode: 'exclusive', rate_percent: 18, seller_gstin: SELLER_FOR_SHORTEN, seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' });
+          try {
+            await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+            const src = await pay(biz, 'billing_starter', 299, -10, 20);
+            const spy = jest
+              .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+              .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+            const up = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+            spy.mockRestore();
+            await query(`UPDATE billing_transactions SET status = 'refunded' WHERE id = $1`, [src]); // the credit is gone
+            await hook('payment.captured', 'pay_sh_' + sfx(), 'captured', notesFor(biz, up.billingTransactionId, 'billing_growth'), Math.round(up.amount * 100));
+            const row = await queryOne<{ taxable_amount: string; period_start: string; period_end: string }>(
+              `SELECT taxable_amount::text, period_start::text, period_end::text FROM billing_transactions WHERE id = $1`, [up.billingTransactionId],
+            );
+            const taxable = Math.round(Number(row!.taxable_amount) * 100);
+            const credit = Math.round(Number((await queryOne<{ c: string }>(`SELECT (metadata->'upgrade_credit'->>'amount') AS c FROM billing_transactions WHERE id = $1`, [up.billingTransactionId]))!.c) * 100);
+            const days = Math.floor((30 * taxable) / (taxable + credit)); // pre-tax paid / pre-tax value, the cycle being 30 days
+            const got = await queryOne<{ d: number }>(`SELECT ($1::date - $2::date) AS d`, [row!.period_end, row!.period_start]);
+            expect(Math.abs(got!.d - days)).toBeLessThanOrEqual(1); // month length rounding only; tax-inclusive pricing would be ~2 days longer
+            const withTax = Math.floor((30 * Math.round(up.amount * 100)) / (Math.round(up.amount * 100) + credit));
+            expect(got!.d).toBeLessThan(withTax);
+          } finally {
+            await query(`UPDATE platform_settings SET subscription_gst_mode = 'none', subscription_seller_gstin = NULL WHERE id = 'default'`);
+          }
+        });
+
+        it('an empty GST rate is refused, never saved as 0 %', async () => {
+          await expect(saveTaxSettings({ rate_percent: '' })).rejects.toBeInstanceOf(TaxSettingsError);
+          await expect(saveTaxSettings({ rate_percent: '   ' })).rejects.toThrow(/rate must be a number/);
+          expect((await loadTaxSettings()).ratePercent).toBe(18);
+        });
+
+        it('a refund and an upgrade completing on the same source at the same time never both pay out the same money', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          const starter = await pay(biz, 'billing_starter', 299, -10, 20);
+          const spy = jest
+            .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+            .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+          const up = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+          spy.mockRestore();
+          stubGateway(razorpayOk());
+          const complete = () => hook('payment.captured', 'pay_race_' + sfx().replace(/-/g, 'x'), 'captured', notesFor(biz, up.billingTransactionId, 'billing_growth'), Math.round(up.amount * 100));
+          const refund = () => refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+          const first = await Promise.allSettled([complete(), refund()]);
+          // Postgres may abort one side of a lock cycle (40P01); the retry paths settle it.
+          if (first[0].status === 'rejected') await complete();
+          if (first[1].status === 'rejected') await refund();
+          err.mockRestore();
+          const meta = (await payRow(starter))!.metadata;
+          const refunded = (await refundsOf(starter)).filter((r) => r.status === 'completed').reduce((a, r) => a + Math.round(Number(r.total_amount) * 100), 0);
+          const creditTaken = Number(meta.credit_used_paise ?? 0);
+          expect(refunded + creditTaken).toBeLessThanOrEqual(29900);
+          if (creditTaken > 0) expect(refunded).toBeLessThanOrEqual(9967);
+          else expect((await txMetaOf(up.billingTransactionId)).upgrade_credit.rejected).toBeTruthy();
         });
       });
     });
@@ -3599,6 +4054,21 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       const other = await newBusiness('pv-other');
       const p = await preview(biz, { plan_id: 'billing_starter', business_id: other });
       expect(p.status).toBe(200); // ignored: the answer is for the session's business
+    });
+
+    it("the answer is the session's business's even when another business's id is sent (that one has credit, this one has none)", async () => {
+      const other = await newBusiness('pv-credit');
+      await setRow(other, 'billing_starter', { startOffset: -10, endOffset: 20 });
+      await insertPaid7(other, 'billing_starter', 299, -10, 20);
+      // Control: asked as the other business, the same preview carries its credit.
+      const asOther = await preview(other, { plan_id: 'billing_growth' });
+      expect(asOther.body.breakdown.creditApplied).toBe(199.33);
+      // As biz (no plan row, no payments) with the other's id in the query: biz's answer, with no credit.
+      const asBiz = await preview(biz, { plan_id: 'billing_growth', business_id: other });
+      expect(asBiz.status).toBe(200);
+      expect(asBiz.body.breakdown.creditApplied).toBe(0);
+      expect(asBiz.body.period_kind).toBe('change');
+      expect(asBiz.body.breakdown.amountToPay).toBe(asBiz.body.breakdown.listPrice);
     });
   });
 

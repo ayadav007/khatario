@@ -65,6 +65,7 @@ import { normalizePlatformModule } from '@/lib/platform-modules';
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 
 import { isTaxedMode, issueInvoiceNumber } from '@/lib/platform-tax';
+import { escapeHtml } from '@/lib/platform-receipt';
 
 import { redeemCoupon } from '@/lib/subscription/coupons';
 
@@ -564,8 +565,9 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
       upgrade_credit: StoredUpgradeCredit | null;
       invoice_prefix: string | null;
       gst_mode: string | null;
+      taxable_amount: string | null;
     }>(
-      `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount,
+      `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount, taxable_amount::text AS taxable_amount,
               gateway_response->>'checkout_type' AS checkout_type,
               metadata->'upgrade_credit' AS upgrade_credit,
               metadata->'tax'->>'invoice_prefix' AS invoice_prefix, gst_mode
@@ -658,9 +660,10 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
         paymentReference,
         // The customer already paid the reduced price: if the credit is gone they get the days
         // that amount buys, not the whole period.
+        // Days are bought with the pre-tax part of what was paid (the credit is pre-tax too); GST buys no days.
         shorten:
           credit && creditRejected
-            ? { paidPaise: expectedPaise, creditPaise: Math.round(Number(credit.amount) * 100) }
+            ? { paidPaise: tx.taxable_amount != null ? Math.round(Number(tx.taxable_amount) * 100) : expectedPaise, creditPaise: Math.round(Number(credit.amount) * 100) }
             : undefined,
       },
       client,
@@ -773,7 +776,7 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
         await sendPlatformEmail({
           to: recipient.email,
           subject: 'Your Khatario upgrade',
-          html: `<p>${text}</p>`,
+          html: `<p>${escapeHtml(text)}</p>`,
           text,
           templateKey: 'payment_success',
           businessId: params.businessId,
