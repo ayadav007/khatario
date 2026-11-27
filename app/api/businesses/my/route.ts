@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const svCheck = await assertUserSessionVersionMatches(request, userId);
+    const svCheck = await assertUserSessionVersionMatches(request, userId, { skipSeatCheck: true });
     if (!svCheck.ok) {
       const res = NextResponse.json(
         { error: 'Session revoked', code: 'SESSION_REVOKED' },

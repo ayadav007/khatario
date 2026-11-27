@@ -1,3 +1,4 @@
+import { isBranchReadOnly } from '@/lib/subscription/over-limit-access';
 import type { Pool } from 'pg';
 import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import {
@@ -171,6 +172,18 @@ export async function runRecurringInvoices(
         }
       }
       summary.message = 'Plan does not include recurring invoices; due periods skipped';
+      continue;
+    }
+    // A schedule whose branch is read-only (beyond the plan's branch limit) is skipped and the reason is recorded; the
+    // schedule is left unchanged, so it resumes when the owner makes the branch writable again or upgrades.
+    if (rec.branch_id && (await isBranchReadOnly(rec.business_id, rec.branch_id))) {
+      summary.message = 'Branch is read-only (over the plan\'s branch limit); schedule left unchanged for this run';
+      await pool
+        .query(`UPDATE recurring_invoices SET last_error = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND last_error IS DISTINCT FROM $2`, [
+          rec.id,
+          'Skipped: this branch is over your plan\'s branch limit and is read-only. Make it writable in Settings, or upgrade.',
+        ])
+        .catch(() => {});
       continue;
     }
     if (!isRecurringFrequency(rec.frequency)) {

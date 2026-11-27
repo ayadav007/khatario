@@ -40,7 +40,7 @@ export async function PATCH(
 
     // AUTHORIZATION: Check update permission (PBAC will check status, period lock, etc.)
     try {
-      await authorize(userId, 'invoices', 'update', { 
+      await authorize(userId, 'invoices', 'update', { allowReadOnlyBranch: true, 
         branchId: inv.branch_id,
         businessId: inv.business_id,
         resourceId: invoiceId,

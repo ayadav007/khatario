@@ -51,7 +51,7 @@ export async function PATCH(
 
     // AUTHORIZATION: Check update permission (recording payment is an update operation)
     try {
-      await authorize(userId, 'purchases', 'update', { 
+      await authorize(userId, 'purchases', 'update', { allowReadOnlyBranch: true, 
         branchId: purchase.branch_id,
         businessId: purchase.business_id,
         resourceId: purchaseId

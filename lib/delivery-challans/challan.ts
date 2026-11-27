@@ -10,6 +10,7 @@ import {
   type Queryable,
 } from '@/lib/documents/series-number';
 
+import { BRANCH_READ_ONLY_MESSAGE, isBranchReadOnly } from '@/lib/subscription/over-limit-access';
 import { parseChallanKind, parseCustodyPurpose } from '@/lib/stock-custody/custody';
 
 export * from '@/lib/delivery-challans/challan-math';
@@ -102,6 +103,8 @@ export async function writeChallan(
   }
 
   const branchId = await resolveDocumentBranchId(client, businessId, input.branch_id);
+  // A branch beyond the plan's branch limit is read-only (SUB-24): no new or edited challans under it.
+  if (branchId && (await isBranchReadOnly(businessId, branchId))) throw new ChallanInputError(BRANCH_READ_ONLY_MESSAGE, 403);
   const [registration, scheme] = await Promise.all([
     resolveSupplierRegistration(client as any, businessId, branchId),
     resolveGstScheme(client as any, businessId, branchId),

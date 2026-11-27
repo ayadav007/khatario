@@ -543,6 +543,7 @@ export async function POST(request: NextRequest) {
         businessId: business_id,
         userId: created_by,
         branchId: finalBranchId,
+        allowReadOnlyBranch: true, // GST, journals and payments are not blocked by a read-only branch (SUB-24)
         feature: FeatureKeys.PAYMENT_TRACKING,
       });
     } catch (e) {

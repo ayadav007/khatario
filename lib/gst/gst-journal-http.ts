@@ -51,6 +51,7 @@ export async function openGstJournal(opts: {
         businessId: opts.businessId,
         userId: opts.userId,
         branchId,
+        allowReadOnlyBranch: true, // GST, journals and payments are not blocked by a read-only branch (SUB-24)
         feature: FeatureKeys.LEDGER_ACCOUNTING,
       });
     } catch (e) {

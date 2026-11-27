@@ -16,13 +16,21 @@ export function OverLimitAccessNotice() {
       .then((res) => (res.ok ? res.json() : null))
       .then((d) => {
         if (cancelled || !d) return;
-        const paused = d.seats?.users?.filter((u: { paused: boolean }) => u.paused).length ?? 0;
-        const readOnly = d.branches?.branches?.filter((b: { read_only: boolean }) => b.read_only).length ?? 0;
-        if (paused === 0 && readOnly === 0) return;
+        const date = (iso: string | null | undefined) =>
+          iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'soon';
+        const users = (d.seats?.users ?? []) as { paused: boolean; will_pause: boolean }[];
+        const branches = (d.branches?.branches ?? []) as { read_only: boolean; will_be_read_only: boolean }[];
+        const paused = users.filter((u) => u.paused).length;
+        const willPause = users.filter((u) => u.will_pause).length;
+        const readOnly = branches.filter((b) => b.read_only).length;
+        const willRead = branches.filter((b) => b.will_be_read_only).length;
         const parts: string[] = [];
         if (paused) parts.push(`${paused} user${paused === 1 ? ' is' : 's are'} paused`);
         if (readOnly) parts.push(`${readOnly} branch${readOnly === 1 ? ' is' : 'es are'} read-only`);
-        setText(`${parts.join(' and ')} because your plan is smaller than what you use.`);
+        if (willPause) parts.push(`${willPause} user${willPause === 1 ? '' : 's'} will be paused on ${date(d.seats?.enforce_on)}`);
+        if (willRead) parts.push(`${willRead} branch${willRead === 1 ? '' : 'es'} will become read-only on ${date(d.branches?.enforce_on)}`);
+        if (parts.length === 0) return;
+        setText(`${parts.join('; ')}, because your plan is smaller than what you use.`);
       })
       .catch(() => undefined);
     return () => {

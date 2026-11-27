@@ -38,6 +38,8 @@ export interface EnforceAccessInput {
   limitCountedByCaller?: boolean;
   poolClient?: PoolClient;
   branchPermission?: 'view' | 'create_transactions';
+  /** GST compliance, journals and payments: a read-only branch (over the plan's branch limit) does not block them. */
+  allowReadOnlyBranch?: boolean;
 }
 
 export class EnforceAccessError extends Error {
@@ -77,6 +79,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
     limitCountedByCaller,
     poolClient,
     branchPermission = 'create_transactions',
+    allowReadOnlyBranch = false,
   } = opts;
 
   await assertSessionValidForCookieAuth(userId);
@@ -154,7 +157,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
       throw new EnforceAccessError(403, 'BRANCH_ACCESS_DENIED', 'No permission for this branch.');
     }
     // A branch beyond the plan's branch limit is read-only (SUB-24): writes are refused, viewing works.
-    if (branchPermission !== 'view' && (await isBranchReadOnly(businessId, branchId))) {
+    if (branchPermission !== 'view' && !allowReadOnlyBranch && (await isBranchReadOnly(businessId, branchId))) {
       throw new EnforceAccessError(403, 'BRANCH_READ_ONLY', BRANCH_READ_ONLY_MESSAGE, { branch_id: branchId });
     }
   }

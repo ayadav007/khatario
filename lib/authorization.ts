@@ -36,6 +36,13 @@ import { resolvePlatformModuleForAuthModule } from './rbac-permission-catalog';
 import { clearSessionCookie } from './jwt';
 import { assertSessionValidForCookieAuth } from './auth-helpers';
 
+/** Sales, purchase and stock documents: creating or editing them under a read-only branch is refused (SUB-24). */
+const BRANCH_DOCUMENT_MODULES = new Set([
+  'invoices', 'sales_orders', 'estimates', 'credit_notes', 'debit_notes', 'delivery_challans', 'purchases',
+  'purchase_orders', 'expenses', 'inventory_adjustment', 'inventory_adjustments', 'warehouse_transfer',
+  'warehouse_transfers', 'stock_transfer', 'stock_transfers',
+]);
+
 export class AuthorizationError extends Error {
   statusCode: number;
   code: string;
@@ -77,6 +84,8 @@ export interface AuthorizationContext {
   branchId?: string;
   warehouseId?: string;
   businessId?: string;
+  /** Payments against existing documents, e-way bills and sending are allowed under a read-only branch. */
+  allowReadOnlyBranch?: boolean;
   [key: string]: any;
 }
 
@@ -322,7 +331,7 @@ export async function authorize(
 
   // A branch beyond the plan's branch limit is read-only for everyone, the owner included (SUB-24):
   // writes under it are refused, viewing works. Runs before the owner short-circuit below.
-  if (context?.branchId && action !== 'read') {
+  if (context?.branchId && action !== 'read' && !context.allowReadOnlyBranch && BRANCH_DOCUMENT_MODULES.has(moduleKey)) {
     const branchBusinessId = targetBusinessId ?? callingUser?.business_id;
     if (branchBusinessId) {
       const { isBranchReadOnly, BRANCH_READ_ONLY_MESSAGE } = await import('./subscription/over-limit-access');

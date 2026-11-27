@@ -15,6 +15,13 @@ void main() {
     expect(sessionWasEnded(401, 'UNAUTHENTICATED', 'Authentication required'), isTrue);
   });
 
+  test('a paused seat ends the session and shows the server message', () {
+    expect(sessionWasEnded(403, 'SEAT_PAUSED', 'Your business\'s plan has fewer user seats than users.'), isTrue);
+    expect(sessionWasEnded(401, 'SEAT_PAUSED', 'x'), isTrue);
+    final e = ApiException('Ask the owner to choose who keeps access.', status: 403, code: 'SEAT_PAUSED');
+    expect(sessionEndNotice(e), 'Ask the owner to choose who keeps access.');
+  });
+
   test('the signed-out phone points at the phone that is still signed in', () {
     final note = signedOutNotice(replaced: true);
     expect(note, contains('Plan & billing'));

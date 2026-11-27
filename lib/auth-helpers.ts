@@ -131,7 +131,8 @@ export function getSessionVersionFromRequest(request: NextRequest): number | nul
  */
 export async function assertUserSessionVersionMatches(
   request: NextRequest,
-  userId: string
+  userId: string,
+  opts: { skipSeatCheck?: boolean } = {}
 ): Promise<{ ok: true } | { ok: false; reason: 'header' | 'db' | 'paused' }> {
   const v = getSessionVersionFromRequest(request);
   if (v === null) return { ok: false, reason: 'header' };
@@ -147,8 +148,14 @@ export async function assertUserSessionVersionMatches(
   }
 
   // Seats over the plan after a downgrade (SUB-24): refused on the next request, nothing deleted.
-  const { isUserSeatPaused } = await import('./subscription/over-limit-access');
-  if (await isUserSeatPaused(userId, row.business_id)) return { ok: false, reason: 'paused' };
+  // A pause applies to the business the request acts in (the session's business), not to every business of the
+  // person. Business pickers and the switch route skip it: they are how a paused person reaches another business.
+  if (!opts.skipSeatCheck) {
+    const { isUserSeatPaused } = await import('./subscription/over-limit-access');
+    if (await isUserSeatPaused(userId, request.headers.get('x-authenticated-business-id') ?? row.business_id)) {
+      return { ok: false, reason: 'paused' };
+    }
+  }
 
   return { ok: true };
 }
@@ -205,7 +212,7 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
 
   // Seats over the plan after a downgrade (SUB-24): refused on the next request, nothing deleted.
   const { isUserSeatPaused, SEAT_PAUSED_MESSAGE } = await import('./subscription/over-limit-access');
-  if (await isUserSeatPaused(userId, row.business_id)) {
+  if (await isUserSeatPaused(userId, h.get('x-authenticated-business-id') ?? row.business_id)) {
     const { AuthorizationError } = await import('./authorization');
     throw new AuthorizationError(SEAT_PAUSED_MESSAGE, 'SEAT_PAUSED', undefined, 403);
   }

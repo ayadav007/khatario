@@ -3,11 +3,12 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId,
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Employee } from '@/types/database';
 import { checkLimit } from '@/lib/subscription';
-import { LimitRefusedError, withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { LimitRefusedError, withLimitedCreate, type LimitSpec } from '@/lib/subscription/limit-lock';
 import { limitExceededReply, limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { employeeWriteLimitSpecs } from '@/lib/hr/org-limits';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { wouldCreateReportingCycle } from '@/lib/hr/manager-scope';
 import {
@@ -305,6 +306,20 @@ export async function POST(request: NextRequest) {
     const effectiveAccessType = loginDecision.mode === 'login' || existingLogin?.is_primary_admin
       ? 'full'
       : 'attendance_only';
+    // A seat is gained when this call gives the person console access they did not have (new login, or reactivation).
+    // That seat is counted under the same lock as the employee slot, in the transaction that writes the rows.
+    const seatGained =
+      userOccupiesConsoleSeat({
+        is_active: true,
+        is_primary_admin: existingLogin?.is_primary_admin ?? false,
+        role_id: loginDecision.mode === 'login' ? loginDecision.roleId : null,
+        access_type: effectiveAccessType,
+        seat_type: existingLogin?.seat_type ?? null,
+      }) && !(existingLogin && userOccupiesConsoleSeat(existingLogin));
+    const writeLimitSpecs = (): LimitSpec[] => [
+      ...employeeWriteLimitSpecs(business_id, { department, designation, employeeSlot: true }),
+      ...(seatGained ? ([{ limitType: 'users' }] as LimitSpec[]) : []),
+    ];
     const loginPasswordHash =
       loginDecision.mode === 'login' && typeof password === 'string' && password.trim()
         ? await bcrypt.hash(password.trim(), 10)
@@ -336,7 +351,7 @@ export async function POST(request: NextRequest) {
 
     let userId: string;
     let reactivatedEmployee: Employee | null = null;
-    let createdUserThisRequest = false;
+    let newLoginRow: { id: string; params: unknown[] } | null = null;
 
     if (existingUser) {
       userId = existingUser.id;
@@ -382,7 +397,7 @@ export async function POST(request: NextRequest) {
         // those limits. Counted and written under the limit lock, in one transaction.
         reactivatedEmployee = await withLimitedCreate(
           business_id,
-          employeeWriteLimitSpecs(business_id, { department, designation, employeeSlot: true }),
+          writeLimitSpecs(),
           async (client) => {
             await client.query(
               `UPDATE users
@@ -452,13 +467,13 @@ export async function POST(request: NextRequest) {
 
       const passwordHash = loginPasswordHash;
 
-      const user = await queryOne<{ id: string }>(
-        `INSERT INTO users (
-          business_id, name, email, phone, password_hash, role_id, is_active
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id`,
-        [
+      // The login row is written inside the limit lock, in the same transaction as the employee row (below), so
+      // the seat it takes is counted under the lock too and a refused create leaves nothing behind.
+      userId = randomUUID();
+      newLoginRow = {
+        id: userId,
+        params: [
+          userId,
           business_id,
           name,
           email || null,
@@ -466,17 +481,8 @@ export async function POST(request: NextRequest) {
           passwordHash,
           loginDecision.mode === 'login' ? loginDecision.roleId : null,
           true,
-        ]
-      );
-
-      if (!user) {
-        return NextResponse.json(
-          { error: 'User not found' },
-          { status: 404 }
-        );
-      }
-      userId = user.id;
-      createdUserThisRequest = true;
+        ],
+      };
 
       // Note: Employees don't get roles - they are attendance-only
       // Only users (with console access) get roles
@@ -522,8 +528,15 @@ export async function POST(request: NextRequest) {
       try {
         employee = await withLimitedCreate(
           business_id,
-          employeeWriteLimitSpecs(business_id, { department, designation, employeeSlot: true }),
+          writeLimitSpecs(),
           async (client) => {
+            if (newLoginRow) {
+              await client.query(
+                `INSERT INTO users (id, business_id, name, email, phone, password_hash, role_id, is_active)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                newLoginRow.params,
+              );
+            }
             const inserted = await client.query<Employee>(
       `INSERT INTO employees (
         id, business_id, employee_code, designation, department, joining_date,
@@ -561,13 +574,6 @@ export async function POST(request: NextRequest) {
         );
       } catch (e) {
         if (e instanceof LimitRefusedError) {
-          // The login row written a moment ago for this request must not be left behind without an employee.
-          if (createdUserThisRequest) {
-            await query(
-              `DELETE FROM users WHERE id = $1 AND business_id = $2 AND NOT EXISTS (SELECT 1 FROM employees WHERE id = $1)`,
-              [userId, business_id],
-            ).catch((cleanupError) => console.error('[employees] could not remove the unused login after a refused create:', cleanupError));
-          }
           return limitRefusedResponse(e)!;
         }
         throw e;

@@ -10,6 +10,8 @@ jest.mock('@/lib/db', () => ({
   query: (...a: unknown[]) => mockQuery(...a),
   queryRows: (...a: unknown[]) => mockQueryRows(...a),
 }));
+// The seat-pause check (SUB-24) reads plan tables through the mocked database; it is not what these tests cover.
+jest.mock('@/lib/subscription/over-limit-access', () => ({ isUserSeatPaused: jest.fn(async () => false) }));
 jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 
 import { NextRequest } from 'next/server';

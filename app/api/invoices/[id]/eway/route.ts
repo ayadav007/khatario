@@ -52,7 +52,7 @@ export async function PATCH(
     }
 
     try {
-      await authorize(userId, 'invoices', 'update', {
+      await authorize(userId, 'invoices', 'update', { allowReadOnlyBranch: true,
         businessId,
         branchId: existing.rows[0].branch_id || undefined,
         resourceId: params.id,

@@ -78,7 +78,8 @@ describe('POST /api/employees', () => {
     expect(mockAuthorize).toHaveBeenCalledWith('user-1', 'employees', 'create', { businessId: 'biz-session' });
     expect(mockCheckLimit).toHaveBeenCalledWith('biz-session', 'employees');
     const userInsert = mockQueryOne.mock.calls.find((c) => String(c[0]).includes('INSERT INTO users'))!;
-    expect(userInsert[1][0]).toBe('biz-session');
+    // The login row is written under the limit lock with a generated id first: ($1 id, $2 business_id, ...).
+    expect(userInsert[1][1]).toBe('biz-session');
     const empInsert = mockQueryOne.mock.calls.find((c) => String(c[0]).includes('INSERT INTO employees'))!;
     expect(empInsert[1][1]).toBe('biz-session');
   });

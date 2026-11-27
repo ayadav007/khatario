@@ -9,12 +9,15 @@ import { Button } from '@/components/ui/Button';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { useToastContext } from '@/contexts/ToastContext';
 
-type SeatUser = { id: string; name: string; phone: string | null; role_name: string | null; is_owner: boolean; chosen: boolean; paused: boolean };
-type BranchRow = { id: string; name: string; is_default: boolean; chosen: boolean; read_only: boolean };
+type SeatUser = { id: string; name: string; phone: string | null; role_name: string | null; is_owner: boolean; chosen: boolean; paused: boolean; will_pause: boolean };
+type BranchRow = { id: string; name: string; is_default: boolean; chosen: boolean; read_only: boolean; will_be_read_only: boolean };
 type Payload = {
-  seats: { allowed: number | null; used: number; over_limit: boolean; users: SeatUser[] };
-  branches: { allowed: number | null; used: number; over_limit: boolean; branches: BranchRow[] };
+  seats: { allowed: number | null; used: number; over_limit: boolean; enforce_on: string | null; enforced: boolean; users: SeatUser[] };
+  branches: { allowed: number | null; used: number; over_limit: boolean; enforce_on: string | null; enforced: boolean; branches: BranchRow[] };
 };
+
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'a date to be set';
 
 /** Owner screen: choose which users keep a seat and which branches stay writable when the plan has fewer than you use. */
 export default function OverLimitAccessPage() {
@@ -36,8 +39,8 @@ export default function OverLimitAccessPage() {
       }
       const payload = body as Payload;
       setData(payload);
-      setKeepUsers(new Set(payload.seats.users.filter((u) => !u.paused).map((u) => u.id)));
-      setKeepBranches(new Set(payload.branches.branches.filter((b) => !b.read_only).map((b) => b.id)));
+      setKeepUsers(new Set(payload.seats.users.filter((u) => !u.paused && !u.will_pause).map((u) => u.id)));
+      setKeepBranches(new Set(payload.branches.branches.filter((b) => !b.read_only && !b.will_be_read_only).map((b) => b.id)));
     } catch {
       setError('Could not load this page. Please try again.');
     }
@@ -118,6 +121,7 @@ export default function OverLimitAccessPage() {
                     </span>
                   </label>
                   {u.paused ? <span className="text-xs font-medium text-amber-600">Paused</span> : null}
+                  {u.will_pause ? <span className="text-xs font-medium text-amber-600">Will be paused on {fmtDate(data.seats.enforce_on)}</span> : null}
                 </li>
               ))}
             </ul>
@@ -145,6 +149,7 @@ export default function OverLimitAccessPage() {
                     <span className="truncate text-sm font-medium">{b.name}{b.is_default ? ' (default)' : ''}</span>
                   </label>
                   {b.read_only ? <span className="text-xs font-medium text-amber-600">Read-only</span> : null}
+                  {b.will_be_read_only ? <span className="text-xs font-medium text-amber-600">Will be read-only on {fmtDate(data.branches.enforce_on)}</span> : null}
                 </li>
               ))}
             </ul>

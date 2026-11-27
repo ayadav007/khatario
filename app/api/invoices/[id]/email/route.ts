@@ -86,7 +86,7 @@ export async function POST(
     }
 
     try {
-      await authorize(userId, 'invoices', 'update', {
+      await authorize(userId, 'invoices', 'update', { allowReadOnlyBranch: true,
         branchId: invoice.branch_id,
         businessId: invoice.business_id,
         resourceId: invoiceId,

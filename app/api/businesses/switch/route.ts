@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryOne } from '@/lib/db';
+import { queryOne } from '@/lib/db';
 import { getUserIdFromRequest, assertUserSessionVersionMatches } from '@/lib/auth-helpers';
 import {
   clearSessionCookie,
@@ -7,7 +7,8 @@ import {
   signRefreshToken,
   setSessionCookies,
 } from '@/lib/jwt';
-import { userBelongsToBusiness } from '@/lib/user-businesses';
+import { setActiveBusiness, userBelongsToBusiness } from '@/lib/user-businesses';
+import { SEAT_PAUSED_MESSAGE, wouldBeSeatPausedIn } from '@/lib/subscription/over-limit-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const svCheck = await assertUserSessionVersionMatches(request, userId);
+    const svCheck = await assertUserSessionVersionMatches(request, userId, { skipSeatCheck: true });
     if (!svCheck.ok) {
       const res = NextResponse.json(
         { error: 'Session revoked', code: 'SESSION_REVOKED' },
@@ -69,6 +70,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A pause applies only to the business it was decided for: switching INTO a business that would pause this
+    // person is refused with the plain message; every other business stays reachable.
+    if (await wouldBeSeatPausedIn(userId, businessId)) {
+      return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
+    }
+
     const svRow = await queryOne<{ auth_session_version: string }>(
       `SELECT auth_session_version::text AS auth_session_version FROM users WHERE id = $1 AND is_active = true`,
       [userId]
@@ -80,25 +87,7 @@ export async function POST(request: NextRequest) {
     }
     const sessionVersion = Number(svRow.auth_session_version);
 
-    // Only a user the platform recognises as a business owner (is_primary_admin) may take the
-    // primary_admin role of the business they switch to. Membership rows alone are not proof:
-    // migration 208 recorded every pre-existing user, staff included, as an 'owner' member.
-    // Everyone else keeps the role they already hold.
-    await query(
-      `UPDATE users u
-       SET business_id = $1,
-           role_id = CASE
-             WHEN u.is_primary_admin = true AND ub.role = 'owner' THEN COALESCE(
-               (SELECT id FROM user_roles WHERE business_id = $1 AND role_key = 'primary_admin' LIMIT 1),
-               u.role_id
-             )
-             ELSE u.role_id
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       FROM user_businesses ub
-       WHERE u.id = $2 AND ub.user_id = u.id AND ub.business_id = $1`,
-      [businessId, userId]
-    );
+    await setActiveBusiness(userId, businessId);
 
     const tokenPayload = { userId, businessId, sessionVersion };
     const [accessToken, refreshToken] = await Promise.all([

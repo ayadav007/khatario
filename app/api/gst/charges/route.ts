@@ -67,6 +67,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId, 
         businessId,
         userId,
         branchId: finalBranchId,
+        allowReadOnlyBranch: true, // GST, journals and payments are not blocked by a read-only branch (SUB-24)
         feature: FeatureKeys.LEDGER_ACCOUNTING,
       });
     } catch (e) {

@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
       seats: {
         allowed: seats.allowed,
         used: seats.holders.length,
-        over_limit: seats.pausedIds.size > 0,
+        over_limit: seats.candidateIds.size > 0,
+        enforced: seats.enforced,
+        enforce_on: seats.enforceAt,
         users: seats.holders.map((h) => ({
           id: h.id,
           name: personById.get(h.id)?.name ?? 'User',
@@ -48,18 +50,22 @@ export async function GET(request: NextRequest) {
           is_owner: h.isPrimaryAdmin,
           chosen: h.keep,
           paused: seats.pausedIds.has(h.id),
+          will_pause: !seats.enforced && seats.candidateIds.has(h.id),
         })),
       },
       branches: {
         allowed: branches.allowed,
         used: branches.branches.length,
-        over_limit: branches.readOnlyIds.size > 0,
+        over_limit: branches.candidateIds.size > 0,
+        enforced: branches.enforced,
+        enforce_on: branches.enforceAt,
         branches: branches.branches.map((b) => ({
           id: b.id,
           name: b.name,
           is_default: b.isDefault,
           chosen: b.keep,
           read_only: branches.readOnlyIds.has(b.id),
+          will_be_read_only: !branches.enforced && branches.candidateIds.has(b.id),
         })),
       },
     });

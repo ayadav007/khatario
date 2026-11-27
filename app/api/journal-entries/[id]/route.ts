@@ -214,6 +214,7 @@ export async function PATCH(
       businessId: business_id,
       userId: updated_by,
       branchId,
+      allowReadOnlyBranch: true, // GST, journals and payments are not blocked by a read-only branch (SUB-24)
       feature: FeatureKeys.LEDGER_ACCOUNTING,
     });
   } catch (e) {

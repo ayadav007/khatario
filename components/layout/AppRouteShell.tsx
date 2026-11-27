@@ -12,6 +12,7 @@ import { ProductTour } from '@/components/onboarding/ProductTour';
 import { SubscriptionBanner } from '@/components/subscription/SubscriptionBanner';
 import { ProfileRequiredModalProvider } from '@/contexts/ProfileRequiredModalContext';
 import { TrialExtensionModal } from '@/components/subscription/TrialExtensionModal';
+import { OverLimitAccessNotice } from '@/components/settings/OverLimitAccessNotice';
 import { ShellVersionBanner } from '@/components/printer/ShellVersionBanner';
 import { useLayout } from '@/contexts/LayoutContext';
 import { FeatureUpgradeModalProvider } from '@/contexts/FeatureUpgradeModalContext';
@@ -151,6 +152,7 @@ function AppRouteLayoutInner({
               </Suspense>
             )}
             {showChrome && !isFullWidthPage && <SubscriptionBanner />}
+            {showChrome && !isFullWidthPage && <OverLimitAccessNotice />}
             {showChrome && !isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
             {showChrome && !isFullWidthPage && <ShellVersionBanner />}
             {showChrome && <PromotionBanner />}

@@ -19,7 +19,7 @@ import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { checkLimit } from '@/lib/subscription';
 import { parseBooleanFlag } from '@/lib/utils/boolean-flag';
 import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
-import { withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { withLimitedCreate, type LimitSpec } from '@/lib/subscription/limit-lock';
 import { employeeWriteLimitSpecs } from '@/lib/hr/org-limits';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import { seatLimitMessage, seatLimitType } from '@/lib/users/connect-seats';
@@ -281,7 +281,9 @@ export async function PATCH(
       roleIdToSave = loginDecision.mode === 'login' ? loginDecision.roleId : null;
     }
 
-    // Gaining console access (a role, or full access) takes a seat. Checked before any write.
+    // Gaining console access (a role, or full access) takes a seat. Checked before any write, and counted again
+    // under the `users` lock where the role and employee rows are written (below).
+    let seatGained = false;
     if (roleIdToSave !== undefined || accessTypeToSave !== undefined) {
       const linked = await queryOne<{
         is_active: boolean | null;
@@ -304,6 +306,7 @@ export async function PATCH(
           access_type: accessTypeToSave ?? linked.access_type,
         });
         if (!before && after) {
+          seatGained = true;
           const limitCheck = await checkLimit(businessId, seatLimitType('billing'));
           if (!limitCheck.allowed) {
             return NextResponse.json(
@@ -338,7 +341,7 @@ export async function PATCH(
       }
     }
 
-    if (roleIdToSave !== undefined) {
+    if (roleIdToSave !== undefined && !seatGained) {
       await query('UPDATE users SET role_id = $1 WHERE id = $2 AND business_id = $3', [
         roleIdToSave,
         employeeId,
@@ -536,19 +539,30 @@ export async function PATCH(
       employeeParams.push(is_active);
     }
 
-    if (employeeUpdates.length > 0) {
-      employeeParams.push(employeeId);
-      const updateSql = `UPDATE employees SET ${employeeUpdates.join(', ')} WHERE id = $${paramIndex}`;
-      // Reactivating takes an employee slot, and a new department or designation name takes one of those
-      // limits. Count and write under the limit lock; a plain edit of other fields is not limited.
-      const limitSpecs = employeeWriteLimitSpecs(businessId, {
-        department: department !== undefined ? department : undefined,
-        designation: designation !== undefined ? designation : undefined,
-        employeeSlot: reactivating,
-      });
+    if (employeeUpdates.length > 0 || seatGained) {
+      let updateSql: string | null = null;
+      if (employeeUpdates.length > 0) {
+        employeeParams.push(employeeId);
+        updateSql = `UPDATE employees SET ${employeeUpdates.join(', ')} WHERE id = $${paramIndex}`;
+      }
+      // Reactivating takes an employee slot, a new department or designation name takes one of those limits, and
+      // gaining console access takes a seat. Count and write under the limit lock; a plain edit is not limited.
+      const limitSpecs: LimitSpec[] = [
+        ...employeeWriteLimitSpecs(businessId, {
+          department: department !== undefined ? department : undefined,
+          designation: designation !== undefined ? designation : undefined,
+          employeeSlot: reactivating,
+        }),
+        ...(seatGained ? ([{ limitType: 'users' }] as LimitSpec[]) : []),
+      ];
       if (limitSpecs.length > 0) {
-        await withLimitedCreate(businessId, limitSpecs, (client) => client.query(updateSql, employeeParams));
-      } else {
+        await withLimitedCreate(businessId, limitSpecs, async (client) => {
+          if (seatGained && roleIdToSave !== undefined) {
+            await client.query('UPDATE users SET role_id = $1 WHERE id = $2 AND business_id = $3', [roleIdToSave, employeeId, businessId]);
+          }
+          if (updateSql) await client.query(updateSql, employeeParams);
+        });
+      } else if (updateSql) {
         await query(updateSql, employeeParams);
       }
     }

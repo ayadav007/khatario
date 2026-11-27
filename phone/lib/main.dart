@@ -15,6 +15,10 @@ String signedOutNotice({required bool replaced}) {
       'Settings, then Plan & billing. You can do the same on the website in that login.';
 }
 
+/// The note shown after the server ended this login: a paused seat shows the server's own plain message.
+String sessionEndNotice(ApiException e) =>
+    e.code == 'SEAT_PAUSED' ? e.message : signedOutNotice(replaced: e.code == 'SESSION_REVOKED');
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Channel, foreground display and tap handling; Firebase itself only when the build has
@@ -92,8 +96,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   void _watchSignedInSession(KhatarioApi api) {
     api.watchSession((error) {
       if (!mounted || _session == null) return;
-      final replaced = error.code == 'SESSION_REVOKED';
-      _signedOutNote = signedOutNotice(replaced: replaced);
+      _signedOutNote = sessionEndNotice(error);
       api.watchSession(null);
       api.clearCookies();
       KhatarioColors.applyPortalTheme(null);
@@ -115,7 +118,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     } catch (e) {
       final ended = e is ApiException && sessionWasEnded(e.status, e.code, e.message);
       if (ended && mounted && _session != null && _signedOutNote == null) {
-        _signedOutNote = signedOutNotice(replaced: e.code == 'SESSION_REVOKED');
+        _signedOutNote = sessionEndNotice(e);
         _api?.watchSession(null);
         _api?.clearCookies();
         KhatarioColors.applyPortalTheme(null);

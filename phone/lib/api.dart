@@ -175,6 +175,8 @@ const upgradeReplyCodes = {'FEATURE_NOT_IN_PLAN', 'FEATURE_NOT_AVAILABLE', 'SUBS
 
 /// True when the server rejected this device's login. A wrong password is not this.
 bool sessionWasEnded(int? status, String? code, String message) {
+  // The plan has fewer user seats than users and this user is paused: the server ended this login (any status).
+  if (code == 'SEAT_PAUSED') return true;
   if (status != 401) return false;
   const codes = {'SESSION_REVOKED', 'UNAUTHENTICATED', 'USER_NOT_FOUND', 'BUSINESS_NOT_FOUND'};
   if (code != null && codes.contains(code)) return true;

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const svCheck = await assertUserSessionVersionMatches(request, userId);
+  const svCheck = await assertUserSessionVersionMatches(request, userId, { skipSeatCheck: true });
   if (!svCheck.ok) {
     const res = NextResponse.json({ error: 'Session revoked', code: 'SESSION_REVOKED' }, { status: 401 });
     clearSessionCookie(res);

@@ -5,11 +5,12 @@ import { User, Business } from '@/types/database';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import bcrypt from 'bcryptjs';
 import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt';
+import { listUserBusinessMemberships, setActiveBusiness } from '@/lib/user-businesses';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
-import { isUserSeatPaused, SEAT_PAUSED_MESSAGE } from '@/lib/subscription/over-limit-access';
+import { isUserSeatPaused, SEAT_PAUSED_MESSAGE, wouldBeSeatPausedIn } from '@/lib/subscription/over-limit-access';
 import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
@@ -130,9 +131,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // The plan has fewer user seats than users and this user is beyond them (SUB-24): no sign-in, nothing deleted.
+    // The plan has fewer user seats than users and this user is beyond them (SUB-24): no sign-in to THAT business,
+    // nothing deleted. A pause applies only to the business it was decided for: if another business of this person
+    // does not pause them, sign them in to that one instead. Only when every business pauses them is login refused.
     if (user.business_id && (await isUserSeatPaused(user.id, user.business_id))) {
-      return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
+      const memberships = await listUserBusinessMemberships(user.id);
+      let fallback: string | null = null;
+      for (const m of memberships) {
+        if (m.id === user.business_id) continue;
+        if (!(await wouldBeSeatPausedIn(user.id, m.id))) {
+          fallback = m.id;
+          break;
+        }
+      }
+      if (!fallback) {
+        return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
+      }
+      await setActiveBusiness(user.id, fallback);
+      (user as { business_id: string | null }).business_id = fallback;
     }
 
     // Multi-device login is a per-plan feature (Admin → Plans → Features).
