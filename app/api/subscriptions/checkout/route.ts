@@ -10,6 +10,8 @@ import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 import { queryOne } from '@/lib/db';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
+import { normalizePlatformModule } from '@/lib/platform-modules';
+import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { planOpenToBusiness } from '@/lib/subscription/public-plans';
 
 export const dynamic = 'force-dynamic';
@@ -64,6 +66,15 @@ export async function POST(request: NextRequest) {
     if (!(await planOpenToBusiness(tenant.businessId, plan_id))) {
       return NextResponse.json(
         { error: 'This plan is no longer offered. Choose one of the current plans.', code: 'PLAN_NOT_OFFERED' },
+        { status: 400 },
+      );
+    }
+
+    // The product comes from the plan. A module_key that names another product is refused.
+    const claimedModule = normalizePlatformModule(module_key);
+    if (claimedModule && claimedModule !== (await resolveModuleKeyForPlan(plan_id))) {
+      return NextResponse.json(
+        { error: 'This plan belongs to a different product than the one requested.', code: 'MODULE_PLAN_MISMATCH' },
         { status: 400 },
       );
     }
@@ -142,6 +153,15 @@ export async function POST(request: NextRequest) {
       success: true,
       mode: 'redirect',
       ...checkout,
+      // What the customer pays and why: list price, coupon, credit used, credit left over.
+      breakdown: {
+        listPrice: checkout.baseAmount,
+        couponDiscount: checkout.discountAmount,
+        creditApplied: checkout.creditApplied,
+        creditUnused: checkout.creditUnused,
+        creditAvailable: checkout.creditAvailable,
+        amountToPay: checkout.amount,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Checkout failed';
@@ -151,6 +171,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Payments not configured', code: 'PAYMENT_NOT_CONFIGURED' },
         { status: 503 },
+      );
+    }
+
+    if (message === 'MODULE_PLAN_MISMATCH') {
+      return NextResponse.json(
+        { error: 'This plan belongs to a different product than the one requested.', code: 'MODULE_PLAN_MISMATCH' },
+        { status: 400 },
       );
     }
 

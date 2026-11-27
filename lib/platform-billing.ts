@@ -62,6 +62,10 @@ export interface RecordBillingInput {
   skipEmails?: boolean;
   couponId?: string | null;
   discountAmount?: number;
+  /** Upgrade credit taken off the total (not part of the coupon discount). */
+  creditAmount?: number;
+  /** Stored in the row's metadata column. */
+  metadata?: Record<string, unknown>;
 }
 
 async function sendTemplatedTenantEmail(
@@ -169,14 +173,15 @@ export async function recordBillingTransaction(
 
   const base = Math.round(input.amount * 100) / 100;
   const discount = Math.round((input.discountAmount ?? 0) * 100) / 100;
-  const total = Math.max(0, Math.round((base - discount) * 100) / 100);
+  const credit = Math.round((input.creditAmount ?? 0) * 100) / 100;
+  const total = Math.max(0, Math.round((base - discount - credit) * 100) / 100);
 
   const row = await queryOne<{ id: string; status: string }>(
     `INSERT INTO billing_transactions (
        business_id, type, status, amount, currency, plan_id, module_key,
        billing_cycle, payment_method, payment_reference, gateway_response, description,
-       coupon_id, discount_amount, total_amount
-     ) VALUES ($1, 'payment', $2, $3, 'INR', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       coupon_id, discount_amount, total_amount, metadata
+     ) VALUES ($1, 'payment', $2, $3, 'INR', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
      RETURNING id, status`,
     [
       input.businessId,
@@ -192,6 +197,7 @@ export async function recordBillingTransaction(
       input.couponId ?? null,
       discount,
       total,
+      JSON.stringify(input.metadata ?? {}),
     ],
   );
 

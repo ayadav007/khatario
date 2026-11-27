@@ -56,6 +56,35 @@ export async function findUnappliedPayments(): Promise<UnappliedPayment[]> {
   );
 }
 
+export type RejectedUpgradeCredit = {
+  billing_transaction_id: string;
+  business_id: string;
+  module_key: string;
+  plan_id: string;
+  reason: string;
+  shortened_days: number | null;
+  paid_at: string;
+};
+
+/**
+ * Completed upgrade payments whose credit was no longer available at completion (the customer paid
+ * the reduced price and got a shortened period). An operator reviews each one. Read-only, last 35 days.
+ */
+export async function findRejectedUpgradeCredits(): Promise<RejectedUpgradeCredit[]> {
+  return queryRows<RejectedUpgradeCredit>(
+    `SELECT id::text AS billing_transaction_id, business_id::text AS business_id,
+            COALESCE(module_key, '') AS module_key, COALESCE(plan_id, '') AS plan_id,
+            metadata->'upgrade_credit'->>'rejected' AS reason,
+            (metadata->'upgrade_credit'->>'shortened_days')::int AS shortened_days,
+            updated_at::text AS paid_at
+     FROM billing_transactions
+     WHERE type = 'payment' AND status = 'completed'
+       AND metadata->'upgrade_credit'->>'rejected' IS NOT NULL
+       AND updated_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
+     ORDER BY updated_at`,
+  );
+}
+
 /** Webhook events left in received/error for over 10 minutes (last 35 days). Read-only. */
 export async function findStuckWebhookEvents(): Promise<StuckWebhookEvent[]> {
   return queryRows<StuckWebhookEvent>(
@@ -111,15 +140,23 @@ export async function reportBillingAnomalies(): Promise<{
   unapplied: number;
   stuckEvents: number;
   ignoredPaid: number;
+  rejectedCredits: number;
 }> {
   try {
-    const [unapplied, stuck, ignored] = await Promise.all([
+    const [unapplied, stuck, ignored, rejectedCredits] = await Promise.all([
       findUnappliedPayments(),
       findStuckWebhookEvents(),
       findIgnoredSuccessEvents(),
+      findRejectedUpgradeCredits(),
     ]);
-    if (unapplied.length === 0 && stuck.length === 0 && ignored.length === 0) {
-      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0 };
+    if (unapplied.length === 0 && stuck.length === 0 && ignored.length === 0 && rejectedCredits.length === 0) {
+      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0 };
+    }
+
+    for (const r of rejectedCredits) {
+      console.error(
+        `[billing-reconcile] upgrade credit rejected: tx=${r.billing_transaction_id} business=${r.business_id} module=${r.module_key} plan=${r.plan_id} reason=${r.reason} days=${r.shortened_days ?? 'n/a'} paid_at=${r.paid_at}`,
+      );
     }
 
     for (const p of unapplied) {
@@ -144,15 +181,20 @@ export async function reportBillingAnomalies(): Promise<{
       await sendPlatformAdminPush({
         event: 'incident',
         title: 'Billing: payments need attention',
-        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored`,
+        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored, ${rejectedCredits.length} upgrade credits rejected`,
         url: '/admin/billing',
       });
     } catch (err) {
       console.warn('[billing-reconcile] admin push failed', err instanceof Error ? err.message : err);
     }
-    return { unapplied: unapplied.length, stuckEvents: stuck.length, ignoredPaid: ignored.length };
+    return {
+      unapplied: unapplied.length,
+      stuckEvents: stuck.length,
+      ignoredPaid: ignored.length,
+      rejectedCredits: rejectedCredits.length,
+    };
   } catch (err) {
     console.error('[billing-reconcile] check failed', err);
-    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0 };
+    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0 };
   }
 }

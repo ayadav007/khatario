@@ -34,6 +34,8 @@ export interface ApplyModulePlanChangeResult {
    * records its period from here. Absent for a change or a fresh plan (the period starts at start_date).
    */
   paidFrom?: string;
+  /** Set when the period was shortened because the payment's upgrade credit was no longer available. */
+  shortened_days?: number;
 }
 
 export interface PlanChangeCommittedMeta {
@@ -133,6 +135,8 @@ type PlanChangeParams = {
   billingCycle: BillingCycle;
   paymentMethod?: string;
   paymentReference?: string | null;
+  /** See `resolveNewPeriod`: a payment that bought fewer days than the cycle. */
+  shorten?: { paidPaise: number; creditPaise: number };
 };
 
 /** Runs inside a transaction on `client`. Lock order: the caller's checkout row first, then this lock. */
@@ -163,6 +167,7 @@ async function applyOnClient(
       targetPlanId: params.planId,
       billingCycle: params.billingCycle,
       currentPlanIsPaid: existing ? await planHasPaidPrice(existing.plan_id, client) : false,
+      shorten: params.shorten,
     },
     client,
   );
@@ -207,6 +212,7 @@ async function applyOnClient(
     trial_days_carried: trialDaysCarried,
     period_kind: period.kind,
     paidFrom: period.kind === 'renewal' ? (existing?.end_date ?? undefined) : undefined,
+    shortened_days: period.shortenedDays,
   };
 
   await enableModuleForPlanChange(result, client);

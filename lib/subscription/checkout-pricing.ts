@@ -6,6 +6,8 @@ import {
   type Coupon,
 } from '@/lib/subscription/coupons';
 import { queryOne } from '@/lib/db';
+import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { allocateCredit, computeUpgradeCredit, type CreditAllocation } from '@/lib/subscription/upgrade-credit';
 
 export interface CheckoutPricingResult {
   baseAmount: number;
@@ -14,7 +16,22 @@ export interface CheckoutPricingResult {
   couponId?: string;
   couponCode?: string;
   freeMonths?: number;
+  /** Credit the customer's unused paid time is worth towards this plan (0 when none). */
+  creditAvailable: number;
+  /** The part of it taken off finalAmount (the charge never goes below ₹1). */
+  creditApplied: number;
+  /** creditAvailable - creditApplied: unused paid time that this purchase does not use. */
+  creditUnused: number;
+  creditFromTransactionId: string | null;
+  /** The payments the applied credit is taken from, oldest first, with the paise taken from each. */
+  creditAllocation: CreditAllocation[];
+  /** The plan those payments bought (the module's current plan). */
+  creditFromPlanId: string | null;
+  creditUnusedDays: number;
+  creditPeriodDays: number;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function resolveCheckoutPricing(params: {
   businessId: string;
@@ -66,15 +83,50 @@ export async function resolveCheckoutPricing(params: {
     }
   }
 
-  const finalAmount = Math.max(
-    0,
-    Math.round((baseAmount - discountAmount) * 100) / 100,
-  );
+  // Order: list price, coupon, upgrade credit, floor at ₹1. The ₹0 coupon path and an amount
+  // already below ₹1 after the coupon are left exactly as they were (no credit is looked up).
+  const afterCoupon = Math.max(0, round2(baseAmount - discountAmount));
+  let finalAmount = afterCoupon;
+  let creditAvailable = 0;
+  let creditApplied = 0;
+  let creditFromTransactionId: string | null = null;
+  let creditAllocation: CreditAllocation[] = [];
+  let creditFromPlanId: string | null = null;
+  let creditUnusedDays = 0;
+  let creditPeriodDays = 0;
+
+  if (afterCoupon >= 1) {
+    // The product is the target plan's own, never a value the client sent.
+    const moduleKey = await resolveModuleKeyForPlan(params.planId);
+    const credit = await computeUpgradeCredit(params.businessId, moduleKey, params.planId);
+    creditAvailable = credit.amount;
+    if (credit.amount > 0) {
+      // A gateway cannot take less than ₹1, so the credit used stops at price - ₹1.
+      creditApplied = Math.min(credit.amount, round2(afterCoupon - 1));
+      finalAmount = round2(afterCoupon - creditApplied);
+      if (creditApplied > 0) {
+        creditAllocation = allocateCredit(credit.sources, Math.round(creditApplied * 100));
+        creditFromTransactionId =
+          creditAllocation.reduce((a, b) => (b.paise > a.paise ? b : a)).id;
+        creditFromPlanId = credit.fromPlanId;
+        creditUnusedDays = credit.unusedDays;
+        creditPeriodDays = credit.periodDays;
+      }
+    }
+  }
 
   return {
     baseAmount,
     discountAmount,
     finalAmount,
+    creditAvailable,
+    creditApplied,
+    creditUnused: round2(creditAvailable - creditApplied),
+    creditFromTransactionId,
+    creditAllocation,
+    creditFromPlanId,
+    creditUnusedDays,
+    creditPeriodDays,
     couponId,
     couponCode,
     freeMonths,

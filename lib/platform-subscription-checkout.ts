@@ -28,6 +28,8 @@ import {
 
   notifyAdminsSubscriptionChange,
 
+  sendPlatformEmail,
+
 } from '@/lib/platform-email';
 
 import {
@@ -63,6 +65,12 @@ import { normalizePlatformModule } from '@/lib/platform-modules';
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 
 import { redeemCoupon } from '@/lib/subscription/coupons';
+
+import {
+  consumeCreditSources,
+  recheckUpgradeCredit,
+  type StoredUpgradeCredit,
+} from '@/lib/subscription/upgrade-credit';
 
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
@@ -167,6 +175,15 @@ export interface CreateSubscriptionCheckoutResult {
 
   discountAmount: number;
 
+  /** Credit for unused paid time on the current plan that was taken off `amount` (0 when none). */
+  creditApplied: number;
+
+  /** Unused paid time worth this much is not used by this purchase (the charge never goes below ₹1). */
+  creditUnused: number;
+
+  /** What the customer's unused paid time is worth towards this plan. */
+  creditAvailable: number;
+
   currency: string;
 
   billingTransactionId: string;
@@ -225,6 +242,13 @@ export async function createSubscriptionCheckout(
 
 
 
+  // The product is the plan's own. A client-sent module_key that names another product is refused.
+  const moduleKey = await resolveModuleKeyForPlan(input.planId);
+  const claimedModule = normalizePlatformModule(input.moduleKey);
+  if (claimedModule && claimedModule !== moduleKey) {
+    throw new Error('MODULE_PLAN_MISMATCH');
+  }
+
   const pricing = await resolveCheckoutPricing({
 
     businessId: input.businessId,
@@ -269,9 +293,6 @@ export async function createSubscriptionCheckout(
 
   const recipient = await getBusinessPlatformRecipient(input.businessId);
 
-  const moduleKey =
-    normalizePlatformModule(input.moduleKey) ?? (await resolveModuleKeyForPlan(input.planId));
-
   const pending = await recordBillingTransaction({
 
     businessId: input.businessId,
@@ -283,6 +304,27 @@ export async function createSubscriptionCheckout(
     amount: pricing.baseAmount,
 
     discountAmount: pricing.discountAmount,
+
+    // The credit is decided now and stored; completion checks the paid amount against this row.
+    creditAmount: pricing.creditApplied,
+
+    metadata:
+      pricing.creditApplied > 0
+        ? {
+            upgrade_credit: {
+              amount: pricing.creditApplied,
+              available: pricing.creditAvailable,
+              unused: pricing.creditUnused,
+              from_plan_id: pricing.creditFromPlanId,
+              from_transaction_id: pricing.creditFromTransactionId,
+              from_transaction_ids: pricing.creditAllocation.map((a) => a.id),
+              // Paise taken from each source, oldest first. Applied when the payment completes.
+              allocation: pricing.creditAllocation,
+              unused_days: pricing.creditUnusedDays,
+              period_days: pricing.creditPeriodDays,
+            },
+          }
+        : undefined,
 
     couponId: pricing.couponId ?? null,
 
@@ -412,6 +454,12 @@ export async function createSubscriptionCheckout(
 
     discountAmount: pricing.discountAmount,
 
+    creditApplied: pricing.creditApplied,
+
+    creditUnused: pricing.creditUnused,
+
+    creditAvailable: pricing.creditAvailable,
+
     currency: 'INR',
 
     billingTransactionId: pending.id,
@@ -428,6 +476,14 @@ export async function createSubscriptionCheckout(
 
 export type CheckoutCompletion = 'activated' | 'already_completed';
 
+export type CheckoutCompletionDetail = {
+  completion: CheckoutCompletion;
+  /** Set when the upgrade credit was no longer available: the days this payment bought. */
+  shortenedDays?: number;
+  /** Why the credit was refused (see `recheckUpgradeCredit`). */
+  creditRejected?: string;
+};
+
 /**
  * Complete a hosted checkout after a verified gateway payment (Razorpay webhook, Easebuzz callback).
  *
@@ -437,7 +493,14 @@ export type CheckoutCompletion = 'activated' | 'already_completed';
  * `planId` / `billingCycle` in params are accepted for compatibility and ignored.
  * Throws `Error('AMOUNT_MISMATCH')` when the paid amount differs from the row's total.
  */
-export async function completeSubscriptionCheckoutPayment(params: {
+export async function completeSubscriptionCheckoutPayment(
+  params: Parameters<typeof completeSubscriptionCheckoutPaymentDetailed>[0],
+): Promise<CheckoutCompletion> {
+  return (await completeSubscriptionCheckoutPaymentDetailed(params)).completion;
+}
+
+/** Same as `completeSubscriptionCheckoutPayment`, and also says when the period was shortened. */
+export async function completeSubscriptionCheckoutPaymentDetailed(params: {
 
   businessId: string;
 
@@ -456,7 +519,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   paymentMethod?: PlatformPaymentProviderId;
 
-}): Promise<CheckoutCompletion> {
+}): Promise<CheckoutCompletionDetail> {
 
   const paymentMethod = params.paymentMethod ?? 'razorpay';
 
@@ -471,6 +534,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
     planId: string;
     totalAmount: number;
     result: ApplyModulePlanChangeResult;
+    creditRejected?: string;
   };
 
   try {
@@ -483,9 +547,11 @@ export async function completeSubscriptionCheckoutPayment(params: {
       coupon_id: string | null;
       total_amount: string | null;
       checkout_type: string | null;
+      upgrade_credit: StoredUpgradeCredit | null;
     }>(
       `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount,
-              gateway_response->>'checkout_type' AS checkout_type
+              gateway_response->>'checkout_type' AS checkout_type,
+              metadata->'upgrade_credit' AS upgrade_credit
        FROM billing_transactions
        WHERE id = $1 AND business_id = $2
        FOR UPDATE`,
@@ -499,7 +565,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
     if (tx.status === 'completed') {
       await client.query('ROLLBACK');
-      return 'already_completed';
+      return { completion: 'already_completed' };
     }
 
     // pending -> completed and failed -> completed only (Task 4 rules).
@@ -523,6 +589,25 @@ export async function completeSubscriptionCheckoutPayment(params: {
     const planId = tx.plan_id;
     const billingCycle = normalizeBillingCycle(tx.billing_cycle);
     const moduleKey = await resolveModuleKeyForPlan(planId, client);
+
+    // An upgrade credit granted at checkout is re-checked here. Lock order: checkout row (above),
+    // the per-(business, module) lock, then the credit source rows. `applyModuleSubscriptionPlanChange`
+    // takes the same transaction lock again, which is harmless.
+    const credit = tx.upgrade_credit && Number(tx.upgrade_credit.amount) > 0 ? tx.upgrade_credit : null;
+    let creditRejected: string | undefined;
+    if (credit) {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `module_plan_change:${params.businessId}:${moduleKey}`,
+      ]);
+      creditRejected =
+        (await recheckUpgradeCredit(client, {
+          businessId: params.businessId,
+          moduleKey,
+          targetPlanId: planId,
+          checkoutId: billingTransactionId,
+          stored: credit,
+        })) ?? undefined;
+    }
 
     // Razorpay: the completed row records the gateway PAYMENT id (replacing the payment link id set at
     // checkout; the link id stays in gateway_response.payment_link_id), so the unique index on
@@ -553,9 +638,35 @@ export async function completeSubscriptionCheckoutPayment(params: {
         billingCycle,
         paymentMethod,
         paymentReference,
+        // The customer already paid the reduced price: if the credit is gone they get the days
+        // that amount buys, not the whole period.
+        shorten:
+          credit && creditRejected
+            ? { paidPaise: expectedPaise, creditPaise: Math.round(Number(credit.amount) * 100) }
+            : undefined,
       },
       client,
     );
+
+    if (credit && !creditRejected) {
+      // The sources are spent: marked in this transaction with the paise taken from each.
+      await consumeCreditSources(
+        client,
+        params.businessId,
+        billingTransactionId,
+        credit.allocation ?? [],
+      );
+    } else if (credit && creditRejected) {
+      await client.query(
+        `UPDATE billing_transactions
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{upgrade_credit}',
+               COALESCE(metadata->'upgrade_credit', '{}'::jsonb)
+               || jsonb_build_object('rejected', $2::text, 'shortened_days', $3::int)),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [billingTransactionId, creditRejected, result.shortened_days ?? null],
+      );
+    }
 
     // Coupon: redeemed in the same transaction, so a paid checkout gets everything or nothing.
     if (tx.coupon_id) {
@@ -591,6 +702,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
       planId,
       totalAmount: Number(tx.total_amount) || 0,
       result,
+      creditRejected,
     };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
@@ -618,6 +730,35 @@ export async function completeSubscriptionCheckoutPayment(params: {
     await notifyBillingTransactionStatus(billingTransactionId, 'completed');
   } catch (err) {
     console.error('[checkout] payment success notification failed:', err);
+  }
+
+  if (committed.creditRejected && committed.result.shortened_days) {
+    try {
+      const plan = await queryOne<{ display_name: string }>(
+        `SELECT display_name FROM subscription_plans WHERE id = $1`,
+        [committed.planId],
+      );
+      const recipient = await getBusinessPlatformRecipient(params.businessId);
+      const planName = plan?.display_name || committed.planId;
+      const days = committed.result.shortened_days;
+      const text = `Your upgrade credit was no longer available, so this payment bought ${days} day${days === 1 ? '' : 's'} of ${planName}. Please contact support if you think this is wrong.`;
+      console.warn(
+        `[checkout] upgrade credit rejected (${committed.creditRejected}) tx=${billingTransactionId} business=${params.businessId} days=${days}`,
+      );
+      if (recipient?.email) {
+        await sendPlatformEmail({
+          to: recipient.email,
+          subject: 'Your Khatario upgrade',
+          html: `<p>${text}</p>`,
+          text,
+          templateKey: 'payment_success',
+          businessId: params.businessId,
+          metadata: { upgrade_credit_rejected: committed.creditRejected },
+        });
+      }
+    } catch (err) {
+      console.error('[checkout] shortened-period notice failed:', err);
+    }
   }
 
   try {
@@ -648,7 +789,12 @@ export async function completeSubscriptionCheckoutPayment(params: {
     console.error('Partner commission on checkout settlement failed:', partnerErr);
   }
 
-  return 'activated';
+  return {
+    completion: 'activated',
+    ...(committed.creditRejected
+      ? { creditRejected: committed.creditRejected, shortenedDays: committed.result.shortened_days }
+      : {}),
+  };
 }
 
 

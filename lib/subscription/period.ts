@@ -16,6 +16,8 @@ export type NewPeriod = {
   endDate: string;
   /** Unused trial days added to a `change` period (0 otherwise). */
   trialDaysCarried: number;
+  /** Set only when `shorten` was given: the days this payment bought (replaces the cycle's months). */
+  shortenedDays?: number;
 };
 
 export type CurrentPeriodRow = {
@@ -55,6 +57,12 @@ export async function resolveNewPeriod(
     targetPlanId: string;
     billingCycle: BillingCycle;
     currentPlanIsPaid: boolean;
+    /**
+     * A payment whose upgrade credit was no longer available: it paid `paidPaise` for a period that
+     * was priced with `creditPaise` of credit, so it buys floor(full days x paid / (paid + credit))
+     * days, at least 1, in place of the whole cycle. Days are counted in SQL from where the paid time begins.
+     */
+    shorten?: { paidPaise: number; creditPaise: number };
   },
   client?: PoolClient,
 ): Promise<NewPeriod> {
@@ -70,7 +78,9 @@ export async function resolveNewPeriod(
              $7::date AS trial_end,
              $8::int AS months,
              $9::boolean AS cur_paid,
-             $10::boolean AS cur_is_trial
+             $10::boolean AS cur_is_trial,
+             $11::bigint AS paid_paise,
+             $12::bigint AS credit_paise
     ), k AS (
       SELECT i.*,
              CASE
@@ -85,15 +95,31 @@ export async function resolveNewPeriod(
              CASE WHEN kind = 'change' AND cur_is_trial AND trial_end IS NOT NULL AND trial_end > CURRENT_DATE
                   THEN (trial_end - CURRENT_DATE) ELSE 0 END AS trial_days
       FROM k
+    ), f AS (
+      SELECT d.*,
+             (CASE WHEN kind = 'renewal' THEN cur_end ELSE CURRENT_DATE END) AS paid_from,
+             (CASE WHEN kind = 'renewal' THEN cur_end ELSE CURRENT_DATE END
+                + make_interval(months => months))::date
+               - (CASE WHEN kind = 'renewal' THEN cur_end ELSE CURRENT_DATE END) AS full_days
+      FROM d
+    ), g AS (
+      SELECT f.*,
+             CASE WHEN paid_paise IS NULL THEN NULL
+                  ELSE GREATEST(1, floor(full_days::numeric * paid_paise / NULLIF(paid_paise + credit_paise, 0)))::int
+             END AS short_days
+      FROM f
     )
     SELECT kind,
            (CASE WHEN kind = 'renewal' THEN COALESCE(cur_start, CURRENT_DATE) ELSE CURRENT_DATE END)::text AS start_date,
-           (CASE WHEN kind = 'renewal'
+           (CASE WHEN short_days IS NOT NULL
+                 THEN paid_from + short_days + (CASE WHEN kind = 'renewal' THEN 0 ELSE trial_days END)
+                 WHEN kind = 'renewal'
                  THEN (cur_end + make_interval(months => months))::date
                  ELSE (CURRENT_DATE + make_interval(months => months))::date + trial_days
             END)::text AS end_date,
-           trial_days::int AS trial_days
-    FROM d`;
+           trial_days::int AS trial_days,
+           short_days
+    FROM g`;
   const values = [
     cur !== null,
     cur?.plan_id ?? null,
@@ -105,13 +131,22 @@ export async function resolveNewPeriod(
     billingCycleMonths(input.billingCycle),
     input.currentPlanIsPaid,
     cur ? isProductLineTrialPlanId(cur.plan_id) : false,
+    input.shorten ? input.shorten.paidPaise : null,
+    input.shorten ? input.shorten.creditPaise : null,
   ];
   const res = client ? await client.query(sql, values) : await query(sql, values);
-  const row = res.rows[0] as { kind: PeriodKind; start_date: string; end_date: string; trial_days: number };
+  const row = res.rows[0] as {
+    kind: PeriodKind;
+    start_date: string;
+    end_date: string;
+    trial_days: number;
+    short_days: number | null;
+  };
   return {
     kind: row.kind,
     startDate: row.start_date,
     endDate: row.end_date,
     trialDaysCarried: row.trial_days,
+    ...(row.short_days !== null && row.short_days !== undefined ? { shortenedDays: row.short_days } : {}),
   };
 }
