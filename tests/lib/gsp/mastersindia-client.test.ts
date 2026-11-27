@@ -84,3 +84,8 @@ it('parses both date shapes as IST', () => {
   expect(parseGspDate('2023-09-14 13:20:56')!.toISOString()).toBe('2023-09-14T07:50:56.000Z');
   expect(parseGspDate('')).toBeNull();
 });
+
+it('reads a 24-hour date with no AM/PM and trailing space as IST', () => {
+  expect(parseGspDate('06/12/2026 23:59:59 ')?.toISOString()).toBe('2026-12-06T18:29:59.000Z');
+  expect(parseGspDate('06/12/2026 00:00:00')?.toISOString()).toBe('2026-12-05T18:30:00.000Z');
+});

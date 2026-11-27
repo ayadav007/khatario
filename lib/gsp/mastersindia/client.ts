@@ -166,9 +166,11 @@ export function parseGspDate(s: string | null | undefined): Date | null {
     d = +m[1]; mo = +m[2]; y = +m[3]; h = +m[4] % 12; mi = +m[5]; sec = +m[6];
     if (m[7].toUpperCase() === 'PM') h += 12;
   } else {
-    m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(t);
+    const iso = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(t);
+    m = iso ?? /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(t);
     if (!m) return null;
-    y = +m[1]; mo = +m[2]; d = +m[3]; h = +m[4]; mi = +m[5]; sec = +m[6];
+    if (iso) { y = +m[1]; mo = +m[2]; d = +m[3]; } else { d = +m[1]; mo = +m[2]; y = +m[3]; }
+    h = +m[4]; mi = +m[5]; sec = +m[6];
   }
   const ms = Date.UTC(y, mo - 1, d, h, mi, sec) - IST_OFFSET_MS;
   return Number.isNaN(ms) ? null : new Date(ms);
