@@ -1,3 +1,4 @@
+import { LimitRefusedError, limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { fetchEmployeeTasks } from '@/lib/employee-portal/portal-dashboard';
@@ -29,7 +30,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Task title is required' }, { status: 400 });
     }
 
-    const task = await queryOne<{ id: string }>(
+    const task = await limitedQueryOne<{ id: string }>(
+      auth.session.businessId, 'employee_tasks',
       `INSERT INTO tasks (business_id, title, description, assigned_to, assigned_by, status, priority)
        VALUES ($1, $2, $3, $4, $4, 'pending', 'medium')
        RETURNING id`,
@@ -43,6 +45,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, id: task?.id });
   } catch (error) {
+    if (error instanceof LimitRefusedError) {
+      // Employee-facing wording: the employee cannot upgrade the plan.
+      return error.check.unavailable
+        ? NextResponse.json({ error: 'Please try again in a moment.', code: 'LIMIT_CHECK_UNAVAILABLE' }, { status: 503 })
+        : NextResponse.json(
+            { error: 'Your company has reached its task limit for this month. Please ask your manager.', code: 'SUBSCRIPTION_LIMIT_EXCEEDED' },
+            { status: 403 },
+          );
+    }
     console.error('[portal/tasks POST]', error);
     return NextResponse.json({ error: 'Failed to create task' }, { status: 500 });
   }

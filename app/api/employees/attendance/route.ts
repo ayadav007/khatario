@@ -1,9 +1,10 @@
+import { insertAttendanceLimited } from '@/lib/hr/attendance-limit';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUserId, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
 import {
   assertPortalFeatureForRequest,
 } from '@/lib/employee-portal/portal-api-guard';
@@ -230,7 +231,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Create attendance record
-    const attendance = await queryOne<EmployeeAttendance>(
+    const attendance = await insertAttendanceLimited<EmployeeAttendance>(
+      business_id, employee_id, date,
       `INSERT INTO employee_attendance (
         employee_id, date, shift_id, status, check_in_time, check_out_time,
         break_duration, notes, check_in_method, check_out_method
@@ -282,6 +284,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ attendance }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating attendance:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

@@ -279,93 +279,81 @@ export async function resolvePlanLimitValue(
   }
 }
 
+/** What a customer sees when the plan limit could not be checked (a database or lookup failure). */
+export const LIMIT_CHECK_RETRY_MESSAGE =
+  'We could not check your plan limit just now, so nothing was saved. Please try again in a moment.';
+
+export type LimitCheckResult = {
+  allowed: boolean;
+  current: number;
+  limit: number;
+  message?: string;
+  /** True when the check itself failed (not a plan limit): refuse with the retry message, never the upgrade prompt. */
+  unavailable?: boolean;
+};
+
+type LimitQueryOne = (sql: string, params?: unknown[]) => Promise<any>;
+
+function limitCheckUnavailable(limit = 0): LimitCheckResult {
+  return { allowed: false, current: 0, limit, message: LIMIT_CHECK_RETRY_MESSAGE, unavailable: true };
+}
+
 /**
- * Check if a business has reached a usage limit
- * Returns { allowed: boolean, current: number, limit: number }
+ * The one limit rule: resolve the cap (registry first), count usage with the registry's count rule, and
+ * compare. `adding` is how many records the caller is about to create (1 for a normal create).
+ * Fails closed: if the cap lookup or the count throws, the result is `unavailable` (refused).
+ *
+ * A registry limit is final, 0 included (SUB-39). The legacy `features.limits` JSON on the plan row is
+ * read only for a limit key that has no active `platform_limits` row (`resolved.fromRegistry` false).
  */
-export async function checkLimit(
+export async function evaluateLimit(
   businessId: string,
-  limitType: LimitCheckType
-): Promise<{ allowed: boolean; current: number; limit: number; message?: string }> {
-  const ctx = await getBusinessPlatformContext(businessId);
-  const ownerModule = getLimitOwnerModule(limitType) ?? ctx.primaryModule;
-
-  // SAFETY FALLBACK: an enabled product with no subscription row at all gets that product's
-  // free plan. Rows that exist but are expired/cancelled are left alone on purpose.
-  // HR + Billing → complimentary Staff Lite (not empty hr_free).
-  if (ctx.enabledModules.includes(ownerModule)) {
-    const rows = await getModuleSubscriptions(businessId);
-    if (!rows.some((r) => r.module_key === ownerModule)) {
-      console.warn(
-        `WARNING: Business ${businessId} has no ${ownerModule} subscription row. Assigning the free plan.`
-      );
-      try {
-        if (ownerModule === 'hr' && ctx.enabledModules.includes('billing')) {
-          const { ensureComplimentaryHrForBilling } = await import(
-            './subscription/ensure-complimentary-hr'
-          );
-          await ensureComplimentaryHrForBilling(businessId);
-        } else {
-          await upsertModuleSubscription(
-            { query: db.query },
-            businessId,
-            ownerModule,
-            getFreePlanIdForModule(ownerModule),
-            'active',
-            null
-          );
-          clearSubscriptionCache(businessId);
-        }
-      } catch (error) {
-        console.error('Fallback: Error auto-assigning free plan:', error);
-      }
-    }
-  }
-
-  const subscription =
-    (await getBusinessSubscription(businessId, false, ownerModule)) ??
-    (await getBusinessSubscription(businessId));
-
+  limitType: LimitCheckType,
+  queryOneFn: LimitQueryOne,
+  opts: { adding?: number; legacyLimits?: Record<string, unknown> | null } = {}
+): Promise<LimitCheckResult> {
+  const adding = opts.adding ?? 1;
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
-  const resolved = await resolveBusinessLimit(businessId, limitType, limitKey);
-  let maxLimit: number = resolved.maxLimit;
 
-  if (maxLimit === 0 && resolved.blockedReason) {
-    return {
-      allowed: false,
-      current: 0,
-      limit: 0,
-      message: resolved.blockedReason,
-    };
-  }
+  let maxLimit = 0;
+  try {
+    const resolved = await resolveBusinessLimit(
+      businessId,
+      limitType,
+      limitKey,
+      queryOneFn as typeof db.queryOne
+    );
+    maxLimit = resolved.maxLimit;
 
-  if (maxLimit === 0 && subscription) {
-    const limits = subscription.features?.limits;
-    if (limits) {
-      const jsonbKey = LIMIT_JSONB_KEY_MAP[limitKey];
-      const jsonbVal =
-        jsonbKey && limits[jsonbKey as keyof typeof limits] !== undefined
-          ? Number(limits[jsonbKey as keyof typeof limits])
-          : null;
-      if (jsonbVal !== null && !Number.isNaN(jsonbVal)) {
-        maxLimit = jsonbVal;
-      }
+    if (maxLimit === 0 && resolved.blockedReason) {
+      return { allowed: false, current: 0, limit: 0, message: resolved.blockedReason };
     }
-  }
 
-  if (maxLimit === 0 && !subscription?.features?.limits) {
-    return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
+    if (!resolved.fromRegistry) {
+      // No registry entry for this key: keep the old behaviour (plan row JSON, else "No limits defined").
+      const limits = opts.legacyLimits;
+      if (!limits) {
+        return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
+      }
+      const jsonbKey = LIMIT_JSONB_KEY_MAP[limitKey];
+      const raw = jsonbKey && limits[jsonbKey] !== undefined ? Number(limits[jsonbKey]) : 0;
+      maxLimit = Number.isNaN(raw) ? 0 : raw;
+    }
+  } catch (error) {
+    console.error(`Error resolving ${limitType} limit for business ${businessId}:`, error);
+    return limitCheckUnavailable();
   }
 
   let currentCount = 0;
   try {
     const { sql, params } = buildLimitCountQuery(limitType, businessId);
-    const result = await db.queryOne<{ count: number | string }>(sql, params);
+    const result = await queryOneFn(sql, params);
     currentCount = parseInt(String(result?.count ?? '0'), 10);
+    if (Number.isNaN(currentCount)) throw new Error('count was not a number');
   } catch (error) {
+    // Fail closed: an unknown count is never read as zero.
     console.error(`Error counting ${limitType} for business ${businessId}:`, error);
-    // If table doesn't exist yet (for new features), allow (currentCount = 0)
-    currentCount = 0;
+    return limitCheckUnavailable(maxLimit);
   }
 
   // Unlimited plans still report real usage (shown on Plan & billing)
@@ -373,7 +361,7 @@ export async function checkLimit(
     return { allowed: true, current: currentCount, limit: -1 };
   }
 
-  const allowed = currentCount < maxLimit;
+  const allowed = currentCount + adding <= maxLimit;
 
   return {
     allowed,
@@ -381,6 +369,80 @@ export async function checkLimit(
     limit: maxLimit,
     message: allowed ? undefined : `You've reached your ${limitType} limit (${currentCount}/${maxLimit}). Please upgrade your plan to continue.`
   };
+}
+
+/** An enabled product with no subscription row at all gets that product's free plan (see checkLimit). */
+async function assignFreePlanIfMissing(
+  businessId: string,
+  ctx: Awaited<ReturnType<typeof getBusinessPlatformContext>>,
+  ownerModule: PlatformModule
+): Promise<void> {
+  // SAFETY FALLBACK: rows that exist but are expired/cancelled are left alone on purpose.
+  // HR + Billing → complimentary Staff Lite (not empty hr_free).
+  if (!ctx.enabledModules.includes(ownerModule)) return;
+  const rows = await getModuleSubscriptions(businessId);
+  if (rows.some((r) => r.module_key === ownerModule)) return;
+  console.warn(
+    `WARNING: Business ${businessId} has no ${ownerModule} subscription row. Assigning the free plan.`
+  );
+  try {
+    if (ownerModule === 'hr' && ctx.enabledModules.includes('billing')) {
+      const { ensureComplimentaryHrForBilling } = await import(
+        './subscription/ensure-complimentary-hr'
+      );
+      await ensureComplimentaryHrForBilling(businessId);
+    } else {
+      await upsertModuleSubscription(
+        { query: db.query },
+        businessId,
+        ownerModule,
+        getFreePlanIdForModule(ownerModule),
+        'active',
+        null
+      );
+      clearSubscriptionCache(businessId);
+    }
+  } catch (error) {
+    console.error('Fallback: Error auto-assigning free plan:', error);
+  }
+}
+
+/** The free-plan safety net `checkLimit` runs first, for callers that count inside their own transaction. */
+export async function ensureFreePlanForLimit(businessId: string, limitType: LimitCheckType): Promise<void> {
+  const ctx = await getBusinessPlatformContext(businessId);
+  await assignFreePlanIfMissing(businessId, ctx, getLimitOwnerModule(limitType) ?? ctx.primaryModule);
+}
+
+/**
+ * Check if a business has reached a usage limit
+ * Returns { allowed: boolean, current: number, limit: number }
+ *
+ * This is advisory (a read). A create that must not overshoot the limit under concurrent requests
+ * goes through `withLimitedCreate` (lib/subscription/limit-lock.ts), which runs the same rule under
+ * a per-(business, limit) lock in the transaction that inserts.
+ */
+export async function checkLimit(
+  businessId: string,
+  limitType: LimitCheckType,
+  opts: { adding?: number } = {}
+): Promise<LimitCheckResult> {
+  try {
+    const ctx = await getBusinessPlatformContext(businessId);
+    const ownerModule = getLimitOwnerModule(limitType) ?? ctx.primaryModule;
+    await assignFreePlanIfMissing(businessId, ctx, ownerModule);
+
+    const subscription =
+      (await getBusinessSubscription(businessId, false, ownerModule)) ??
+      (await getBusinessSubscription(businessId));
+
+    return await evaluateLimit(businessId, limitType, db.queryOne as LimitQueryOne, {
+      adding: opts.adding,
+      legacyLimits: (subscription?.features?.limits as Record<string, unknown> | undefined) ?? null,
+    });
+  } catch (error) {
+    console.error(`Error checking ${limitType} limit for business ${businessId}:`, error);
+    return limitCheckUnavailable();
+  }
 }
 
 /**
@@ -427,7 +489,7 @@ export async function checkLimitInTransaction(
   client: any,
   businessId: string,
   limitType: LimitCheckType
-): Promise<{ allowed: boolean; current: number; limit: number; message?: string }> {
+): Promise<LimitCheckResult> {
   
   // NOTE: Removed pg_advisory_xact_lock as it was causing deadlocks/hangs
   // The FOR UPDATE lock on the owning product's subscription row serialises concurrent creates.
@@ -459,55 +521,15 @@ export async function checkLimitInTransaction(
 
   const subRow = subscriptionResult.rows[0];
 
-  const limitKey = LIMIT_KEY_BY_TYPE[limitType];
 
   const txQueryOne = async (sql: string, params?: unknown[]) => {
     const result = await client.query(sql, params ?? []);
     return result.rows[0] ?? null;
   };
 
-  const resolved = await resolveBusinessLimit(businessId, limitType, limitKey, txQueryOne);
-  let maxLimit: number = resolved.maxLimit;
-
-  if (maxLimit === 0 && resolved.blockedReason) {
-    return {
-      allowed: false,
-      current: 0,
-      limit: 0,
-      message: resolved.blockedReason,
-    };
-  }
-
-  if (maxLimit === 0) {
-    const limits = subRow.limits;
-    if (!limits) {
-      return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
-    }
-    const jsonbKey = LIMIT_JSONB_KEY_MAP[limitKey];
-    const jsonbValue = jsonbKey && limits[jsonbKey] !== undefined ? limits[jsonbKey] : 0;
-    maxLimit = typeof jsonbValue === 'number' ? jsonbValue : parseInt(String(jsonbValue || '0'), 10);
-  }
-
-  // Ensure maxLimit is a number
-  maxLimit = typeof maxLimit === 'number' ? maxLimit : parseInt(String(maxLimit || '0'), 10);
-
-  if (maxLimit === -1) {
-    return { allowed: true, current: 0, limit: -1 };
-  }
-
-  const { sql, params } = buildLimitCountQuery(limitType, businessId);
-  const countResult = await client.query(sql, params);
-  const currentCount = parseInt(String(countResult.rows[0]?.count ?? '0'), 10);
-
-  const allowed = currentCount < maxLimit;
-  
-
-  return {
-    allowed,
-    current: currentCount,
-    limit: maxLimit,
-    message: allowed ? undefined : `You've reached your ${limitType} limit (${currentCount}/${maxLimit}). Please upgrade your plan to continue.`
-  };
+  return evaluateLimit(businessId, limitType, txQueryOne, {
+    legacyLimits: (subRow.limits as Record<string, unknown> | null) ?? null,
+  });
 }
 
 /**
@@ -586,7 +608,10 @@ interface AddonCacheEntry {
 }
 
 const addonCache = new Map<string, AddonCacheEntry>();
-const ADDON_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// SUB-38: Connect entitlement. Worker processes are separate and cannot be told about a plan change,
+// so they re-read within this time; the web process also drops its entries at once through
+// clearSubscriptionCache / clearAddonCache (afterPlanChangeCommitted calls the former).
+export const ADDON_CACHE_TTL = 30 * 1000; // 30 seconds
 
 /**
  * Whether the business's Connect subscription grants a Connect feature: the Connect module is
@@ -609,7 +634,9 @@ async function connectPlanGrants(
     const ctx = await getBusinessPlatformContext(businessId);
     let granted = false;
     if (ctx.enabledModules.includes('connect')) {
-      const sub = await getModuleSubscription(businessId, 'connect', skipCache);
+      // Always read the row fresh here: this entry is the cache (<= ADDON_CACHE_TTL), so a second cache under it
+      // would stretch the staleness past 30 seconds.
+      const sub = await getModuleSubscription(businessId, 'connect', true);
       if (sub && isModuleSubscriptionOperational(sub)) {
         const row = await db.queryOne<{ ok: boolean }>(
           `SELECT true AS ok

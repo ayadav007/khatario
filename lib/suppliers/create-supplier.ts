@@ -1,6 +1,7 @@
 import * as db from '@/lib/db';
 import { Supplier } from '@/types/database';
-import { enforceAccess } from '@/lib/enforce-access';
+import { enforceAccess, limitRefusalToAccessError } from '@/lib/enforce-access';
+import { LimitRefusedError, withLimitedCreate } from '@/lib/subscription/limit-lock';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
@@ -119,7 +120,7 @@ export async function createSupplier(
         businessId: business_id,
         userId: createdByUserId,
         feature: FeatureKeys.SUPPLIER_MANAGEMENT,
-        limitType: 'suppliers',
+        // The supplier count is checked under the limit lock where the row is inserted (below).
       });
     } catch (e) {
       throw new SupplierAccessRefused(e);
@@ -165,7 +166,10 @@ export async function createSupplier(
       gstinNorm && gstinNorm.length >= 2 && /^\d{2}$/.test(gstinNorm.slice(0, 2)) ? gstinNorm.slice(0, 2) : null;
     const finalStateCodeResolved = finalStateCode || gstinStatePrefix || null;
 
-    const supplier = await db.queryOne<Supplier>(
+    let supplier: Supplier | null;
+    try {
+      supplier = await withLimitedCreate(business_id, 'suppliers', async (client) => {
+        const inserted = await client.query<Supplier>(
       `
       INSERT INTO suppliers (
         business_id, name, phone, email, address,
@@ -188,7 +192,13 @@ export async function createSupplier(
         finalAllowLowStockAccess,
         normalizePan(pan) ?? panFromGstin(gstinNorm),
       ]
-    );
+        );
+        return inserted.rows[0] ?? null;
+      });
+    } catch (e) {
+      if (e instanceof LimitRefusedError) throw new SupplierAccessRefused(limitRefusalToAccessError(e));
+      throw e;
+    }
 
     if (!supplier) {
       return { ok: false, status: 500, code: CREATE_FAILED, error: 'Failed to create supplier' };

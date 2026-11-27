@@ -4,11 +4,13 @@ import { createSalaryStructure, salaryStructureFromOffer } from '@/lib/hr/salary
 import { getEmployeePrefillFromOnboarding } from '@/lib/hr/recruitment/onboarding/task-service';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { checkLimit } from '@/lib/subscription';
+import { LimitRefusedError, lockAndCheckLimits } from '@/lib/subscription/limit-lock';
+import { employeeWriteLimitSpecs } from '@/lib/hr/org-limits';
 import { dateColumnToYmd } from '@/lib/utils/local-date';
 
 /** The business is at its employee limit; the route answers with the standard limit reply. */
 export class EmployeeLimitError extends Error {
-  constructor(readonly check: { limit: number; current: number; message?: string }) {
+  constructor(readonly check: { limit: number; current: number; message?: string; unavailable?: boolean }) {
     super(check.message ?? 'Employee limit reached');
   }
 }
@@ -86,6 +88,22 @@ export async function convertCandidateToEmployee(
   let structure: { id: string };
   try {
     await client.query('BEGIN');
+    // The employee slot (and a new department or designation name) is counted under the limit lock
+    // inside this transaction, so two conversions at limit - 1 cannot both go through.
+    try {
+      await lockAndCheckLimits(
+        client,
+        params.businessId,
+        employeeWriteLimitSpecs(params.businessId, {
+          department: offer.department,
+          designation: offer.designation,
+          employeeSlot: true,
+        }),
+      );
+    } catch (e) {
+      if (e instanceof LimitRefusedError && e.limitType === 'employees') throw new EmployeeLimitError(e.check);
+      throw e;
+    }
     if (existingUser) {
       userId = existingUser.id;
       const existingEmp = await queryOne(`SELECT id FROM employees WHERE id = $1`, [userId]);

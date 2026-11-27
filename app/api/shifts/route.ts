@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Shift } from '@/types/database';
 
@@ -97,7 +98,8 @@ export async function POST(request: NextRequest) {
     const shiftLimit = await limitExceededResponse(business_id, 'shifts');
     if (shiftLimit) return shiftLimit;
 
-    const shift = await queryOne<Shift>(
+    const shift = await limitedQueryOne<Shift>(
+      business_id, 'shifts',
       `INSERT INTO shifts (business_id, shift_name, start_time, end_time, break_duration, description, deduct_break_from_hours)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
@@ -106,6 +108,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ shift }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating shift:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

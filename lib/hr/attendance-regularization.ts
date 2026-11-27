@@ -1,3 +1,5 @@
+import { insertAttendanceLimited } from '@/lib/hr/attendance-limit';
+import { LimitRefusedError } from '@/lib/subscription/limit-lock';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { checkLimit } from '@/lib/subscription';
 import { attendanceDateYmd } from '@/lib/hr/attendance-date';
@@ -475,7 +477,7 @@ async function recomputeAttendanceHours(attendanceId: string): Promise<void> {
   ]);
 }
 
-type LimitCheckResult = { limit: number; current: number; message?: string };
+type LimitCheckResult = { limit: number; current: number; message?: string; unavailable?: boolean };
 
 /** Returns the failed check when approving would add a new attendance row the plan does not allow. */
 async function applyApprovedRegularization(requestId: string): Promise<{ limitExceeded: LimitCheckResult } | null> {
@@ -508,17 +510,25 @@ async function applyApprovedRegularization(requestId: string): Promise<{ limitEx
       [req.employee_id, dateYmd],
     );
     if (!existingDay) {
+      // Early, advisory answer; the authoritative check runs under the limit lock at the insert below.
       const attendanceLimit = await checkLimit(req.business_id, 'attendance');
       if (!attendanceLimit.allowed) return { limitExceeded: attendanceLimit };
     }
     const shiftId = await resolveShiftForEmployeeOnDate(req.business_id, req.employee_id, dateYmd);
-    const created = await queryOne<{ id: string }>(
-      `INSERT INTO employee_attendance (employee_id, date, shift_id, status)
-       VALUES ($1, $2::date, $3, 'present')
-       ON CONFLICT (employee_id, date) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-       RETURNING id`,
-      [req.employee_id, dateYmd, shiftId],
-    );
+    let created: { id: string } | null;
+    try {
+      created = await insertAttendanceLimited<{ id: string }>(
+        req.business_id, req.employee_id, dateYmd,
+        `INSERT INTO employee_attendance (employee_id, date, shift_id, status)
+         VALUES ($1, $2::date, $3, 'present')
+         ON CONFLICT (employee_id, date) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+         RETURNING id`,
+        [req.employee_id, dateYmd, shiftId],
+      );
+    } catch (error) {
+      if (error instanceof LimitRefusedError) return { limitExceeded: error.check };
+      throw error;
+    }
     attendanceId = created!.id;
     await query(
       `UPDATE attendance_regularization_requests SET attendance_id = $2 WHERE id = $1`,

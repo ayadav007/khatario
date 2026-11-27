@@ -3,7 +3,8 @@ import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessio
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryAdvance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,7 +145,8 @@ export async function POST(request: NextRequest) {
     const advanceLimit = await limitExceededResponse(business_id, 'salary_advances');
     if (advanceLimit) return advanceLimit;
 
-    const advance = await queryOne<SalaryAdvance>(
+    const advance = await limitedQueryOne<SalaryAdvance>(
+      business_id, 'salary_advances',
       `INSERT INTO salary_advances (
         business_id, employee_id, advance_amount, advance_date, reason,
         recovery_method, recovery_months, remaining_amount, requested_by, status
@@ -167,6 +169,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ advance }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating salary advance:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

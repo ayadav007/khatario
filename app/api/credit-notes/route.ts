@@ -6,6 +6,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getAuthenticatedUserId, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
+import { lockAndCheckLimits } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { CreditNoteCreateError, createCreditNoteInTransaction, nextCreditNoteNumber } from '@/lib/credit-notes/create-credit-note';
 
 export const dynamic = 'force-dynamic';
@@ -262,6 +264,8 @@ export async function POST(request: NextRequest) {
         branchId: finalBranchId,
         feature: FeatureKeys.CREDIT_NOTES,
         limitType: 'credit_notes',
+        // Counted under the limit lock right after BEGIN (below).
+        limitCountedByCaller: true,
       });
     } catch (e) {
       const res = enforceAccessErrorResponse(e);
@@ -296,6 +300,10 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query('BEGIN');
+    // Monthly credit-note limit: counted under the limit lock in this same transaction (SUB-25). Only this route
+    // is limited: a note raised by receiving a customer's return (lib/returns/service.ts) or by an inter-branch
+    // shortfall is a consequence of goods and money already moved and is never refused for a plan limit.
+    await lockAndCheckLimits(client, business_id, [{ limitType: 'credit_notes' }]);
     await setInvoiceAuditContext(client, { actorUserId: created_by, action: 'credit_note_applied' });
     const creditNote = await createCreditNoteInTransaction(client, {
       businessId: business_id,
@@ -324,6 +332,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ creditNote }, { status: 201 });
   } catch (error: any) {
     await client.query('ROLLBACK');
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     if (error instanceof CreditNoteCreateError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query, queryOne } from '@/lib/db';
 
 export type HrOrgCatalog = {
@@ -35,30 +36,36 @@ export function parseHrOrgCatalog(raw: unknown): HrOrgCatalog {
   };
 }
 
-async function ensureBusinessSettingsRow(businessId: string): Promise<void> {
-  const existing = await queryOne(
-    `SELECT business_id FROM business_settings WHERE business_id = $1`,
-    [businessId],
-  );
+async function ensureBusinessSettingsRow(businessId: string, client?: PoolClient): Promise<void> {
+  const existing = client
+    ? (await client.query(`SELECT business_id FROM business_settings WHERE business_id = $1`, [businessId])).rows[0]
+    : await queryOne(`SELECT business_id FROM business_settings WHERE business_id = $1`, [businessId]);
   if (!existing) {
-    await query(`INSERT INTO business_settings (business_id) VALUES ($1)`, [businessId]);
+    if (client) await client.query(`INSERT INTO business_settings (business_id) VALUES ($1)`, [businessId]);
+    else await query(`INSERT INTO business_settings (business_id) VALUES ($1)`, [businessId]);
   }
 }
 
-export async function getHrOrgCatalog(businessId: string): Promise<HrOrgCatalog> {
-  const row = await queryOne<{ hr_org_catalog: unknown }>(
-    `SELECT hr_org_catalog FROM business_settings WHERE business_id = $1`,
-    [businessId],
-  );
+export async function getHrOrgCatalog(businessId: string, client?: PoolClient): Promise<HrOrgCatalog> {
+  const row = client
+    ? ((await client.query(`SELECT hr_org_catalog FROM business_settings WHERE business_id = $1`, [businessId])).rows[0] as
+        | { hr_org_catalog: unknown }
+        | undefined)
+    : await queryOne<{ hr_org_catalog: unknown }>(
+        `SELECT hr_org_catalog FROM business_settings WHERE business_id = $1`,
+        [businessId],
+      );
   if (!row?.hr_org_catalog) return { ...DEFAULT_HR_ORG_CATALOG };
   return parseHrOrgCatalog(row.hr_org_catalog);
 }
 
+/** With `client`, every read and write runs on that connection (inside the caller's transaction and limit lock). */
 export async function updateHrOrgCatalog(
   businessId: string,
   partial: Partial<HrOrgCatalog>,
+  client?: PoolClient,
 ): Promise<HrOrgCatalog> {
-  const current = await getHrOrgCatalog(businessId);
+  const current = await getHrOrgCatalog(businessId, client);
   const merged: HrOrgCatalog = {
     departments:
       partial.departments !== undefined
@@ -70,10 +77,9 @@ export async function updateHrOrgCatalog(
         : current.designations,
   };
 
-  await ensureBusinessSettingsRow(businessId);
-  await query(
-    `UPDATE business_settings SET hr_org_catalog = $2::jsonb WHERE business_id = $1`,
-    [businessId, JSON.stringify(merged)],
-  );
+  await ensureBusinessSettingsRow(businessId, client);
+  const updateSql = `UPDATE business_settings SET hr_org_catalog = $2::jsonb WHERE business_id = $1`;
+  if (client) await client.query(updateSql, [businessId, JSON.stringify(merged)]);
+  else await query(updateSql, [businessId, JSON.stringify(merged)]);
   return merged;
 }

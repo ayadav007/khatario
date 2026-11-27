@@ -1,8 +1,10 @@
+import { insertAttendanceLimited } from '@/lib/hr/attendance-limit';
+import { LimitRefusedError } from '@/lib/subscription/limit-lock';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { parseFaceEncoding, matchFace, serializeFaceEncoding } from '@/lib/face-recognition';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { employeeAttendanceLimitResponse } from '@/lib/hr/attendance-punch';
+import { employeeAttendanceLimitResponse, employeeLimitRefusedResponse } from '@/lib/hr/attendance-punch';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,14 +146,20 @@ export async function POST(request: NextRequest) {
         // Create new record: only a new row for the day counts against the monthly limit.
         const attendanceLimit = await employeeAttendanceLimitResponse(business_id);
         if (attendanceLimit) return attendanceLimit;
-        await query(
-          `INSERT INTO employee_attendance (
-            employee_id, date, check_in_time, check_in_method,
-            check_in_location_lat, check_in_location_lng, status
-          )
-          VALUES ($1, $2, $3, 'face_recognition', $4, $5, 'present')`,
-          [match.employeeId, today, checkInTime, location_lat || null, location_lng || null]
-        );
+        try {
+          await insertAttendanceLimited(
+            business_id, match.employeeId, today,
+            `INSERT INTO employee_attendance (
+              employee_id, date, check_in_time, check_in_method,
+              check_in_location_lat, check_in_location_lng, status
+            )
+            VALUES ($1, $2, $3, 'face_recognition', $4, $5, 'present')`,
+            [match.employeeId, today, checkInTime, location_lat || null, location_lng || null]
+          );
+        } catch (error) {
+          if (error instanceof LimitRefusedError) return employeeLimitRefusedResponse(business_id, error);
+          throw error;
+        }
       }
 
       // Create log

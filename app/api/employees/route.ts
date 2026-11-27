@@ -3,6 +3,9 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId,
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Employee } from '@/types/database';
 import { checkLimit } from '@/lib/subscription';
+import { LimitRefusedError, withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { limitExceededReply, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { employeeWriteLimitSpecs } from '@/lib/hr/org-limits';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
@@ -266,19 +269,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check subscription limits
+    // Early, advisory check so a plain "limit reached" is answered before any user row is written.
+    // The authoritative check runs under the limit lock where the employee row is written (below).
     const limitCheck = await checkLimit(business_id, 'employees');
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        {
-          error: limitCheck.message || 'Employee limit reached',
-          limit: limitCheck.limit,
-          current: limitCheck.current,
-          code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
-        },
-        { status: 403 }
-      );
-    }
+    if (!limitCheck.allowed) return limitExceededReply('employees', limitCheck);
 
     // The seat rule must see is_active: an inactive user that still holds a role takes a seat when
     // this call reactivates it, so it is not "already consuming" one.
@@ -342,6 +336,7 @@ export async function POST(request: NextRequest) {
 
     let userId: string;
     let reactivatedEmployee: Employee | null = null;
+    let createdUserThisRequest = false;
 
     if (existingUser) {
       userId = existingUser.id;
@@ -383,62 +378,71 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        await query(
-          `UPDATE users
-           SET name = $1,
-               email = $2,
-               is_active = true,
-               role_id = $3,
-               password_hash = COALESCE($4, password_hash),
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $5 AND business_id = $6 AND COALESCE(is_primary_admin, false) = false`,
-          [
-            name,
-            email || null,
-            loginDecision.mode === 'login' ? loginDecision.roleId : null,
-            loginPasswordHash,
-            userId,
-            business_id,
-          ]
-        );
-        await query(
-          `UPDATE users
-           SET name = $1, is_active = true, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2 AND business_id = $3 AND COALESCE(is_primary_admin, false) = true`,
-          [name, userId, business_id]
-        );
+        // Reactivating takes an employee slot again; a new department or designation name takes one of
+        // those limits. Counted and written under the limit lock, in one transaction.
+        reactivatedEmployee = await withLimitedCreate(
+          business_id,
+          employeeWriteLimitSpecs(business_id, { department, designation, employeeSlot: true }),
+          async (client) => {
+            await client.query(
+              `UPDATE users
+               SET name = $1,
+                   email = $2,
+                   is_active = true,
+                   role_id = $3,
+                   password_hash = COALESCE($4, password_hash),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = $5 AND business_id = $6 AND COALESCE(is_primary_admin, false) = false`,
+              [
+                name,
+                email || null,
+                loginDecision.mode === 'login' ? loginDecision.roleId : null,
+                loginPasswordHash,
+                userId,
+                business_id,
+              ]
+            );
+            await client.query(
+              `UPDATE users
+               SET name = $1, is_active = true, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $2 AND business_id = $3 AND COALESCE(is_primary_admin, false) = true`,
+              [name, userId, business_id]
+            );
 
-        reactivatedEmployee = await queryOne<Employee>(
-          `UPDATE employees SET
-             employee_code = $1, designation = $2, department = $3, joining_date = $4,
-             reporting_manager_id = $5, employment_type = $6, access_type = $7, salary = $8,
-             pay_basis = $9, photo_url = $10, emergency_contact_name = $11, emergency_contact_phone = $12,
-             bank_account_number = $13, bank_ifsc = $14, bank_name = $15, pan_number = $16,
-             aadhaar_number = $17, default_shift_id = $18, is_active = true
-           WHERE id = $19 AND business_id = $20
-           RETURNING *`,
-          [
-            finalEmployeeCode,
-            designation || null,
-            department || null,
-            joining_date || null,
-            reporting_manager_id || null,
-            employment_type,
-            effectiveAccessType,
-            salary || null,
-            pay_basis === 'daily' ? 'daily' : 'monthly',
-            photo_url || null,
-            emergency_contact_name || null,
-            emergencyPhoneNorm,
-            bank_account_number || null,
-            bank_ifsc || null,
-            bank_name || null,
-            pan_number || null,
-            aadhaar_number || null,
-            default_shift_id || null,
-            userId,
-            business_id,
-          ]
+            const reactivated = await client.query<Employee>(
+              `UPDATE employees SET
+                 employee_code = $1, designation = $2, department = $3, joining_date = $4,
+                 reporting_manager_id = $5, employment_type = $6, access_type = $7, salary = $8,
+                 pay_basis = $9, photo_url = $10, emergency_contact_name = $11, emergency_contact_phone = $12,
+                 bank_account_number = $13, bank_ifsc = $14, bank_name = $15, pan_number = $16,
+                 aadhaar_number = $17, default_shift_id = $18, is_active = true
+               WHERE id = $19 AND business_id = $20
+               RETURNING *`,
+              [
+                finalEmployeeCode,
+                designation || null,
+                department || null,
+                joining_date || null,
+                reporting_manager_id || null,
+                employment_type,
+                effectiveAccessType,
+                salary || null,
+                pay_basis === 'daily' ? 'daily' : 'monthly',
+                photo_url || null,
+                emergency_contact_name || null,
+                emergencyPhoneNorm,
+                bank_account_number || null,
+                bank_ifsc || null,
+                bank_name || null,
+                pan_number || null,
+                aadhaar_number || null,
+                default_shift_id || null,
+                userId,
+                business_id,
+              ]
+            );
+            return reactivated.rows[0] ?? null;
+          },
         );
       }
     } else {
@@ -472,6 +476,7 @@ export async function POST(request: NextRequest) {
         );
       }
       userId = user.id;
+      createdUserThisRequest = true;
 
       // Note: Employees don't get roles - they are attendance-only
       // Only users (with console access) get roles
@@ -512,7 +517,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create employee record
-    const employee = reactivatedEmployee ?? await queryOne<Employee>(
+    let employee: Employee | null = reactivatedEmployee;
+    if (!employee) {
+      try {
+        employee = await withLimitedCreate(
+          business_id,
+          employeeWriteLimitSpecs(business_id, { department, designation, employeeSlot: true }),
+          async (client) => {
+            const inserted = await client.query<Employee>(
       `INSERT INTO employees (
         id, business_id, employee_code, designation, department, joining_date,
         reporting_manager_id, employment_type, access_type, salary, pay_basis, photo_url,
@@ -543,7 +555,26 @@ export async function POST(request: NextRequest) {
         aadhaar_number || null,
         default_shift_id || null,
       ]
-    );
+            );
+            return inserted.rows[0] ?? null;
+          },
+        );
+      } catch (e) {
+        if (e instanceof LimitRefusedError) {
+          // The login row written a moment ago for this request must not be left behind without an employee.
+          if (createdUserThisRequest) {
+            await query(
+              `DELETE FROM users WHERE id = $1 AND business_id = $2 AND NOT EXISTS (SELECT 1 FROM employees WHERE id = $1)`,
+              [userId, business_id],
+            ).catch((cleanupError) => console.error('[employees] could not remove the unused login after a refused create:', cleanupError));
+          }
+          return limitRefusedResponse(e)!;
+        }
+        throw e;
+      }
+    }
+
+
 
     if (!employee) {
       return NextResponse.json(
@@ -614,6 +645,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating employee:', error);
     if (error?.code === '23505') {
       const constraint = String(error.constraint || '');

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
 import {
   listHolidayLists,
   ensureDefaultHolidayList,
@@ -68,6 +68,8 @@ export async function POST(request: NextRequest) {
         });
         return NextResponse.json({ holiday }, { status: 201 });
       } catch (error) {
+        const limitRefused = limitRefusedResponse(error);
+        if (limitRefused) return limitRefused;
         const msg = error instanceof Error ? error.message : 'Failed to create holiday';
         const lower = msg.toLowerCase();
         if (lower.includes('unique') || lower.includes('duplicate')) {

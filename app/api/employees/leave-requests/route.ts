@@ -16,7 +16,8 @@ import {
   enforcePortalSelfScope,
 } from '@/lib/employee-portal/portal-api-guard';
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { getDefaultPlanBundle, getLeavePlanTypeRule } from '@/lib/hr/leave/leave-plan';
 import { validateLeaveApplication, resolveLeaveYearForRequest, shouldAutoApprove } from '@/lib/hr/leave/leave-policy';
 import { calculateLeaveDaysWithSandwich } from '@/lib/hr/leave/leave-days';
@@ -333,7 +334,8 @@ export async function POST(request: NextRequest) {
     const leaveLimit = await limitExceededResponse(business_id, 'leave_requests');
     if (leaveLimit) return leaveLimit;
 
-    const leaveRequest = await queryOne<LeaveRequest>(
+    const leaveRequest = await limitedQueryOne<LeaveRequest>(
+      business_id, 'leave_requests',
       `INSERT INTO leave_requests (
         employee_id, leave_type_id, start_date, end_date, total_days,
         reason, attachment_url, requested_by, status
@@ -372,6 +374,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ request: leaveRequest }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating leave request:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

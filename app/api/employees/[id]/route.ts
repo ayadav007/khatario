@@ -18,7 +18,9 @@ import {
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { checkLimit } from '@/lib/subscription';
 import { parseBooleanFlag } from '@/lib/utils/boolean-flag';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { employeeWriteLimitSpecs } from '@/lib/hr/org-limits';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import { seatLimitMessage, seatLimitType } from '@/lib/users/connect-seats';
 import { resolveEmployeeLoginDecision } from '@/lib/hr/employee-login-options';
@@ -322,12 +324,15 @@ export async function PATCH(
 
     // Reactivating an inactive employee takes an employee slot again (the limit counts active ones).
     // Editing an active employee or deactivating one never reaches the limit.
+    let reactivating = false;
     if (is_active === true) {
       const current = await queryOne<{ is_active: boolean | null }>(
         'SELECT is_active FROM employees WHERE id = $1 AND business_id = $2',
         [employeeId, businessId],
       );
       if (current && current.is_active === false) {
+        reactivating = true;
+        // Early, advisory answer; the authoritative check runs under the limit lock at the write below.
         const employeeLimit = await limitExceededResponse(businessId, 'employees');
         if (employeeLimit) return employeeLimit;
       }
@@ -533,10 +538,19 @@ export async function PATCH(
 
     if (employeeUpdates.length > 0) {
       employeeParams.push(employeeId);
-      await query(
-        `UPDATE employees SET ${employeeUpdates.join(', ')} WHERE id = $${paramIndex}`,
-        employeeParams
-      );
+      const updateSql = `UPDATE employees SET ${employeeUpdates.join(', ')} WHERE id = $${paramIndex}`;
+      // Reactivating takes an employee slot, and a new department or designation name takes one of those
+      // limits. Count and write under the limit lock; a plain edit of other fields is not limited.
+      const limitSpecs = employeeWriteLimitSpecs(businessId, {
+        department: department !== undefined ? department : undefined,
+        designation: designation !== undefined ? designation : undefined,
+        employeeSlot: reactivating,
+      });
+      if (limitSpecs.length > 0) {
+        await withLimitedCreate(businessId, limitSpecs, (client) => client.query(updateSql, employeeParams));
+      } else {
+        await query(updateSql, employeeParams);
+      }
     }
 
     // Fetch updated employee
@@ -562,6 +576,8 @@ export async function PATCH(
 
     return NextResponse.json({ employee: filteredEmployee });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error updating employee:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

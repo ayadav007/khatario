@@ -20,6 +20,7 @@ import { checkUserBranchPermission } from '@/lib/branch-access';
 import { queryOne } from '@/lib/db';
 import { assertSessionValidForCookieAuth } from '@/lib/auth-helpers';
 import { AuthorizationError } from '@/lib/authorization';
+import { LimitRefusedError } from '@/lib/subscription/limit-lock';
 
 export type LimitType = LimitCheckType;
 
@@ -29,6 +30,11 @@ export interface EnforceAccessInput {
   branchId?: string | null;
   feature?: string;
   limitType?: LimitType;
+  /**
+   * With `limitType`: still check that the limit's product is available, but do not count usage here.
+   * The caller counts under the limit lock where it inserts (`withLimitedCreate`, lib/subscription/limit-lock.ts).
+   */
+  limitCountedByCaller?: boolean;
   poolClient?: PoolClient;
   branchPermission?: 'view' | 'create_transactions';
 }
@@ -45,6 +51,21 @@ export class EnforceAccessError extends Error {
   }
 }
 
+/**
+ * A refusal from withLimitedCreate as the EnforceAccessError that enforceAccessErrorResponse (and the
+ * import runner) already turn into the standard limit answer: 403 upgrade prompt, or 503 try-again.
+ */
+export function limitRefusalToAccessError(e: LimitRefusedError): EnforceAccessError {
+  if (e.check.unavailable) {
+    return new EnforceAccessError(503, 'LIMIT_CHECK_UNAVAILABLE', e.message);
+  }
+  return new EnforceAccessError(403, 'SUBSCRIPTION_LIMIT_EXCEEDED', e.message, {
+    limit: e.check.limit,
+    current: e.check.current,
+    limit_type: e.limitType,
+  });
+}
+
 export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
   const {
     businessId,
@@ -52,6 +73,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
     branchId,
     feature,
     limitType,
+    limitCountedByCaller,
     poolClient,
     branchPermission = 'create_transactions',
   } = opts;
@@ -101,10 +123,11 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
     }
   }
 
-  if (limitType) {
+  if (limitType && !limitCountedByCaller) {
     if (poolClient) {
       const lim = await checkLimitInTransaction(poolClient, businessId, limitType);
       if (!lim.allowed) {
+        if (lim.unavailable) throw new EnforceAccessError(503, 'LIMIT_CHECK_UNAVAILABLE', lim.message || 'Please try again in a moment.');
         throw new EnforceAccessError(403, 'SUBSCRIPTION_LIMIT_EXCEEDED', lim.message || 'Limit reached', {
           limit: lim.limit,
           current: lim.current,
@@ -114,6 +137,7 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
     } else {
       const lim = await checkLimit(businessId, limitType);
       if (!lim.allowed) {
+        if (lim.unavailable) throw new EnforceAccessError(503, 'LIMIT_CHECK_UNAVAILABLE', lim.message || 'Please try again in a moment.');
         throw new EnforceAccessError(403, 'SUBSCRIPTION_LIMIT_EXCEEDED', lim.message || 'Limit reached', {
           limit: lim.limit,
           current: lim.current,

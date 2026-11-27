@@ -3,7 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeExpense } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import {
   getDirectReportIds,
   getEmployeeIdForUser,
@@ -307,7 +308,8 @@ export async function POST(request: NextRequest) {
     if (expenseLimit) return expenseLimit;
 
     // Create expense
-    const expense = await queryOne<EmployeeExpense>(
+    const expense = await limitedQueryOne<EmployeeExpense>(
+      business_id, 'employee_expenses',
       `INSERT INTO employee_expenses (
         employee_id, expense_category_id, expense_date, amount, currency,
         description, payment_mode, vendor_name, receipt_url, is_billable,
@@ -333,6 +335,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ expense }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating expense:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

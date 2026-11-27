@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
@@ -160,6 +162,8 @@ export async function POST(request: NextRequest) {
         userId: createdByUserId,
         feature: existingActiveBranches >= 1 ? FeatureKeys.MULTI_BRANCH : undefined,
         limitType: 'branches',
+        // Counted under the limit lock where the branch is inserted (below).
+        limitCountedByCaller: true,
       });
     } catch (e) {
       const res = enforceAccessErrorResponse(e);
@@ -186,41 +190,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(placeError, { status: 400 });
     }
 
-    // CRITICAL: Handle is_default flag
-    // If setting as default, unset other default branches
-    // CRITICAL: Ensure exactly one default branch per business
-    if (is_default === true) {
-      await db.query(`
-        UPDATE branches 
-        SET is_default = false 
-        WHERE business_id = $1 AND is_default = true AND is_active = true
-      `, [business_id]);
-    }
+    // The default/primary switch and the insert are one unit under the branch-limit lock, so a refused
+    // create never leaves the previous default branch unset.
+    const branch = await withLimitedCreate(business_id, 'branches', async (client) => {
+        // CRITICAL: Handle is_default flag
+        // If setting as default, unset other default branches
+        // CRITICAL: Ensure exactly one default branch per business
+        if (is_default === true) {
+          await client.query(`
+            UPDATE branches 
+            SET is_default = false 
+            WHERE business_id = $1 AND is_default = true AND is_active = true
+          `, [business_id]);
+        }
 
-    // If setting as primary, unset other primary branches
-    if (is_primary) {
-      await db.query(`
-        UPDATE branches 
-        SET is_primary = false 
-        WHERE business_id = $1
-      `, [business_id]);
-    }
+        // If setting as primary, unset other primary branches
+        if (is_primary) {
+          await client.query(`
+            UPDATE branches 
+            SET is_primary = false 
+            WHERE business_id = $1
+          `, [business_id]);
+        }
 
-    const phoneNorm = normalizePhoneOrNull(phone);
+        const phoneNorm = normalizePhoneOrNull(phone);
 
-    const branch = await db.queryOne(`
-      INSERT INTO branches (
-        business_id, name, branch_code, gstin, address_line1, address_line2,
-        city, state, state_code, pincode, country, phone, email,
-        branch_type, is_primary, is_default, invoice_prefix
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      RETURNING *
-    `, [
-      business_id, name, branch_code, gstinCheck.gstin, address_line1, address_line2,
-      city, gstinCheck.state, gstinCheck.state_code, pincode, country || 'India', phoneNorm, email,
-      branch_type || 'retail', is_primary || false, is_default || false, invoice_prefix
-    ]);
+        const inserted = await client.query(`
+          INSERT INTO branches (
+            business_id, name, branch_code, gstin, address_line1, address_line2,
+            city, state, state_code, pincode, country, phone, email,
+            branch_type, is_primary, is_default, invoice_prefix
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          RETURNING *
+        `, [
+          business_id, name, branch_code, gstinCheck.gstin, address_line1, address_line2,
+          city, gstinCheck.state, gstinCheck.state_code, pincode, country || 'India', phoneNorm, email,
+          branch_type || 'retail', is_primary || false, is_default || false, invoice_prefix
+        ]);
+        return inserted.rows[0] ?? null;
+    });
 
     // Rule 46(b): one consecutive series per GSTIN per year. A second branch on the same
     // GSTIN must not restart at INV-001, so non-default branches get their own prefix.
@@ -242,6 +251,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ branch }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating branch:', error);
     return NextResponse.json(
       { error: 'Failed to create branch', details: error.message },

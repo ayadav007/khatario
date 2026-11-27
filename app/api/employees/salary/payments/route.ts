@@ -3,7 +3,8 @@ import { actingUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessio
 import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { getDefaultBranchId } from '@/lib/branch-helpers';
 import { postSalaryPaymentToBooks } from '@/lib/hr/staff-wage-posting';
@@ -309,7 +310,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert salary payment
-    const salaryPayment = await queryOne<SalaryPayment>(
+    const salaryPayment = await limitedQueryOne<SalaryPayment>(
+      business_id, 'payroll',
       `INSERT INTO salary_payments (
         business_id, employee_id, salary_month, from_date, to_date, payment_date,
         basic_salary, hra, transport_allowance, medical_allowance, special_allowance,
@@ -476,6 +478,8 @@ export async function POST(request: NextRequest) {
       overtime_payroll: otApplied,
     }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating salary payment:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

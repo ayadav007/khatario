@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Holiday } from '@/types/database';
 
@@ -70,7 +71,8 @@ export async function POST(request: NextRequest) {
     const holidayLimit = await limitExceededResponse(business_id, 'holidays');
     if (holidayLimit) return holidayLimit;
 
-    const holiday = await queryOne<Holiday>(
+    const holiday = await limitedQueryOne<Holiday>(
+      business_id, 'holidays',
       `INSERT INTO holidays (business_id, holiday_date, holiday_name, is_recurring, description)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
@@ -79,6 +81,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ holiday }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating holiday:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

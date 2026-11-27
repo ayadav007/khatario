@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne } from '@/lib/db';
-import { limitExceededReply } from '@/lib/subscription/limit-response';
+import { limitExceededReply, limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { convertCandidateToEmployee, EmployeeLimitError } from '@/lib/hr/recruitment/convert-candidate';
 
 export const dynamic = 'force-dynamic';
@@ -56,6 +56,8 @@ export async function POST(
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();
     if (error instanceof EmployeeLimitError) return limitExceededReply('employees', error.check);
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     const message = error instanceof Error ? error.message : 'Conversion failed';
     console.error('[recruitment/convert POST]', error);
     return NextResponse.json({ error: message }, { status: 400 });

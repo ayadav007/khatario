@@ -2,6 +2,8 @@
  * Writes today's check-in / check-out for one employee, with shift, roster and late rules.
  * Callers decide who may punch and whether the location is good enough; this only records it.
  */
+import { insertAttendanceLimited } from '@/lib/hr/attendance-limit';
+import { LimitRefusedError } from '@/lib/subscription/limit-lock';
 import { query, queryOne } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { checkLimit } from '@/lib/subscription';
@@ -62,8 +64,20 @@ export class AttendanceLimitError extends AttendancePunchError {
 export async function employeeAttendanceLimitResponse(businessId: string): Promise<NextResponse | null> {
   const check = await checkLimit(businessId, 'attendance');
   if (check.allowed) return null;
+  // A failed limit check is not the plan limit: no owner notice, and the try-again message.
+  if (check.unavailable) return limitExceededReply('attendance', check);
   await notifyAttendanceLimitReached(businessId);
   return limitExceededReply('attendance', { ...check, message: ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE });
+}
+
+/** The employee-facing refusal for a LimitRefusedError thrown by insertAttendanceLimited (same answer as above). */
+export async function employeeLimitRefusedResponse(
+  businessId: string,
+  error: LimitRefusedError,
+): Promise<NextResponse> {
+  if (error.check.unavailable) return limitExceededReply('attendance', error.check);
+  await notifyAttendanceLimitReached(businessId);
+  return limitExceededReply('attendance', { ...error.check, message: ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE });
 }
 
 export type PunchParams = {
@@ -155,12 +169,9 @@ export async function recordCheckIn(p: PunchParams): Promise<EmployeeAttendance>
     ]);
   } else {
     // Only a new row for the day counts; updating an existing row (above) is never refused.
-    const attendanceLimit = await checkLimit(p.businessId, 'attendance');
-    if (!attendanceLimit.allowed) {
-      await notifyAttendanceLimitReached(p.businessId);
-      throw new AttendanceLimitError(attendanceLimit);
-    }
-    attendance = await queryOne<EmployeeAttendance>(
+    try {
+    attendance = await insertAttendanceLimited<EmployeeAttendance>(
+      p.businessId, p.employeeId, today,
       `INSERT INTO employee_attendance (
         employee_id, date, check_in_time, check_in_method,
         check_in_location_lat, check_in_location_lng, status,
@@ -180,6 +191,16 @@ export async function recordCheckIn(p: PunchParams): Promise<EmployeeAttendance>
         lateFields.late_minutes,
       ],
     );
+    } catch (error) {
+      if (error instanceof LimitRefusedError) {
+        if (error.check.unavailable) {
+          throw new AttendancePunchError('Please try again in a moment.', 'limit_check_unavailable', 503);
+        }
+        await notifyAttendanceLimitReached(p.businessId);
+        throw new AttendanceLimitError(error.check);
+      }
+      throw error;
+    }
   }
 
   if (!attendance) {

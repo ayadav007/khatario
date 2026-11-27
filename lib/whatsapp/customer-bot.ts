@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { query, queryOne, queryRows } from '@/lib/db';
+import { getPool, query, queryOne, queryRows } from '@/lib/db';
 import { retrieve } from '@/lib/rag/retrieve';
 import { bootstrapTenantKnowledge, tenantKnowledgeIndexed } from '@/lib/rag/tenant-reindex';
 import { businessTransport } from './business-transport';
@@ -179,11 +179,84 @@ export function repliesThisMonth(businessId: string): Promise<number> {
   return repliesSince(businessId, 'month');
 }
 
-/** Per-business daily cap on AI replies (assistant_settings scope `business:<id>`, `customerBotDailyLimit`). */
+const REPLY_COUNT_SQL = `SELECT COUNT(*) AS n FROM whatsapp_inbound_events
+      WHERE business_id = $1 AND direction = 'out' AND handled_as = 'customer_bot'
+        AND created_at >= date_trunc($2, NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
+
+/** Replies counted for the daily cap / monthly quota. Throws when the count fails: callers that enforce a cap refuse. */
+async function repliesSinceStrict(
+  businessId: string,
+  unit: 'day' | 'month',
+  runQueryOne: (sql: string, params: unknown[]) => Promise<{ n: string } | null> = (sql, params) =>
+    queryOne<{ n: string }>(sql, params as unknown[]),
+): Promise<number> {
+  const row = await runQueryOne(REPLY_COUNT_SQL, [businessId, unit]);
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Per-business daily cap on AI replies (assistant_settings scope `business:<id>`, `customerBotDailyLimit`).
+ * Fails closed: if the reply count cannot be read, no reply is allowed.
+ */
 export async function customerBotAllowed(businessId: string): Promise<boolean> {
   const limit = await dailyLimit(businessId);
   if (limit === 0) return false;
-  return (await repliesToday(businessId)) < limit;
+  try {
+    return (await repliesSinceStrict(businessId, 'day')) < limit;
+  } catch (err) {
+    console.error('[customer-bot] could not count today\'s replies, holding the reply:', err);
+    return false;
+  }
+}
+
+export type ReplyReservation = { ok: true } | { ok: false; reason: 'daily_cap' | 'monthly_quota' | 'unavailable' };
+
+/**
+ * Count and record one customer-bot reply as a single step per business (SUB-25): takes
+ * pg_advisory_xact_lock(hashtext('limit:<business>:ai_replies')), refuses when today's replies reached the daily
+ * cap or this month's replies reached `monthlyQuota` (-1 = no monthly cap), otherwise inserts the reply event and
+ * commits. Two concurrent replies at cap - 1 cannot both be recorded. Use it in place of
+ * "check, generate, recordCustomerBotReply" so the slot is taken before the model is called.
+ */
+export async function reserveCustomerBotReply(
+  businessId: string,
+  customerPhone: string,
+  caps: { dailyLimit: number; monthlyQuota: number },
+): Promise<ReplyReservation> {
+  if (caps.dailyLimit <= 0) return { ok: false, reason: 'daily_cap' };
+  const provider = await businessTransport(businessId).catch(() => 'baileys' as const);
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`limit:${businessId}:ai_replies`]);
+    const q = async (sql: string, params: unknown[]) => (await client.query(sql, params)).rows[0] ?? null;
+    const today = await repliesSinceStrict(businessId, 'day', q);
+    if (today >= caps.dailyLimit) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'daily_cap' };
+    }
+    if (caps.monthlyQuota >= 0) {
+      const month = await repliesSinceStrict(businessId, 'month', q);
+      if (month >= caps.monthlyQuota) {
+        await client.query('ROLLBACK');
+        return { ok: false, reason: 'monthly_quota' };
+      }
+    }
+    await client.query(
+      `INSERT INTO whatsapp_inbound_events (provider, business_id, message_id, sender_phone, direction, handled_as)
+       VALUES ($1, $2, $3, $4, 'out', 'customer_bot')
+       ON CONFLICT DO NOTHING`,
+      [provider, businessId, `bot:${randomUUID()}`, customerPhone.replace(/\D/g, '')],
+    );
+    await client.query('COMMIT');
+    return { ok: true };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    console.error('[customer-bot] could not reserve a reply slot:', err);
+    return { ok: false, reason: 'unavailable' };
+  } finally {
+    client.release();
+  }
 }
 
 export async function recordCustomerBotReply(businessId: string, customerPhone: string): Promise<void> {

@@ -16,7 +16,16 @@ jest.mock('@/lib/db', () => {
   };
   return { ...api, db: api };
 });
-jest.mock('@/lib/subscription/limit-response', () => ({ limitExceededResponse: jest.fn().mockResolvedValue(null) }));
+jest.mock('@/lib/subscription/limit-response', () => ({
+  limitExceededResponse: jest.fn().mockResolvedValue(null),
+  limitRefusedResponse: jest.fn().mockReturnValue(null),
+}));
+// The limited INSERT runs under the limit lock on a pool client; here it is the same statement through mockQueryOne,
+// so the test still reads the INSERT's parameters.
+jest.mock('@/lib/subscription/limit-lock', () => ({
+  LimitRefusedError: class LimitRefusedError extends Error {},
+  limitedQueryOne: (_businessId: string, _limitType: string, sql: string, params: unknown[]) => mockQueryOne(sql, params),
+}));
 jest.mock('@/lib/subscription/feature-access', () => {
   class FeatureAccessDeniedError extends Error {}
   return { assertFeatureAccess: jest.fn().mockResolvedValue(undefined), FeatureAccessDeniedError };

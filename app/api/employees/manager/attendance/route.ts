@@ -1,8 +1,9 @@
+import { insertAttendanceLimited } from '@/lib/hr/attendance-limit';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { resolveActorContext } from '@/lib/employee-portal/portal-api-guard';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
 import {
   assertCanMarkEmployeeAttendance,
 } from '@/lib/hr/manager-attendance-auth';
@@ -197,13 +198,14 @@ export async function PUT(request: NextRequest) {
 
     const clearLate = status !== 'present';
 
-    const row = await queryOne<{
+    const row = await insertAttendanceLimited<{
       id: string;
       status: string;
       is_late: boolean;
       late_excused: boolean;
       late_minutes: number;
     }>(
+      actor.businessId, employeeId, date,
       `INSERT INTO employee_attendance (
         employee_id, date, status, check_in_method,
         is_late, late_minutes, late_excused, late_marked_manual
@@ -256,6 +258,8 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, attendance: row });
   } catch (error: unknown) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     const message = error instanceof Error ? error.message : 'Internal server error';
     console.error('[PUT /api/employees/manager/attendance]', error);
     const status = message.includes('direct reports') ? 403 : 500;
@@ -303,7 +307,8 @@ export async function POST(request: NextRequest) {
         if (attendanceLimit) return attendanceLimit;
       }
       const clearLate = status !== 'present';
-      await queryOne(
+      await insertAttendanceLimited(
+        actor.businessId, employeeId, date,
         `INSERT INTO employee_attendance (employee_id, date, status, check_in_method, is_late, late_minutes, late_excused, late_marked_manual)
          VALUES ($1, $2::date, $3, 'manual', false, 0, false, false)
          ON CONFLICT (employee_id, date) DO UPDATE SET
@@ -318,6 +323,8 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ success: true, saved });
   } catch (error: unknown) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     const message = error instanceof Error ? error.message : 'Internal server error';
     console.error('[POST /api/employees/manager/attendance]', error);
     const status = message.includes('direct reports') ? 403 : 500;

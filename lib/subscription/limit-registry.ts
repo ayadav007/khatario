@@ -82,10 +82,29 @@ export const ALL_LIMIT_CHECK_TYPES = Object.keys(LIMIT_KEY_BY_TYPE) as LimitChec
 
 type CountQuery = { sql: string; params: [string] };
 
+/**
+ * The distinct department (or designation) names of a business, lower-cased, as column `v`:
+ * names on employees plus names saved in the HR org catalog (business_settings.hr_org_catalog). $1 = business id.
+ * The count rule and the "is this name new?" test share this text so they cannot disagree.
+ */
+export function orgNamesSql(employeeColumn: 'department' | 'designation', catalogKey: 'departments' | 'designations'): string {
+  return `SELECT LOWER(TRIM(${employeeColumn})) AS v FROM employees
+                 WHERE business_id = $1 AND ${employeeColumn} IS NOT NULL AND TRIM(${employeeColumn}) <> ''
+                UNION
+                SELECT LOWER(TRIM(c.v)) FROM business_settings bs
+                  CROSS JOIN LATERAL jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(bs.hr_org_catalog->'${catalogKey}') = 'array'
+                         THEN bs.hr_org_catalog->'${catalogKey}' ELSE '[]'::jsonb END) AS c(v)
+                 WHERE bs.business_id = $1 AND TRIM(c.v) <> ''`;
+}
+
 export function buildLimitCountQuery(limitType: LimitCheckType, businessId: string): CountQuery {
   const p: [string] = [businessId];
   const monthStart = `DATE_TRUNC('month', CURRENT_DATE)`;
   const todayStart = `CURRENT_DATE`;
+  // Monthly HR limits count by the entry's own timestamp against the start of the month in India
+  // (IST), the same calendar the employee sees, not the database server's time zone.
+  const istMonthStart = `(DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')`;
 
   switch (limitType) {
     case 'invoices':
@@ -116,19 +135,19 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
         // so backdating a record does not dodge the monthly quota.
         sql: `SELECT COUNT(*)::int AS count FROM employee_attendance ea
               INNER JOIN employees e ON e.id = ea.employee_id
-              WHERE e.business_id = $1 AND ea.created_at >= ${monthStart}`,
+              WHERE e.business_id = $1 AND ea.created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'leave_requests':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM leave_requests lr
               INNER JOIN employees e ON e.id = lr.employee_id
-              WHERE e.business_id = $1 AND lr.created_at >= ${monthStart}`,
+              WHERE e.business_id = $1 AND lr.created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'payroll':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM salary_payments WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM salary_payments WHERE business_id = $1 AND created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'suppliers':
@@ -174,15 +193,10 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
         params: p,
       };
     case 'departments':
-      return {
-        sql: `SELECT COUNT(DISTINCT department)::int AS count FROM employees WHERE business_id = $1 AND department IS NOT NULL AND TRIM(department) <> ''`,
-        params: p,
-      };
+      // Names in use on employees plus names saved in Settings → departments (any letter case counts once).
+      return { sql: `SELECT COUNT(*)::int AS count FROM (${orgNamesSql('department', 'departments')}) names`, params: p };
     case 'designations':
-      return {
-        sql: `SELECT COUNT(DISTINCT designation)::int AS count FROM employees WHERE business_id = $1 AND designation IS NOT NULL AND TRIM(designation) <> ''`,
-        params: p,
-      };
+      return { sql: `SELECT COUNT(*)::int AS count FROM (${orgNamesSql('designation', 'designations')}) names`, params: p };
     case 'email':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM platform_email_logs WHERE business_id = $1 AND created_at >= ${todayStart}`,
@@ -190,26 +204,26 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       };
     case 'salary_advances':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM salary_advances WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM salary_advances WHERE business_id = $1 AND created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'employee_expenses':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM employee_expenses ex
               INNER JOIN employees e ON e.id = ex.employee_id
-              WHERE e.business_id = $1 AND ex.submitted_at >= ${monthStart}`,
+              WHERE e.business_id = $1 AND ex.submitted_at >= ${istMonthStart}`,
         params: p,
       };
     case 'commissions':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM commission_earnings ce
               INNER JOIN employees e ON e.id = ce.employee_id
-              WHERE e.business_id = $1 AND ce.created_at >= ${monthStart}`,
+              WHERE e.business_id = $1 AND ce.created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'employee_tasks':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM tasks WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM tasks WHERE business_id = $1 AND created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'holidays':
@@ -220,7 +234,7 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       return {
         sql: `SELECT COUNT(*)::int AS count FROM employee_performance ep
               INNER JOIN employees e ON e.id = ep.employee_id
-              WHERE e.business_id = $1 AND ep.created_at >= ${monthStart}`,
+              WHERE e.business_id = $1 AND ep.created_at >= ${istMonthStart}`,
         params: p,
       };
     case 'eway_bills':

@@ -1,3 +1,5 @@
+import { lockAndCheckLimits } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import {
@@ -295,6 +297,8 @@ export async function POST(request: NextRequest) {
         branchId: finalBranchId,
         feature: FeatureKeys.EXPENSE_TRACKING,
         limitType: 'expenses',
+        // Counted under the limit lock inside the posting transaction (below).
+        limitCountedByCaller: true,
       });
     } catch (e) {
       const res = enforceAccessErrorResponse(e);
@@ -472,6 +476,9 @@ export async function POST(request: NextRequest) {
     const client = await db.getPool().connect();
     try {
       await client.query('BEGIN');
+      // Monthly expense limit: counted under the limit lock in this transaction, so two requests at limit - 1
+      // cannot both be recorded (SUB-25). Throws LimitRefusedError, answered below.
+      await lockAndCheckLimits(client, business_id, [{ limitType: 'expenses' }]);
       const ins = await client.query(
         `INSERT INTO expenses (
            business_id, branch_id, category_id, amount, description,
@@ -527,6 +534,8 @@ export async function POST(request: NextRequest) {
       await client.query('COMMIT');
     } catch (ledgerError: any) {
       await client.query('ROLLBACK').catch(() => {});
+      const limitRefused = limitRefusedResponse(ledgerError);
+      if (limitRefused) return limitRefused;
       if (ledgerError?.code === '23505' && ledgerError?.constraint === 'expenses_business_idempotency_key') {
         const existing = await db.queryOne(
           `SELECT e.*, to_char(e.expense_date, 'YYYY-MM-DD') AS expense_day,

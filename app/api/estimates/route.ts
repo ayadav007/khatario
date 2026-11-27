@@ -1,3 +1,5 @@
+import { withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -204,6 +206,8 @@ export async function POST(request: NextRequest) {
         userId: actorUserId,
         feature: FeatureKeys.ESTIMATES_QUOTATIONS,
         limitType: 'estimates',
+        // Counted under the limit lock where the estimate is inserted (below).
+        limitCountedByCaller: true,
       });
     } catch (e) {
       const res = enforceAccessErrorResponse(e);
@@ -239,41 +243,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create estimate
-    const estimate = await db.queryOne(`
-      INSERT INTO estimates (
-        business_id, customer_id, estimate_number, estimate_date, expiry_date,
-        subtotal, discount_total, tax_total, round_off, grand_total,
-        additional_charges, additional_charges_label, charge_classification, charge_hsn_sac, charge_tax_rate,
-        notes, terms, created_by
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      RETURNING *
-    `, [
-      business_id, customer_id, estimate_number, estimate_date, expiry_date,
-      subtotal, discount_total, tax_total, round_off, grand_total,
-      additional_charges, additional_charges_label,
-      storedChargeFields(body).classification, storedChargeFields(body).hsnSac, storedChargeFields(body).taxRate,
-      notes, terms, actorUserId
-    ]);
+    // The estimate and its lines are written under the monthly estimate-limit lock, in one transaction.
+    const estimate = await withLimitedCreate(business_id, 'estimates', async (client) => {
+        // Create estimate
+        const inserted = await client.query(`
+          INSERT INTO estimates (
+            business_id, customer_id, estimate_number, estimate_date, expiry_date,
+            subtotal, discount_total, tax_total, round_off, grand_total,
+            additional_charges, additional_charges_label, charge_classification, charge_hsn_sac, charge_tax_rate,
+            notes, terms, created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          RETURNING *
+        `, [
+          business_id, customer_id, estimate_number, estimate_date, expiry_date,
+          subtotal, discount_total, tax_total, round_off, grand_total,
+          additional_charges, additional_charges_label,
+          storedChargeFields(body).classification, storedChargeFields(body).hsnSac, storedChargeFields(body).taxRate,
+          notes, terms, actorUserId
+        ]);
+        const estimate = inserted.rows[0];
 
-    // Create estimate items
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      await db.query(`
-        INSERT INTO estimate_items (
-          estimate_id, item_id, description, qty, unit, unit_price,
-          discount, tax_rate, tax_amount, line_total, sort_order
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `, [
-        estimate.id, item.item_id, item.description, item.qty, item.unit, item.unit_price,
-        item.discount, item.tax_rate, item.tax_amount, item.line_total, i
-      ]);
-    }
+        // Create estimate items
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          await client.query(`
+            INSERT INTO estimate_items (
+              estimate_id, item_id, description, qty, unit, unit_price,
+              discount, tax_rate, tax_amount, line_total, sort_order
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `, [
+            estimate.id, item.item_id, item.description, item.qty, item.unit, item.unit_price,
+            item.discount, item.tax_rate, item.tax_amount, item.line_total, i
+          ]);
+        }
+      return estimate;
+    });
 
     return NextResponse.json({ estimate }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating estimate:', error);
     return NextResponse.json(
       { error: 'Failed to create estimate', details: error.message },

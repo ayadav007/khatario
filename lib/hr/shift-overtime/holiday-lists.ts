@@ -1,3 +1,4 @@
+import { LimitRefusedError, limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { query, queryOne, queryRows } from '@/lib/db';
 import type { HolidayList } from '@/lib/hr/shift-overtime/types';
 
@@ -112,7 +113,9 @@ export async function createHolidayInList(
     throw new Error('holiday_date and holiday_name are required');
   }
 
-  const row = await queryOne<HolidayRow>(
+  // Counted under the holiday-limit lock where the row is written. Throws LimitRefusedError at the limit.
+  const row = await limitedQueryOne<HolidayRow>(
+    businessId, 'holidays',
     `INSERT INTO holidays (business_id, holiday_list_id, holiday_date, holiday_name, is_recurring, description)
      VALUES ($1, $2, $3::date, $4, $5, $6)
      RETURNING id, holiday_list_id, business_id, holiday_date::text, holiday_name, is_recurring, description`,
@@ -261,14 +264,24 @@ export async function importHolidayCsv(
       continue;
     }
     try {
-      await queryOne(
+      await limitedQueryOne(
+        businessId, 'holidays',
         `INSERT INTO holidays (business_id, holiday_list_id, holiday_date, holiday_name, description)
          VALUES ($1, $2, $3::date, $4, $5)
          ON CONFLICT DO NOTHING`,
         [businessId, holidayListId, row.date, row.name, row.description ?? null],
       );
       imported++;
-    } catch {
+    } catch (error) {
+      if (error instanceof LimitRefusedError) {
+        // Rows already imported stay; the rest are not imported until the plan allows more holidays.
+        errors.push(
+          error.check.unavailable
+            ? 'Stopped: the plan limit could not be checked. Please try again in a moment. Rows already imported were kept.'
+            : `Stopped at the plan's holiday limit. ${imported} holiday${imported === 1 ? '' : 's'} imported; the remaining rows were not imported.`,
+        );
+        break;
+      }
       errors.push(`Failed to import ${row.date} ${row.name}`);
     }
   }

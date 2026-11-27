@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Task } from '@/types/database';
 
@@ -135,7 +136,8 @@ export async function POST(request: NextRequest) {
     const taskLimit = await limitExceededResponse(business_id, 'employee_tasks');
     if (taskLimit) return taskLimit;
 
-    const task = await queryOne<Task>(
+    const task = await limitedQueryOne<Task>(
+      business_id, 'employee_tasks',
       `INSERT INTO tasks (
         business_id, title, description, assigned_to, assigned_by, priority, due_date
       )
@@ -154,6 +156,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ task }, { status: 201 });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error creating task:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },

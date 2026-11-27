@@ -20,6 +20,12 @@ export type ResolvedLimit = {
   maxLimit: number;
   moduleKey: PlatformModule | 'account' | null;
   blockedReason?: string;
+  /**
+   * True when `maxLimit` came from the limits registry (`platform_limits` default or a plan override),
+   * so 0 means 0. False only when the key has no active registry row; callers may then fall back to
+   * the legacy `features.limits` JSON on the plan row (SUB-39).
+   */
+  fromRegistry: boolean;
 };
 
 async function resolvePlanLimitValueLocal(
@@ -27,26 +33,24 @@ async function resolvePlanLimitValueLocal(
   limitKey: string,
   queryFn: typeof db.queryOne = db.queryOne,
 ): Promise<number | null> {
-  try {
-    const result = await queryFn<{ limit_value: number | string | null }>(
-      `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
-       FROM platform_limits pl
-       LEFT JOIN subscription_plan_limits spl
-         ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
-       WHERE pl.limit_key = $2 AND pl.is_active = true`,
-      [planId, limitKey],
-    );
-    if (!result || result.limit_value === null || result.limit_value === undefined) {
-      return null;
-    }
-    const n =
-      typeof result.limit_value === 'number'
-        ? result.limit_value
-        : parseInt(String(result.limit_value), 10);
-    return Number.isNaN(n) ? null : n;
-  } catch {
+  // A failing lookup throws: the caller refuses the request (fails closed) instead of reading the
+  // missing value as "no registry entry" and falling back to the legacy JSON.
+  const result = await queryFn<{ limit_value: number | string | null }>(
+    `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
+     FROM platform_limits pl
+     LEFT JOIN subscription_plan_limits spl
+       ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
+     WHERE pl.limit_key = $2 AND pl.is_active = true`,
+    [planId, limitKey],
+  );
+  if (!result || result.limit_value === null || result.limit_value === undefined) {
     return null;
   }
+  const n =
+    typeof result.limit_value === 'number'
+      ? result.limit_value
+      : parseInt(String(result.limit_value), 10);
+  return Number.isNaN(n) ? null : n;
 }
 
 async function planLimitForSub(
@@ -70,6 +74,7 @@ async function resolveAccountWideLimit(
       maxLimit: 0,
       moduleKey: 'account',
       blockedReason: 'No active product subscription.',
+      fromRegistry: true,
     };
   }
 
@@ -80,15 +85,20 @@ async function resolveAccountWideLimit(
     if (value === null) continue;
     found = true;
     if (value === -1) {
-      return { maxLimit: -1, moduleKey: 'account' };
+      return { maxLimit: -1, moduleKey: 'account', fromRegistry: true };
     }
     if (value > best) best = value;
   }
 
   if (!found) {
-    return { maxLimit: 0, moduleKey: 'account', blockedReason: 'Limit not defined on your plans.' };
+    return {
+      maxLimit: 0,
+      moduleKey: 'account',
+      blockedReason: 'Limit not defined on your plans.',
+      fromRegistry: false,
+    };
   }
-  return { maxLimit: best, moduleKey: 'account' };
+  return { maxLimit: best, moduleKey: 'account', fromRegistry: true };
 }
 
 /**
@@ -127,6 +137,7 @@ export async function resolveBusinessLimit(
       maxLimit: 0,
       moduleKey: owner,
       blockedReason: `${label} is not enabled on your account. Add it from Settings → Your products.`,
+      fromRegistry: true,
     };
   }
 
@@ -137,15 +148,16 @@ export async function resolveBusinessLimit(
       maxLimit: 0,
       moduleKey: owner,
       blockedReason: `No active ${label} subscription.`,
+      fromRegistry: true,
     };
   }
 
   const planId = getEntitlementPlanIdForModuleSub(moduleSub);
-  let maxLimit = await resolvePlanLimitValueLocal(planId, limitKey, queryFn);
+  const maxLimit = await resolvePlanLimitValueLocal(planId, limitKey, queryFn);
 
   if (maxLimit === null) {
-    maxLimit = 0;
+    return { maxLimit: 0, moduleKey: owner, fromRegistry: false };
   }
 
-  return { maxLimit, moduleKey: owner };
+  return { maxLimit, moduleKey: owner, fromRegistry: true };
 }

@@ -1,3 +1,6 @@
+import { withLimitedCreate, type LimitSpec } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { countNewOrgNames } from '@/lib/hr/org-limits';
 import { NextRequest, NextResponse } from 'next/server';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -34,13 +37,27 @@ export async function PATCH(request: NextRequest) {
     await authorize(userId, 'settings', 'update', { businessId });
 
     const body = await request.json();
-    const catalog = await updateHrOrgCatalog(businessId, {
-      departments: body.departments,
-      designations: body.designations,
-    });
+    // A NEW department or designation name takes one of the plan's `max_departments` / `max_designations`
+    // slots. Counted and saved under the limit lock; removing names or re-saving existing ones never does.
+    const specs: LimitSpec[] = [];
+    if (Array.isArray(body.departments)) {
+      specs.push({ limitType: 'departments', adding: (c) => countNewOrgNames(c, businessId, 'departments', body.departments) });
+    }
+    if (Array.isArray(body.designations)) {
+      specs.push({ limitType: 'designations', adding: (c) => countNewOrgNames(c, businessId, 'designations', body.designations) });
+    }
+    const catalog = await withLimitedCreate(businessId, specs, (client) =>
+      updateHrOrgCatalog(
+        businessId,
+        { departments: body.departments, designations: body.designations },
+        client,
+      ),
+    );
     return NextResponse.json({ catalog });
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('[settings/hr-org-catalog PATCH]', error);
     return NextResponse.json({ error: 'Failed to save departments' }, { status: 500 });
   }

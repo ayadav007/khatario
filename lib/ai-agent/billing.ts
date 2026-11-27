@@ -1,5 +1,10 @@
 import { query, queryOne } from '@/lib/db';
-import { dailyLimit, repliesThisMonth, repliesToday } from '@/lib/whatsapp/customer-bot';
+import {
+  dailyLimit,
+  repliesThisMonth,
+  repliesToday,
+  reserveCustomerBotReply,
+} from '@/lib/whatsapp/customer-bot';
 import {
   KHATARIO_AI_MONTHLY_QUOTA,
   KHATARIO_AI_PRICE_MONTHLY,
@@ -97,11 +102,47 @@ export async function khatarioAccess(
   const quota = await khatarioMonthlyQuota(businessId);
   if (quota !== 0) {
     if (quota === -1) return { ok: true, via: 'addon' };
-    const used = await repliesThisMonth(businessId);
+    // Fails closed: if this month's replies cannot be counted, the reply is held (not "quota used up", so no false notice).
+    let used: number;
+    try {
+      used = await repliesThisMonthStrict(businessId);
+    } catch (err) {
+      console.error('[ai-agent] could not count this month\'s replies, holding the reply:', err);
+      return { ok: false, reason: 'not_configured' };
+    }
     return used < quota ? { ok: true, via: 'addon' } : { ok: false, reason: 'quota_exhausted' };
   }
   if (context.live) return { ok: false, reason: 'live_needs_addon' };
   return (await trialRemaining(businessId)) > 0 ? { ok: true, via: 'trial' } : { ok: false, reason: 'trial_exhausted' };
+}
+
+async function repliesThisMonthStrict(businessId: string): Promise<number> {
+  const row = await queryOne<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM whatsapp_inbound_events
+      WHERE business_id = $1 AND direction = 'out' AND handled_as = 'customer_bot'
+        AND created_at >= date_trunc('month', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`,
+    [businessId],
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Take one reply slot on Khatario's key and record it, atomically (SUB-25): `khatarioAccess` plus the
+ * monthly quota and daily cap counted under one per-business lock (`reserveCustomerBotReply`). Call it
+ * before generating the reply, in place of `khatarioAccess` + `recordCustomerBotReply`. Trial replies
+ * (Test mode) are not recorded here; they use `recordTrialReply`.
+ */
+export async function reserveKhatarioReply(
+  businessId: string,
+  customerPhone: string,
+  context: { live: boolean },
+): Promise<KhatarioAccess> {
+  const access = await khatarioAccess(businessId, context);
+  if (!access.ok || access.via !== 'addon') return access;
+  const [quota, daily] = await Promise.all([khatarioMonthlyQuota(businessId), dailyLimit(businessId)]);
+  const reserved = await reserveCustomerBotReply(businessId, customerPhone, { dailyLimit: daily, monthlyQuota: quota });
+  if (reserved.ok) return access;
+  return { ok: false, reason: reserved.reason === 'monthly_quota' ? 'quota_exhausted' : 'not_configured' };
 }
 
 /** Configured for the editor's status: add-on active, or trial replies left. */
