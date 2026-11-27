@@ -8,6 +8,8 @@ import {
 import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { calendarDateOnly } from '@/lib/closing-stock-period-lock';
 import { isPeriodLocked } from '@/lib/period-lock-utils';
+import { hasFeatureAccess } from '@/lib/subscription/feature-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
 
 export * from '@/lib/invoices/recurring-schedule';
@@ -16,6 +18,8 @@ export interface RecurringRunSummary {
   recurring_invoice_id: string;
   created: Array<{ run_date: string; invoice_id: string; invoice_number: string }>;
   skipped: string[];
+  /** True when the business's current plan lacks recurring invoices: nothing was generated or changed. */
+  skippedNoPlan: boolean;
   error?: string;
 }
 
@@ -40,9 +44,22 @@ export async function runRecurringInvoices(
   const recs = (await pool.query(`SELECT ri.* FROM recurring_invoices ri WHERE ${where} ORDER BY ri.next_run_date LIMIT 500`, params)).rows;
 
   const summaries: RecurringRunSummary[] = [];
+  // The plan is checked once per business per run, not once per schedule.
+  const planAllows = new Map<string, boolean>();
   for (const rec of recs) {
-    const summary: RecurringRunSummary = { recurring_invoice_id: rec.id, created: [], skipped: [] };
+    const summary: RecurringRunSummary = { recurring_invoice_id: rec.id, created: [], skipped: [], skippedNoPlan: false };
     summaries.push(summary);
+    // A schedule the current plan does not allow is skipped silently and left exactly as it is
+    // (still active, next run date and counters untouched), so it resumes if the plan returns.
+    let allowed = planAllows.get(rec.business_id);
+    if (allowed === undefined) {
+      allowed = await hasFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+      planAllows.set(rec.business_id, allowed);
+    }
+    if (!allowed) {
+      summary.skippedNoPlan = true;
+      continue;
+    }
     if (!isRecurringFrequency(rec.frequency)) {
       summary.error = `Unsupported frequency ${rec.frequency}`;
       continue;

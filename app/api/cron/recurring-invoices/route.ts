@@ -16,8 +16,9 @@ async function handle(request: NextRequest) {
   try {
     const results = await runRecurringInvoices(getPool(), { today: todayIst() });
     const created = results.reduce((s, r) => s + r.created.length, 0);
+    const skippedNoPlan = results.filter((r) => r.skippedNoPlan).length;
     const failed = results.filter((r) => r.error).length;
-    return NextResponse.json({ ok: true, created, failed, results });
+    return NextResponse.json({ ok: true, created, failed, skippedNoPlan, results });
   } catch (error: any) {
     console.error('recurring-invoices cron failed:', error);
     return NextResponse.json({ error: error.message || 'Cron failed' }, { status: 500 });

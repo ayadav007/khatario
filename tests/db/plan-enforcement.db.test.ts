@@ -72,6 +72,8 @@ import { PATCH as patchUserRoute } from '@/app/api/settings/users/[id]/route';
 import { PATCH as patchEmployeeRoute } from '@/app/api/employees/[id]/route';
 import { POST as postInvoiceWhatsApp } from '@/app/api/invoices/[id]/whatsapp/route';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { runRecurringInvoices } from '@/lib/invoices/recurring';
+import { processCampaign } from '@/lib/campaign-processor';
 import { checkLimit, clearAddonCache } from '@/lib/subscription';
 import { GET as getLedgerRoute } from '@/app/api/ledger/route';
 import { POST as postEwayBillRoute } from '@/app/api/eway-bills/route';
@@ -368,6 +370,98 @@ run('plan enforcement (kh_phase2_test)', () => {
       await query(
         `INSERT INTO whatsapp_messages (business_id, to_number, message_type, status)
          VALUES ($1, $2, 'text', 'sent')`,
+        [biz, phone()],
+      );
+    }
+    clearSubscriptionCache(biz);
+  }
+
+
+  const RECURRING_RUN_DAY = '2026-06-15';
+  const RECURRING_START = '2026-06-01';
+
+  /**
+   * A monthly recurring-invoice schedule of `biz` that is due on RECURRING_RUN_DAY (next_run_date =
+   * RECURRING_START), with one inline item (no template invoice) and its own customer. Returns its id.
+   * The table is recurring_invoices; the column is next_run_date.
+   */
+  async function makeDueSchedule(biz: string, opts: { autoFinalize?: boolean } = {}): Promise<string> {
+    const customerId = randomUUID();
+    const id = randomUUID();
+    await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Recurring cust', $3)`, [
+      customerId, biz, phone(),
+    ]);
+    const owner = await queryOne<{ id: string }>(
+      `SELECT id FROM users WHERE business_id = $1 AND is_primary_admin = true LIMIT 1`, [biz]);
+    await query(
+      `INSERT INTO recurring_invoices
+         (id, business_id, customer_id, frequency, interval_value, start_date, next_run_date, items, created_by, auto_finalize)
+       VALUES ($1, $2, $3, 'monthly', 1, $4, $4, $5::jsonb, $6, $7)`,
+      [
+        id, biz, customerId, RECURRING_START,
+        JSON.stringify([{ item_name: 'Monthly service', quantity: 1, unit_price: 1000, tax_rate: 18 }]),
+        owner!.id, opts.autoFinalize ?? false,
+      ],
+    );
+    return id;
+  }
+
+  async function scheduleRow(id: string) {
+    return queryOne<{ next_run_date: string; last_run_date: string | null; is_active: boolean; last_error: string | null }>(
+      `SELECT next_run_date::text, last_run_date::text, is_active, last_error FROM recurring_invoices WHERE id = $1`, [id]);
+  }
+
+  /** Run all due schedules as of RECURRING_RUN_DAY; returns the per-schedule summaries and how many were skipped for plan. */
+  async function runRecurring() {
+    // A cron run has no request: without this, headers() would still carry the last route call's user.
+    noRequest.current = true;
+    let summaries: Awaited<ReturnType<typeof runRecurringInvoices>>;
+    try {
+      summaries = await runRecurringInvoices(getPool(), { today: RECURRING_RUN_DAY });
+    } finally {
+      noRequest.current = false;
+    }
+    return { summaries, skippedNoPlan: summaries.filter((r) => r.skippedNoPlan).length };
+  }
+
+  /** A running WhatsApp campaign of `biz` with `recipients` pending recipients and no delay beyond the 1s minimum. */
+  async function makeScheduledCampaign(biz: string, recipients = 2): Promise<string> {
+    const id = randomUUID();
+    await query(
+      `INSERT INTO whatsapp_campaigns
+         (id, business_id, name, message_type, message_text, status, total_recipients, pending_count,
+          delay_between_messages, random_delay_jitter, batch_size, pause_between_batches, started_at)
+       VALUES ($1, $2, 'Plan test campaign', 'text', 'Hello', 'running', $3, $3, 1, 0, 20, 0, CURRENT_TIMESTAMP)`,
+      [id, biz, recipients],
+    );
+    for (let i = 0; i < recipients; i++) {
+      await query(`INSERT INTO whatsapp_campaign_recipients (campaign_id, phone, name) VALUES ($1, $2, 'R')`, [id, phone()]);
+    }
+    return id;
+  }
+
+  async function campaignRow(id: string) {
+    return queryOne<{ status: string; sent_count: number; pending_count: number; completed_at: string | null }>(
+      `SELECT status, sent_count, pending_count, completed_at::text FROM whatsapp_campaigns WHERE id = $1`, [id]);
+  }
+
+  /** Enable Connect on `biz` with an active `connect` plan (the Connect gate of the campaign APIs). */
+  async function enableConnect(biz: string, planId = 'connect'): Promise<void> {
+    await query(
+      `INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'connect', true, 'test')
+       ON CONFLICT (business_id, module_key) DO UPDATE SET enabled = true`,
+      [biz],
+    );
+    await setPlan(biz, 'connect', planId);
+    clearAddonCache(biz);
+  }
+
+  /** Fill today's whatsapp_messages up to `left` messages short of the plan's daily limit. */
+  async function leaveWhatsAppQuota(biz: string, left: number): Promise<void> {
+    const check = await checkLimit(biz, 'whatsapp');
+    for (let i = check.current; i < (check.limit as number) - left; i++) {
+      await query(
+        `INSERT INTO whatsapp_messages (business_id, to_number, message_type, status) VALUES ($1, $2, 'text', 'sent')`,
         [biz, phone()],
       );
     }
@@ -1467,6 +1561,117 @@ run('plan enforcement (kh_phase2_test)', () => {
           biz: A.biz, userId: A.owner, method: 'GET', path: `/api/stock-requests/${requestId}/events`, params: { id: requestId },
         });
         expect(a.status).toBe(200);
+      });
+    });
+  });
+
+  describe('SUB-20: automation checks the plan when it runs', () => {
+    describe('recurring invoices', () => {
+      it('a due schedule is skipped after the plan drops below Growth and resumes when it returns', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'rec1' });
+        const sched = await makeDueSchedule(biz);
+        const before = await scheduleRow(sched);
+        await setPlan(biz, 'billing', 'billing_starter');
+        const r1 = await runRecurring();
+        expect(r1.skippedNoPlan).toBeGreaterThanOrEqual(1);
+        expect(r1.summaries.find((r) => r.recurring_invoice_id === sched)).toMatchObject({ skippedNoPlan: true, created: [] });
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
+        // unchanged: not paused, not advanced, no run recorded, no error written
+        expect(await scheduleRow(sched)).toEqual(before);
+        expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched])).toBe(0);
+
+        await setPlan(biz, 'billing', 'billing_growth');
+        const r2 = await runRecurring();
+        const ran = r2.summaries.find((r) => r.recurring_invoice_id === sched)!;
+        expect(ran.skippedNoPlan).toBe(false);
+        expect(ran.error).toBeUndefined();
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
+        expect((await scheduleRow(sched))!.next_run_date).toBe('2026-07-01');
+      });
+
+      it('a business on Free is skipped too', async () => {
+        const { biz } = await newBusinessWithOwner('free', { label: 'rec2' });
+        const sched = await makeDueSchedule(biz);
+        const r = await runRecurring();
+        expect(r.summaries.find((x) => x.recurring_invoice_id === sched)?.skippedNoPlan).toBe(true);
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
+      });
+
+      it('a business whose plan has the feature generates in the same run in which another is skipped', async () => {
+        const A = await newBusinessWithOwner('billing_growth', { label: 'recA' });
+        const B = await newBusinessWithOwner('billing_starter', { label: 'recB' });
+        const sa = await makeDueSchedule(A.biz);
+        const sb = await makeDueSchedule(B.biz);
+        const sb2 = await makeDueSchedule(B.biz);
+        const r = await runRecurring();
+        const byId = (id: string) => r.summaries.find((x) => x.recurring_invoice_id === id)!;
+        expect(byId(sa)).toMatchObject({ skippedNoPlan: false });
+        expect(byId(sa).created).toHaveLength(1);
+        expect(byId(sb).skippedNoPlan).toBe(true);
+        expect(byId(sb2).skippedNoPlan).toBe(true);
+        expect(await count(`invoices WHERE business_id = $1`, [A.biz])).toBe(1);
+        expect(await count(`invoices WHERE business_id = $1`, [B.biz])).toBe(0);
+      });
+    });
+
+    describe('WhatsApp campaigns', () => {
+      beforeEach(() => jest.mocked(sendWhatsAppMessage).mockClear());
+
+      it('a campaign does not send after Connect lapses, and stays running', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'camp1' });
+        await enableConnect(biz);
+        const campaign = await makeScheduledCampaign(biz);
+        await setPlan(biz, 'connect', 'connect_free');
+        const r = await processCampaign(campaign);
+        expect(r.sent).toBe(0);
+        expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+        const row = await campaignRow(campaign);
+        expect(row).toMatchObject({ status: 'running', sent_count: 0, pending_count: 2, completed_at: null });
+        expect(await count(`whatsapp_campaign_recipients WHERE campaign_id = $1 AND status = 'pending'`, [campaign])).toBe(2);
+      });
+
+      it('a lapse takes effect at once although the Connect entitlement was cached', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'camp1b' });
+        await enableConnect(biz);
+        const { hasWhatsAppBotAddon } = await import('@/lib/subscription');
+        expect(await hasWhatsAppBotAddon(biz)).toBe(true); // fills the cache
+        const campaign = await makeScheduledCampaign(biz);
+        await query(`UPDATE business_module_subscriptions SET plan_id = 'connect_free' WHERE business_id = $1 AND module_key = 'connect'`, [biz]);
+        await processCampaign(campaign);
+        expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+      });
+
+      it('a campaign stops at the daily WhatsApp cap and stays running', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'camp2' });
+        await enableConnect(biz);
+        const campaign = await makeScheduledCampaign(biz);
+        await fillWhatsAppQuota(biz);
+        await processCampaign(campaign);
+        expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+        expect((await campaignRow(campaign))!.status).toBe('running');
+      });
+
+      it('with one message of quota left and two recipients exactly one is sent and the campaign is not completed', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'camp3' });
+        await enableConnect(biz);
+        const campaign = await makeScheduledCampaign(biz, 2);
+        await leaveWhatsAppQuota(biz, 1);
+        const r = await processCampaign(campaign);
+        expect(r.sent).toBe(1);
+        expect(sendWhatsAppMessage).toHaveBeenCalledTimes(1);
+        const row = await campaignRow(campaign);
+        expect(row).toMatchObject({ status: 'running', sent_count: 1, pending_count: 1 });
+        expect(await count(`whatsapp_campaign_recipients WHERE campaign_id = $1 AND status = 'pending'`, [campaign])).toBe(1);
+      });
+
+      it('with Connect active and quota free the campaign sends to both recipients and completes', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'camp4' });
+        await enableConnect(biz);
+        const campaign = await makeScheduledCampaign(biz, 2);
+        const r = await processCampaign(campaign);
+        expect(r.sent).toBe(2);
+        expect(sendWhatsAppMessage).toHaveBeenCalledTimes(2);
+        expect((await campaignRow(campaign))!.status).toBe('completed');
       });
     });
   });

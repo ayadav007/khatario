@@ -5,7 +5,7 @@
 
 import { query, queryOne } from './db';
 import { sendWhatsAppMessage } from './whatsapp';
-import { getBusinessSubscription, isSubscriptionOperationalStatus } from './subscription';
+import { checkLimit, getBusinessSubscription, hasWhatsAppBotAddon, isSubscriptionOperationalStatus } from './subscription';
 import { loadOutboundMedia } from '@/lib/http/outbound-media';
 
 interface Campaign {
@@ -89,6 +89,24 @@ export async function processCampaign(campaignId: string): Promise<{
         }
       }
 
+      // The campaign APIs need the Connect plan; a campaign set up before Connect lapsed must stop
+      // sending. skipCache: a lapse must take effect now, not after the 5-minute entitlement cache.
+      // A blocked campaign is left exactly as it is (still running) and resumes if the plan returns.
+      // whatsapp_campaigns has no reason column, so nothing is recorded on the row.
+      if (!(await hasWhatsAppBotAddon(campaign.business_id, true))) {
+        await query('ROLLBACK');
+        return { processed: 0, sent: 0, failed: 0, errors: ['Plan does not include campaigns'] };
+      }
+
+      // Daily WhatsApp cap of the plan (shared with every other WhatsApp send of the business).
+      const waLimit = await checkLimit(campaign.business_id, 'whatsapp');
+      if (!waLimit.allowed) {
+        await query('ROLLBACK');
+        return { processed: 0, sent: 0, failed: 0, errors: ['Daily WhatsApp limit reached'] };
+      }
+      // -1 = unlimited. Otherwise this batch may not send more than what is left of today's quota.
+      const quotaLeft = waLimit.limit === -1 ? Number.POSITIVE_INFINITY : Math.max(0, waLimit.limit - waLimit.current);
+
       // Check if we need to pause between batches
       if (campaign.last_sent_at) {
         const timeSinceLastSent = Date.now() - new Date(campaign.last_sent_at).getTime();
@@ -134,7 +152,7 @@ export async function processCampaign(campaignId: string): Promise<{
         ORDER BY created_at ASC
         LIMIT $2
         FOR UPDATE SKIP LOCKED
-      `, [campaignId, campaign.batch_size]) as { rows: Recipient[] };
+      `, [campaignId, Math.min(campaign.batch_size, quotaLeft)]) as { rows: Recipient[] };
 
       if (recipients.rows.length === 0) {
         await query('COMMIT');
