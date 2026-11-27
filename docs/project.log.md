@@ -2085,5 +2085,18 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Not seen in a browser; phone changes (`phone/lib/api.dart`, `main.dart`, plan screens) not compiled: run `flutter analyze` and `flutter test`.
   - Branch read-only does not yet cover stock-transfer dispatch/receive/cancel, POS and online-store writes, imports and stock counts. Credit notes from returns, system attendance rows and backup restore are deliberately not limited. Proforma invoices count toward the estimate limit but are not checked when created.
   - A statement reminder about several bills still uses one daily place per bill, as before.
-  - A real business id from the removed `FIX_ADDON_START_DATE.sql` remains in git history; removing it needs a history rewrite (owner decision).
-  - Owner decisions: `HR_LAUNCHED` flag in `lib/rag/product-availability.ts`; plan versioning; add-on prices in code; the production `platform_limits` check (SUB-14).
+  - A real business id from the removed `FIX_ADDON_START_DATE.sql` remains in git history; the owner decided to leave it (it is an internal id, not a secret, and removing it would mean rewriting `main`).
+  - Owner decisions: add-on prices in code; the production `platform_limits` check (SUB-14).
+
+## 2026-11-27: Plan changes for new or existing customers (seventh plan)
+- **Asked:** after the briefing, the owner decided: leave the business id in git history; keep the sales assistant's "HR coming soon" note for now; "some plan change will apply to new and some will apply to old also", then chose "Admin chooses each time".
+- **Decided:**
+  - Saving a change to a plan's features, limits or price asks the admin: "Apply to everyone now" or "Only new customers". With the second, businesses already on the plan (including trials) keep the features, limits and price they had while they stay on it and keep renewing; changing plan moves them to the current terms.
+  - Prices are edited only on the new price screen (with the choice); the older Edit Plan box can no longer change an existing plan's price.
+  - Each plan shows how many businesses are on older terms, with "Move them to the current terms". Every save is logged with the choice.
+  - Whether a business's plan is paid is judged from that business's own price, so a plan made free for new customers still renews, reminds and protects paid days for those on its old price.
+- **Shipped:** on branch `claude/gifted-gates-jx4rbn`, not merged, not deployed. Migration 485 written, run only on the local test database. `tests/db/plan-change-scope.db.test.ts` and the other billing suites pass locally; `tsc` clean. Not seen in a browser.
+- **Open:**
+  - Trials are kept on older terms like paying customers; if trials should convert at the new price instead, it is a one-line change in `pinBusinessesToTerms`.
+  - The public pricing page and catalogue always show current terms; a business on older terms does not see its own renewal price there.
+  - The full `tests/db` folder has 50 suites (84 tests) that fail locally on a clean checkout too (no `.env` here); none is a billing suite.
