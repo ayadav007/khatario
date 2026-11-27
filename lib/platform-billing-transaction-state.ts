@@ -81,3 +81,9 @@ export function assertBillingTransactionTransition(
     toStatus,
   );
 }
+
+/** True for the unique violation raised by uq_billing_tx_completed_payment_ref (one gateway payment, one checkout). */
+export function isPaymentReferenceViolation(err: unknown): boolean {
+  const e = err as { code?: string; constraint?: string } | null;
+  return e?.code === '23505' && e?.constraint === 'uq_billing_tx_completed_payment_ref';
+}

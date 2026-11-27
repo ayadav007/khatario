@@ -328,6 +328,9 @@ function terminalCheckoutError(err: unknown): string | null {
   if (msg === 'CHECKOUT_TYPE_MISMATCH') {
     return 'CHECKOUT_TYPE_MISMATCH: the checkout row is not of the type this payment event claims';
   }
+  if (msg === 'PAYMENT_REFERENCE_ALREADY_USED') {
+    return 'PAYMENT_REFERENCE_ALREADY_USED: this gateway payment id already activated another checkout';
+  }
   return null;
 }
 

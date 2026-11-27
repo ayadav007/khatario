@@ -100,6 +100,7 @@ export async function findIgnoredSuccessEvents(): Promise<IgnoredSuccessEvent[]>
          OR processing_notes LIKE '%changed while moving%'
          OR processing_notes LIKE '%Checkout transaction not found%'
          OR processing_notes LIKE '%has no plan%'
+         OR processing_notes LIKE '%PAYMENT_REFERENCE_ALREADY_USED%'
        )
      ORDER BY created_at`,
   );

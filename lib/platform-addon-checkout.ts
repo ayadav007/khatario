@@ -12,6 +12,7 @@ import {
 } from '@/lib/platform-billing';
 import {
   assertBillingTransactionTransition,
+  isPaymentReferenceViolation,
   type BillingTxStatus,
 } from '@/lib/platform-billing-transaction-state';
 import {
@@ -257,10 +258,13 @@ export async function completeAddonCheckoutPayment(params: {
       throw new Error('AMOUNT_MISMATCH');
     }
 
+    // Razorpay: record the gateway PAYMENT id (replacing the link id; the link id stays in
+    // gateway_response.payment_link_id). Easebuzz: keep the txnid. See completeSubscriptionCheckoutPayment.
     await client.query(
       `UPDATE billing_transactions
        SET status = 'completed',
-           payment_reference = COALESCE(payment_reference, $2),
+           payment_reference = CASE WHEN $4::boolean THEN COALESCE($2, payment_reference)
+                                    ELSE COALESCE(payment_reference, $2) END,
            gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
                                    ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
            updated_at = CURRENT_TIMESTAMP
@@ -269,6 +273,7 @@ export async function completeAddonCheckoutPayment(params: {
         billingTransactionId,
         params.providerPaymentId?.trim() || null,
         params.gatewayResponse ? JSON.stringify(params.gatewayResponse) : null,
+        (params.paymentMethod ?? 'razorpay') === 'razorpay',
       ],
     );
 
@@ -278,6 +283,7 @@ export async function completeAddonCheckoutPayment(params: {
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
+    if (isPaymentReferenceViolation(err)) throw new Error('PAYMENT_REFERENCE_ALREADY_USED');
     throw err;
   } finally {
     client.release();
