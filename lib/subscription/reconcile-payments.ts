@@ -85,6 +85,38 @@ export async function findRejectedUpgradeCredits(): Promise<RejectedUpgradeCredi
   );
 }
 
+export type RefundNeedingReview = {
+  refund_id: string;
+  refund_of: string;
+  business_id: string;
+  status: string;
+  reasons: string[];
+  created_at: string;
+};
+
+/**
+ * Refunds a person has to look at (last 35 days): refunds flagged in their metadata (a coupon redemption that was
+ * kept, a refund made in the gateway dashboard, a partner commission that could not be cancelled, a gateway failure
+ * after the refund was recorded) and refunds still `pending` after an hour (the gateway has not confirmed them; repeat
+ * the refund in the admin to check). Nothing is deleted or changed. Read-only.
+ */
+export async function findRefundsNeedingReview(): Promise<RefundNeedingReview[]> {
+  return queryRows<RefundNeedingReview>(
+    `SELECT id::text AS refund_id, metadata->>'refund_of' AS refund_of, business_id::text AS business_id,
+            status,
+            CASE WHEN status = 'pending' AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'
+                   THEN ARRAY['refund_pending_over_an_hour']::text[] ELSE ARRAY[]::text[] END
+            || COALESCE(ARRAY(SELECT jsonb_array_elements_text(metadata->'review_reasons')), ARRAY[]::text[]) AS reasons,
+            created_at::text AS created_at
+     FROM billing_transactions
+     WHERE type = 'refund'
+       AND created_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
+       AND ((metadata->>'needs_review') = 'true'
+            OR (status = 'pending' AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'))
+     ORDER BY created_at`,
+  );
+}
+
 /** Webhook events left in received/error for over 10 minutes (last 35 days). Read-only. */
 export async function findStuckWebhookEvents(): Promise<StuckWebhookEvent[]> {
   return queryRows<StuckWebhookEvent>(
@@ -141,16 +173,27 @@ export async function reportBillingAnomalies(): Promise<{
   stuckEvents: number;
   ignoredPaid: number;
   rejectedCredits: number;
+  refundsNeedingReview: number;
 }> {
   try {
-    const [unapplied, stuck, ignored, rejectedCredits] = await Promise.all([
+    const [unapplied, stuck, ignored, rejectedCredits, refunds] = await Promise.all([
       findUnappliedPayments(),
       findStuckWebhookEvents(),
       findIgnoredSuccessEvents(),
       findRejectedUpgradeCredits(),
+      findRefundsNeedingReview(),
     ]);
-    if (unapplied.length === 0 && stuck.length === 0 && ignored.length === 0 && rejectedCredits.length === 0) {
-      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0 };
+    if (
+      unapplied.length === 0 && stuck.length === 0 && ignored.length === 0 &&
+      rejectedCredits.length === 0 && refunds.length === 0
+    ) {
+      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0 };
+    }
+
+    for (const r of refunds) {
+      console.error(
+        `[billing-reconcile] refund needs review: refund=${r.refund_id} payment=${r.refund_of} business=${r.business_id} status=${r.status} reasons=${r.reasons.join(',')} created_at=${r.created_at}`,
+      );
     }
 
     for (const r of rejectedCredits) {
@@ -181,7 +224,7 @@ export async function reportBillingAnomalies(): Promise<{
       await sendPlatformAdminPush({
         event: 'incident',
         title: 'Billing: payments need attention',
-        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored, ${rejectedCredits.length} upgrade credits rejected`,
+        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored, ${rejectedCredits.length} upgrade credits rejected, ${refunds.length} refunds need review`,
         url: '/admin/billing',
       });
     } catch (err) {
@@ -192,9 +235,10 @@ export async function reportBillingAnomalies(): Promise<{
       stuckEvents: stuck.length,
       ignoredPaid: ignored.length,
       rejectedCredits: rejectedCredits.length,
+      refundsNeedingReview: refunds.length,
     };
   } catch (err) {
     console.error('[billing-reconcile] check failed', err);
-    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0 };
+    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0 };
   }
 }

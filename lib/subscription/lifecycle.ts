@@ -295,6 +295,7 @@ export interface ModuleExpiredSubscriptionCounts {
   addonsExpired: number;
   checkoutsExpired: number;
   renewalRemindersSent: number;
+  refundsSettled: number;
 }
 
 /**
@@ -309,6 +310,7 @@ export interface ModuleExpiredSubscriptionCounts {
  * 6. Paid add-ons (Khatario AI) whose `end_date` passed → expired
  * 7. Gateway checkouts still pending after 48 hours → failed (no notification)
  * 8. Renewal reminders (7, 3, 1 days before end, and the day after) for paid plans, once each per period
+ * 9. Refunds sent to the gateway and still pending after an hour are checked with it (bounded batch)
  *
  * Every UPDATE repeats the condition that selected its row, so a payment that lands in between wins.
  */
@@ -332,6 +334,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     addonsExpired: 0,
     checkoutsExpired: 0,
     renewalRemindersSent: 0,
+    refundsSettled: 0,
   };
 
   const expiredTrials = await queryRows<{
@@ -570,6 +573,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     counts.checkoutsExpired = await expireStaleCheckouts(48);
   } catch (err) {
     console.error('Expiring stale checkouts failed:', err);
+  }
+
+  // Refunds the gateway has not confirmed (Easebuzz sends no webhook): ask it, a small batch a night.
+  try {
+    const { settleStalePendingPlatformRefunds } = await import('@/lib/platform-refunds');
+    counts.refundsSettled = await settleStalePendingPlatformRefunds(20);
+  } catch (err) {
+    console.error('Settling pending refunds failed:', err);
   }
 
   // Renewal reminders last, so a row this run moved to Free is no longer selected.

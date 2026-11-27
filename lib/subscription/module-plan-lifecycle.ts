@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { query, queryOne } from '@/lib/db';
 import { type PlatformModule } from '@/lib/platform-modules';
 import { clearSubscriptionCache } from '@/lib/subscription';
@@ -191,6 +192,9 @@ const MOVE_TO_FREE_CONDITIONS: Record<MoveToFreeOnlyIf, string> = {
   scheduled_due: 'scheduled_plan_id IS NOT NULL AND end_date IS NOT NULL AND end_date < CURRENT_DATE',
 };
 
+/** Run the move-to-free UPDATE on the caller's transaction and hand the follow-up steps back to run after its commit. */
+export type MoveToFreeTx = { client: Pick<PoolClient, 'query'>; afterCommit: (fn: () => Promise<void>) => void };
+
 /**
  * Move a module to its free plan. With `onlyIf`, the UPDATE repeats the condition that selected the
  * row; if nothing changed (e.g. a payment landed meanwhile) no event is logged, no cache is touched
@@ -202,11 +206,12 @@ export async function moveModuleSubscriptionToFree(
   fromPlanId: string,
   eventType: string,
   onlyIf?: MoveToFreeOnlyIf,
+  tx?: MoveToFreeTx,
 ): Promise<boolean> {
   const freePlanId = getFreePlanIdForModule(moduleKey);
   const guard = onlyIf ? ` AND ${MOVE_TO_FREE_CONDITIONS[onlyIf]}` : '';
 
-  const result = await query(
+  const result = await (tx ? tx.client.query.bind(tx.client) : query)(
     `UPDATE business_module_subscriptions
      SET plan_id = $3,
          status = 'active',
@@ -223,6 +228,7 @@ export async function moveModuleSubscriptionToFree(
   );
   if (onlyIf && (result.rowCount ?? 0) === 0) return false;
 
+  const finish = async () => {
   await logSubscriptionEvent(businessId, eventType, {
     module_key: moduleKey,
     from_plan_id: fromPlanId,
@@ -240,5 +246,10 @@ export async function moveModuleSubscriptionToFree(
     );
     await ensureComplimentaryHrForBilling(businessId);
   }
+  };
+  // With `tx` the plan UPDATE above ran on the caller's transaction; the event, caches and the HR bundle run
+  // after the caller commits (`tx.afterCommit`), so a rolled-back caller leaves no trace.
+  if (tx) tx.afterCommit(finish);
+  else await finish();
   return true;
 }

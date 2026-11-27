@@ -19,6 +19,7 @@ if (process.env.PHASE2_TEST_DATABASE_URL) {
 }
 
 jest.mock('@/lib/platform-auth', () => ({ logAdminAction: jest.fn() }));
+jest.mock('@/lib/platform-request-auth', () => ({ requirePlatformRequest: jest.fn() }));
 jest.mock('@/lib/platform-email', () => ({
   getBusinessPlatformRecipient: jest.fn(async () => null),
   notifyAdminsSubscriptionChange: jest.fn(),
@@ -73,6 +74,19 @@ import { POST as cancelUndoPost } from '@/app/api/subscriptions/cancel/undo/rout
 import { GET as modulesCurrentGet } from '@/app/api/subscriptions/modules/current/route';
 import { runRecurringInvoices } from '@/lib/invoices/recurring';
 import { getPool } from '@/lib/db';
+import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import {
+  refundPlatformPayment,
+  gatewayRefundKey,
+  PlatformRefundError,
+  settlePlatformRefund,
+} from '@/lib/platform-refunds';
+import { updateBillingTransactionStatus } from '@/lib/platform-billing';
+import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
+import { findRefundsNeedingReview } from '@/lib/subscription/reconcile-payments';
+import { archiveBusinessBillingTransactions } from '@/lib/platform-billing-archive';
+import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
+import { POST as refundPost } from '@/app/api/admin/businesses/[id]/billing/[txId]/refund/route';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BillingCycle } from '@/lib/subscription/apply-plan-change';
@@ -1412,6 +1426,1191 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
       s = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
       expect(s).toMatchObject({ in_grace: false, can_renew: false });
+    });
+  });
+
+  // ---- Task 5: refunds that reach the gateway and can end the plan ----
+
+  describe('refunds reach the gateway and end the plan', () => {
+    const ADMIN = randomUUID();
+    const MIGRATION_480 = readFileSync(join(process.cwd(), 'database/migrations/480_subscription_tax_and_refunds.sql'), 'utf8');
+    const partners: string[] = [];
+    const count = async (from: string, params: unknown[] = []) =>
+      Number((await queryOne<{ c: string }>(`SELECT COUNT(*)::text AS c FROM ${from}`, params))!.c);
+
+    type Call = { url: string; method: string; headers: Record<string, string>; body: any };
+    let calls: Call[] = [];
+    type Reply = { status?: number; json?: unknown; reject?: boolean };
+
+    /** Every gateway call is answered by `handler`; calls are recorded. The real network is never reached. */
+    function stubGateway(handler: (c: Call) => Reply) {
+      calls = [];
+      (global.fetch as unknown as jest.Mock).mockReset();
+      (global.fetch as unknown as jest.Mock).mockImplementation(async (url: unknown, init?: any) => {
+        const c: Call = {
+          url: String(url),
+          method: init?.method ?? 'GET',
+          headers: init?.headers ?? {},
+          body: typeof init?.body === 'string' && init.body.startsWith('{') ? JSON.parse(init.body) : init?.body,
+        };
+        calls.push(c);
+        const r = handler(c);
+        if (r.reject) throw new TypeError('fetch failed');
+        const status = r.status ?? 200;
+        return { ok: status >= 200 && status < 300, status, json: async () => r.json ?? {} };
+      });
+    }
+    // A fresh gateway refund id per call unless one is given (two refunds never share an id).
+    const razorpayOk = (refundId?: string, status = 'processed') => (c: Call) =>
+      c.url.includes('/refund') ? { json: { id: refundId ?? 'rfnd_' + sfx().replace(/-/g, 'x'), status } } : {};
+
+    beforeAll(async () => {
+      await query(MIGRATION_480);
+    });
+
+    beforeEach(() => {
+      stubGateway(() => ({ reject: true }));
+      (requirePlatformRequest as jest.Mock).mockReset();
+    });
+
+    afterAll(async () => {
+      (global.fetch as unknown as jest.Mock).mockReset();
+      (global.fetch as unknown as jest.Mock).mockRejectedValue(new Error('network disabled in tests'));
+      for (const id of partners) await query(`DELETE FROM platform_partners WHERE id = $1`, [id]).catch(() => undefined);
+    });
+
+    /** A completed payment with a paid period (day offsets from the database's today). */
+    async function pay(
+      businessId: string,
+      planId: string,
+      amount: number,
+      startOff: number | null,
+      endOff: number | null,
+      o: {
+        method?: string;
+        ref?: string | null;
+        metadata?: Record<string, unknown>;
+        gateway?: Record<string, unknown>;
+        couponId?: string | null;
+        status?: string;
+      } = {},
+    ): Promise<string> {
+      const method = o.method ?? 'razorpay';
+      const ref = o.ref === undefined ? (method === 'razorpay' ? 'pay_' + sfx().replace(/-/g, 'x') : null) : o.ref;
+      const r = await queryOne<{ id: string }>(
+        `INSERT INTO billing_transactions
+           (business_id, type, status, amount, total_amount, plan_id, module_key, billing_cycle, payment_method, payment_reference,
+            period_start, period_end, gateway_response, metadata, coupon_id)
+         VALUES ($1, 'payment', $2, $3, $3, $4, 'billing', 'monthly', $5, $6,
+                 CASE WHEN $7::int IS NULL THEN NULL ELSE CURRENT_DATE + $7::int END,
+                 CASE WHEN $8::int IS NULL THEN NULL ELSE CURRENT_DATE + $8::int END,
+                 $9::jsonb, $10::jsonb, $11)
+         RETURNING id`,
+        [
+          businessId, o.status ?? 'completed', amount, planId, method, ref, startOff, endOff,
+          JSON.stringify({ checkout_type: 'subscription', provider: method, ...(o.gateway ?? {}) }),
+          JSON.stringify(o.metadata ?? {}), o.couponId ?? null,
+        ],
+      );
+      return r!.id;
+    }
+
+    const refundsOf = (paymentId: string) =>
+      query(
+        `SELECT id::text AS id, status, total_amount::text AS total_amount, payment_reference, metadata
+         FROM billing_transactions WHERE type = 'refund' AND metadata->>'refund_of' = $1 ORDER BY created_at`,
+        [paymentId],
+      ).then((r) => r.rows as { id: string; status: string; total_amount: string; payment_reference: string | null; metadata: Record<string, any> }[]);
+
+    const planOf = (businessId: string) =>
+      queryOne<{ plan_id: string; end_date: string | null; cancel_at_period_end: boolean; status: string }>(
+        `SELECT plan_id, end_date::text, cancel_at_period_end, status FROM business_module_subscriptions
+         WHERE business_id = $1 AND module_key = 'billing'`,
+        [businessId],
+      );
+
+    const payRow = (id: string) =>
+      queryOne<{ status: string; payment_reference: string | null; metadata: Record<string, any> }>(
+        `SELECT status, payment_reference, metadata FROM billing_transactions WHERE id = $1`, [id],
+      );
+
+    async function addCommission(businessId: string, txId: string): Promise<string> {
+      const partnerId = randomUUID();
+      partners.push(partnerId);
+      await query(
+        `INSERT INTO platform_partners (id, name, email, password_hash, referral_code) VALUES ($1, 'P', $2, 'x', $3)`,
+        [partnerId, `p_${partnerId.slice(0, 8)}@example.test`, 'RF' + partnerId.slice(0, 8)],
+      );
+      await query(
+        `INSERT INTO partner_commissions (partner_id, business_id, billing_transaction_id, sale_amount, commission_type, commission_rate, commission_amount, eligible_at)
+         VALUES ($1, $2, $3, 499, 'percentage', 20, 99.8, NOW())`,
+        [partnerId, businessId, txId],
+      );
+      return partnerId;
+    }
+
+    const req = (businessId: string, tx: string, o: Record<string, unknown> = {}) => ({
+      businessId, transactionId: tx, adminId: ADMIN, endPlan: 'period_end' as const, ...o,
+    });
+
+    function refundHook(event: string, refundId: string, payId: string, amountPaise: number) {
+      const raw = JSON.stringify({
+        event,
+        payload: {
+          refund: { entity: { id: refundId, payment_id: payId, amount: amountPaise, status: event.replace('refund.', '') } },
+          payment: { entity: { id: payId } },
+        },
+      });
+      const sig = createHmac('sha256', 'whsec_plan').update(raw).digest('hex');
+      return processPlatformRazorpayWebhook(raw, { 'x-razorpay-signature': sig });
+    }
+    const eventRow = (refundId: string, ev: string) =>
+      queryOne<{ status: string; processing_notes: string | null }>(
+        `SELECT status, processing_notes FROM platform_billing_webhook_events WHERE provider = 'razorpay' AND payload::text LIKE $1 AND event_type = $2`,
+        [`%${refundId}%`, ev],
+      );
+
+    describe('state table and migration', () => {
+      it('completed -> refunded is allowed; pending -> refunded, refunded -> anything and completed -> failed are not', () => {
+        expect(() => assertBillingTransactionTransition('completed', 'refunded')).not.toThrow();
+        expect(() => assertBillingTransactionTransition('pending', 'refunded')).toThrow();
+        expect(() => assertBillingTransactionTransition('refunded', 'completed')).toThrow();
+        expect(() => assertBillingTransactionTransition('refunded', 'refunded')).toThrow();
+        expect(() => assertBillingTransactionTransition('completed', 'failed')).toThrow();
+      });
+
+      it('migration 480 can run again without error and leaves its indexes in place', async () => {
+        await query(MIGRATION_480);
+        const r = await query(
+          `SELECT indexname FROM pg_indexes WHERE tablename = 'billing_transactions' AND indexname IN
+             ('idx_billing_tx_refund_of', 'uq_billing_tx_refund_gateway_ref', 'uq_billing_tx_refund_idempotency')`,
+        );
+        expect(r.rows).toHaveLength(3);
+      });
+
+      it('the mark-refunded helper can no longer set refunded by itself', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await expect(updateBillingTransactionStatus(tx, 'refunded', { by: 'admin' })).rejects.toMatchObject({
+          code: 'REFUND_REQUIRES_REFUND_FLOW',
+        });
+        expect((await payRow(tx))!.status).toBe('completed');
+      });
+    });
+
+    describe('a full refund', () => {
+      it("endPlan 'now': one gateway call with the payment id and paise, refund completed, payment refunded, plan on free, commission cancelled", async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        await addCommission(biz, tx);
+        stubGateway(razorpayOk('rfnd_full1'));
+
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now', notes: 'customer asked' }));
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toMatch(new RegExp(`/v1/payments/${payId}/refund$`));
+        expect(calls[0].method).toBe('POST');
+        const price = await planPrice('billing_growth');
+        expect(calls[0].body).toEqual({ amount: Math.round(price * 100) });
+        const refunds = await refundsOf(tx);
+        expect(refunds).toHaveLength(1);
+        expect(calls[0].headers['X-Refund-Idempotency']).toBe(gatewayRefundKey(refunds[0].id));
+        expect(res).toMatchObject({ refundTransactionId: refunds[0].id, status: 'processed', refundedTotal: price, fullyRefunded: true });
+        expect(refunds[0]).toMatchObject({ status: 'completed', payment_reference: 'rfnd_full1' });
+        expect(Number(refunds[0].total_amount)).toBe(price);
+        expect(refunds[0].metadata).toMatchObject({ refund_of: tx, end_plan: 'now', requested_by_admin: ADMIN, plan_effect: 'ended_now' });
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null, status: 'active' });
+        const c = await queryOne<{ status: string }>(`SELECT status FROM partner_commissions WHERE billing_transaction_id = $1`, [tx]);
+        expect(c!.status).toBe('cancelled');
+        const ev = await queryOne<{ event_type: string }>(
+          `SELECT event_type FROM subscription_events WHERE business_id = $1 AND event_type = 'refunded'`, [biz],
+        );
+        expect(ev).not.toBeNull();
+        // The refunded payment no longer gives upgrade credit.
+        await setRow(biz, 'billing_starter', { startOffset: -5, endOffset: 25 });
+        expect((await computeUpgradeCredit(biz, 'billing', 'billing_growth')).amount).toBe(0);
+      });
+
+      it("endPlan 'period_end': the plan keeps running and is set to end with the paid period", async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const before = await planOf(biz);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'period_end' }));
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', cancel_at_period_end: true, end_date: before!.end_date });
+        expect((await payRow(tx))!.status).toBe('refunded');
+      });
+
+      it('a ₹1 payment is refundable', async () => {
+        const tx = await pay(biz, 'billing_growth', 1, -1, 29);
+        await setRow(biz, 'billing_growth', { startOffset: -1, endOffset: 29 });
+        stubGateway(razorpayOk());
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(calls[0].body).toEqual({ amount: 100 });
+        expect(res).toMatchObject({ status: 'processed', refundedTotal: 1, fullyRefunded: true });
+      });
+    });
+
+    describe('partial refunds and limits', () => {
+      it('a partial refund leaves the payment completed; the second partial completes it', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk());
+        const a = await refundPlatformPayment(req(biz, tx, { amount: 150.5 }));
+        expect(calls[0].body).toEqual({ amount: 15050 });
+        expect(a).toMatchObject({ status: 'processed', refundedTotal: 150.5, fullyRefunded: false });
+        expect((await payRow(tx))!.status).toBe('completed');
+        expect((await payRow(tx))!.metadata.refunded_paise).toBe(15050);
+
+        stubGateway(razorpayOk());
+        const b = await refundPlatformPayment(req(biz, tx));
+        expect(calls[0].body).toEqual({ amount: 34850 });
+        expect(b).toMatchObject({ refundedTotal: 499, fullyRefunded: true });
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect(await refundsOf(tx)).toHaveLength(2);
+      });
+
+      it('a partly refunded payment gives upgrade credit only on what remains', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        const tx = await pay(biz, 'billing_starter', 300, -10, 20);
+        const full = await computeUpgradeCredit(biz, 'billing', 'billing_growth');
+        expect(full.amount).toBe(200);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, tx, { amount: 150, endPlan: 'period_end' }));
+        const half = await computeUpgradeCredit(biz, 'billing', 'billing_growth');
+        expect(half.amount).toBe(100);
+      });
+
+      it('a refund above what is left is refused with REFUND_EXCEEDS_PAYMENT and nothing is sent', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 499.01 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+        expect(calls).toHaveLength(0);
+        expect(await refundsOf(tx)).toHaveLength(0);
+      });
+
+      it('amounts below ₹1 or with fractions of a paisa are refused; a last 50 paise can still be refunded', async () => {
+        const tx = await pay(biz, 'billing_growth', 10.5, -5, 25);
+        stubGateway(razorpayOk());
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 0.5 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 1.005 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+        await expect(refundPlatformPayment(req(biz, tx, { amount: -3 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+        expect(calls).toHaveLength(0);
+        await refundPlatformPayment(req(biz, tx, { amount: 10 }));
+        const last = await refundPlatformPayment(req(biz, tx));
+        expect(calls[1].body).toEqual({ amount: 50 });
+        expect(last.fullyRefunded).toBe(true);
+      });
+
+      it('upgrade credit taken from a payment is not refunded in cash', async () => {
+        const tx = await pay(biz, 'billing_starter', 499, -10, 20, { metadata: { credit_consumed_by: randomUUID(), credit_used_paise: 20000 } });
+        stubGateway(razorpayOk());
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 299.01 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+        const res = await refundPlatformPayment(req(biz, tx));
+        expect(calls).toHaveLength(1);
+        expect(calls[0].body).toEqual({ amount: 29900 });
+        expect(res).toMatchObject({ refundedTotal: 299, fullyRefunded: true });
+        expect((await payRow(tx))!.status).toBe('refunded');
+      });
+
+      it('a payment that was itself bought with credit refunds only what was paid', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -1, endOffset: 29 });
+        const tx = await pay(biz, 'billing_growth', 299.67, -1, 29, { metadata: { upgrade_credit: { amount: 200, allocation: [] } } });
+        stubGateway(razorpayOk());
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 499 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(calls[0].body).toEqual({ amount: 29967 });
+      });
+
+      it('a coupon-only (₹0) payment, a pending, a failed and a refund row are NOT_REFUNDABLE', async () => {
+        const zero = await pay(biz, 'billing_growth', 0, -1, 29, { method: 'coupon', ref: null });
+        const pending = await pay(biz, 'billing_growth', 499, null, null, { status: 'pending' });
+        const failed = await pay(biz, 'billing_growth', 499, null, null, { status: 'failed' });
+        for (const tx of [zero, pending, failed]) {
+          await expect(refundPlatformPayment(req(biz, tx))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        }
+        expect(calls).toHaveLength(0);
+        const done = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, done));
+        const refundRow = (await refundsOf(done))[0].id;
+        await expect(refundPlatformPayment(req(biz, refundRow))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        await expect(refundPlatformPayment(req(biz, done))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+      });
+
+      it("a payment of another business is NOT_FOUND, and a gateway payment with no payment id is NOT_REFUNDABLE", async () => {
+        const other = await newBusiness('other');
+        const tx = await pay(other, 'billing_growth', 499, -5, 25);
+        await expect(refundPlatformPayment(req(biz, tx))).rejects.toMatchObject({ code: 'NOT_FOUND' });
+        const link = await pay(biz, 'billing_growth', 499, -5, 25, { ref: 'plink_abc123' });
+        await expect(refundPlatformPayment(req(biz, link))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        expect(calls).toHaveLength(0);
+      });
+    });
+
+    describe('gateway failures, timeouts and repeats', () => {
+      it('a refusal marks the refund failed, changes nothing else, and says so', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const before = await planOf(biz);
+        // The refusal is a 400; the status lookup that follows it finds no refund for the payment.
+        stubGateway((c) => (c.method === 'GET' ? { json: { items: [] } } : { status: 400, json: { error: { description: 'The payment has not been captured' } } }));
+        const err = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' })).catch((e) => e);
+        expect(err).toBeInstanceOf(PlatformRefundError);
+        expect(err.code).toBe('GATEWAY_REFUSED');
+        expect(err.message).toMatch(/No money was returned/);
+        expect(err.message).toMatch(/plan was not changed/);
+        const refunds = await refundsOf(tx);
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0].status).toBe('failed');
+        expect(refunds[0].metadata.failure_reason).toBeTruthy();
+        expect((await payRow(tx))!.status).toBe('completed');
+        expect((await payRow(tx))!.metadata.refunded_paise).toBe(0);
+        expect(await planOf(biz)).toEqual(before);
+        // A failed refund reserves nothing: the same payment can be refunded again.
+        stubGateway(razorpayOk());
+        expect((await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }))).status).toBe('processed');
+        expect(await refundsOf(tx)).toHaveLength(2);
+      });
+
+      it('no platform Razorpay credentials: refused, nothing sent, plan untouched', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        const saved = process.env.PLATFORM_RAZORPAY_KEY_ID;
+        delete process.env.PLATFORM_RAZORPAY_KEY_ID;
+        try {
+          await expect(refundPlatformPayment(req(biz, tx))).rejects.toMatchObject({ code: 'GATEWAY_REFUSED' });
+        } finally {
+          process.env.PLATFORM_RAZORPAY_KEY_ID = saved;
+        }
+        expect(calls).toHaveLength(0);
+        expect((await refundsOf(tx))[0].status).toBe('failed');
+      });
+
+      it("a timeout leaves the refund pending; the refund.processed webhook completes it and applies 'now'", async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        stubGateway(() => ({ reject: true }));
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        err.mockRestore();
+        expect(res).toMatchObject({ status: 'pending', fullyRefunded: false, refundedTotal: 0 });
+        expect(res.message).toMatch(/plan has not been changed/);
+        const [row] = await refundsOf(tx);
+        expect(row.status).toBe('pending');
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        expect((await payRow(tx))!.status).toBe('completed');
+
+        const price = await planPrice('billing_growth');
+        const hookRes = await refundHook('refund.processed', 'rfnd_late1', payId, Math.round(price * 100));
+        expect(hookRes).toMatchObject({ ok: true });
+        const [done] = await refundsOf(tx);
+        expect(done).toMatchObject({ id: row.id, status: 'completed', payment_reference: 'rfnd_late1' });
+        expect(done.metadata.plan_effect).toBe('ended_now');
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect((await planOf(biz))!.plan_id).toBe('free');
+        expect(await eventRow('rfnd_late1', 'refund.processed')).toMatchObject({ status: 'processed' });
+        // Delivered again: nothing happens twice.
+        expect(await refundHook('refund.processed', 'rfnd_late1', payId, Math.round(price * 100))).toMatchObject({ duplicate: true });
+        expect(await refundsOf(tx)).toHaveLength(1);
+      });
+
+      it('a repeat of the same request after a timeout resumes it with the same idempotency key: one refund, one row', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(() => ({ reject: true }));
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        expect((await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }))).status).toBe('pending');
+        err.mockRestore();
+        stubGateway(razorpayOk('rfnd_resume'));
+        const again = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(again).toMatchObject({ status: 'processed', fullyRefunded: true });
+        const rows = await refundsOf(tx);
+        expect(rows).toHaveLength(1);
+        const post = calls.filter((c) => c.method === 'POST');
+        expect(post).toHaveLength(1);
+        expect(post[0].headers['X-Refund-Idempotency']).toBe(gatewayRefundKey(rows[0].id));
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('a pending refund the gateway accepted settles by asking it again, and a different amount is not mixed up with it', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk('rfnd_slow', 'pending'));
+        const first = await refundPlatformPayment(req(biz, tx, { amount: 200, endPlan: 'now' }));
+        expect(first).toMatchObject({ status: 'pending', refundedTotal: 0 });
+        const [row] = await refundsOf(tx);
+        expect(row).toMatchObject({ status: 'pending', payment_reference: 'rfnd_slow' });
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        // Another refund while one is pending is refused with a clear reason.
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 100 }))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        // Asking again looks the refund up (GET) and does not create another.
+        stubGateway((c) => ({ json: { id: 'rfnd_slow', status: 'processed' } }));
+        const settled = await settlePlatformRefund(row.id);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].method).toBe('GET');
+        expect(settled).toMatchObject({ status: 'processed', refundedTotal: 200 });
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('refund.failed marks a pending refund failed and leaves the plan alone', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        stubGateway(razorpayOk('rfnd_bad', 'pending'));
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        const price = await planPrice('billing_growth');
+        await refundHook('refund.failed', 'rfnd_bad', payId, Math.round(price * 100));
+        expect((await refundsOf(tx))[0].status).toBe('failed');
+        expect((await payRow(tx))!.status).toBe('completed');
+        expect((await payRow(tx))!.metadata.refunded_paise).toBe(0);
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        expect(await eventRow('rfnd_bad', 'refund.failed')).toMatchObject({ status: 'failed' });
+      });
+
+      it('a repeat with the same idempotency key returns the same refund without calling the gateway again', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        const a = await refundPlatformPayment(req(biz, tx, { amount: 100, idempotencyKey: 'click-1' }));
+        const b = await refundPlatformPayment(req(biz, tx, { amount: 100, idempotencyKey: 'click-1' }));
+        expect(b.refundTransactionId).toBe(a.refundTransactionId);
+        expect(calls).toHaveLength(1);
+        expect(await refundsOf(tx)).toHaveLength(1);
+        // A different key is a second, separate refund.
+        await refundPlatformPayment(req(biz, tx, { amount: 100, idempotencyKey: 'click-2' }));
+        expect(await refundsOf(tx)).toHaveLength(2);
+      });
+
+      it('two clicks at the same moment make one refund', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk('rfnd_same'));
+        const [a, b] = await Promise.all([
+          refundPlatformPayment(req(biz, tx, { endPlan: 'now' })),
+          refundPlatformPayment(req(biz, tx, { endPlan: 'now' })),
+        ]);
+        expect(a.refundTransactionId).toBe(b.refundTransactionId);
+        expect(await refundsOf(tx)).toHaveLength(1);
+        // Only the caller that claimed the attempt talks to the gateway.
+        expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+    });
+
+    describe('other gateways and payment kinds', () => {
+      it('a manual payment is recorded with no gateway call', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25, { method: 'manual', ref: null });
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(calls).toHaveLength(0);
+        expect(res).toMatchObject({ status: 'processed', fullyRefunded: true });
+        expect(res.message).toMatch(/outside Khatario/);
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('Easebuzz: the refund is requested with our merchant refund id and stays pending until Easebuzz confirms it', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25, {
+          method: 'easebuzz', ref: 'TXN' + sfx().replace(/-/g, 'x'), gateway: { webhook: { easepayid: 'E2409040A97T7L' } },
+        });
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway((c) => (c.url.includes('/transaction/v2/refund') ? { json: { status: true } } : {}));
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(res.status).toBe('pending');
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toContain('/transaction/v2/refund');
+        const [row] = await refundsOf(tx);
+        expect(calls[0].body).toMatchObject({
+          easebuzz_id: 'E2409040A97T7L', refund_amount: '499.00', merchant_refund_id: gatewayRefundKey(row.id),
+        });
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+
+        // Asking again looks up our merchant refund id first and never raises a second refund.
+        stubGateway((c) =>
+          c.url.includes('/refund/v1/retrieve')
+            ? { json: { status: true, refunds: [{ merchant_refund_id: gatewayRefundKey(row.id), refund_status: 'refunded', refund_amount: '499.00' }] } }
+            : {},
+        );
+        const again = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toContain('/refund/v1/retrieve');
+        expect(again).toMatchObject({ status: 'processed', fullyRefunded: true });
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('Easebuzz with no transaction id on record is NOT_REFUNDABLE', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25, { method: 'easebuzz', ref: 'TXN' + sfx() });
+        await expect(refundPlatformPayment(req(biz, tx))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+      });
+
+      it('a WhatsApp add-on payment is refunded in money only: the plan is not touched', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const tx = await pay(biz, 'billing_growth', 100, null, null, { gateway: { checkout_type: 'whatsapp_addon' } });
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        expect((await refundsOf(tx))[0].metadata.plan_effect).toBe('none_not_a_plan_payment');
+      });
+    });
+
+    describe('the plan rule with renewals', () => {
+      it('refunding the current payment with a renewal still to come shortens the end date, never moves to Free', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -20, endOffset: 40 });
+        const a = await pay(biz, 'billing_growth', 499, -20, 10);
+        await pay(biz, 'billing_growth', 499, 10, 40);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
+        const exp = await queryOne<{ d: string }>(`SELECT (CURRENT_DATE + 40 - 30)::text AS d`);
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', end_date: exp!.d });
+        expect((await refundsOf(a))[0].metadata.plan_effect).toBe('end_date_shortened');
+      });
+
+      it('the admin message states the real end date when a later renewal kept the plan from ending', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -20, endOffset: 40 });
+        const a = await pay(biz, 'billing_growth', 499, -20, 10);
+        await pay(biz, 'billing_growth', 499, 10, 40);
+        stubGateway(razorpayOk());
+        const res = await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
+        const exp = await queryOne<{ d: string }>(`SELECT (CURRENT_DATE + 10)::text AS d`);
+        expect(res.message).toContain('did not end today');
+        expect(res.message).toContain(`the plan now ends on ${exp!.d}`);
+      });
+
+      it('a legacy payment with no period dates does not end the plan while another payment exists', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const legacy = await pay(biz, 'billing_growth', 499, null, null);
+        await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, legacy, { endPlan: 'now' }));
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        expect((await refundsOf(legacy))[0].metadata.plan_effect).toBe('none_no_period');
+      });
+
+      it('refunding a wholly future renewal shortens the end date by its period (both choices)', async () => {
+        for (const endPlan of ['now', 'period_end'] as const) {
+          const b2 = await newBusiness('fut');
+          await setRow(b2, 'billing_growth', { startOffset: -20, endOffset: 40 });
+          await pay(b2, 'billing_growth', 499, -20, 10);
+          const future = await pay(b2, 'billing_growth', 499, 10, 40);
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(b2, future, { endPlan }));
+          const exp = await queryOne<{ d: string }>(`SELECT (CURRENT_DATE + 10)::text AS d`);
+          expect(await planOf(b2)).toMatchObject({ plan_id: 'billing_growth', end_date: exp!.d, cancel_at_period_end: false });
+        }
+      });
+
+      it("an older payment: 'now' shortens, 'period_end' changes nothing; never below tomorrow while another payment covers today", async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -40, endOffset: 5 });
+        const old = await pay(biz, 'billing_growth', 499, -70, -40);
+        await pay(biz, 'billing_growth', 499, -35, 5);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, old, { endPlan: 'period_end' }));
+        expect((await planOf(biz))!.end_date).toBe(await daysFromToday(5));
+        const old2 = await pay(biz, 'billing_growth', 499, -100, -70);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, old2, { endPlan: 'now' }));
+        const after = await planOf(biz);
+        expect(after!.plan_id).toBe('billing_growth');
+        expect(after!.end_date).toBe(await daysFromToday(1)); // 5 - 30 days is in the past: held at tomorrow
+      });
+
+      it('with two payments covering today, refunding one with endPlan now does not end the plan', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 30 });
+        const a = await pay(biz, 'billing_growth', 499, -5, 25);
+        await pay(biz, 'billing_growth', 499, -2, 30);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, a, { endPlan: 'now' }));
+        const p = await planOf(biz);
+        expect(p!.plan_id).toBe('billing_growth');
+        expect(p!.status).toBe('active');
+        expect(p!.end_date! > (await daysFromToday(0))).toBe(true);
+      });
+
+      it('refunding the only payment of the current plan moves it to Free; a payment for an older plan does not touch the plan', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const oldPlanPay = await pay(biz, 'billing_starter', 299, -30, -5);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, oldPlanPay, { endPlan: 'now' }));
+        expect((await planOf(biz))!.plan_id).toBe('billing_growth');
+        const cur = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, cur, { endPlan: 'now' }));
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('two refunds on different payments of one product at the same time both finish (no deadlock)', async () => {
+        await setRow(biz, 'billing_growth', { startOffset: -20, endOffset: 40 });
+        const a = await pay(biz, 'billing_growth', 499, -20, 10);
+        const b = await pay(biz, 'billing_growth', 499, 10, 40);
+        stubGateway(razorpayOk());
+        const rs = await Promise.all([
+          refundPlatformPayment(req(biz, a, { endPlan: 'now' })),
+          refundPlatformPayment(req(biz, b, { endPlan: 'now' })),
+        ]);
+        rs.forEach((r) => expect(r.status).toBe('processed'));
+        expect((await payRow(a))!.status).toBe('refunded');
+        expect((await payRow(b))!.status).toBe('refunded');
+      });
+    });
+
+    describe('coupons and partner commission', () => {
+      it('a full refund keeps the coupon redemption and flags it for review; the finder lists it', async () => {
+        const coupon = await makeCoupon('free_months', 1);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25, { couponId: coupon });
+        const red = await queryOne<{ id: string }>(
+          `INSERT INTO coupon_redemptions (coupon_id, business_id, billing_transaction_id, plan_id, discount_amount)
+           VALUES ($1, $2, $3, 'billing_growth', 0) RETURNING id`, [coupon, biz, tx],
+        );
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        const [r] = await refundsOf(tx);
+        expect(r.metadata).toMatchObject({ needs_review: true, coupon_redemption: { id: red!.id, coupon_id: coupon } });
+        expect(r.metadata.review_reasons).toContain('coupon_redemption_kept');
+        expect(await count(`coupon_redemptions WHERE id = $1`, [red!.id])).toBe(1);
+        expect((await findRefundsNeedingReview()).find((x) => x.refund_id === r.id)?.reasons).toContain('coupon_redemption_kept');
+      });
+
+      it('a partial refund leaves partner commission alone', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await addCommission(biz, tx);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(biz, tx, { amount: 100 }));
+        const c = await queryOne<{ status: string }>(`SELECT status FROM partner_commissions WHERE billing_transaction_id = $1`, [tx]);
+        expect(c!.status).toBe('pending');
+      });
+
+      it('a refund still pending after an hour is listed by the finder', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(() => ({ reject: true }));
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        await refundPlatformPayment(req(biz, tx));
+        err.mockRestore();
+        const [r] = await refundsOf(tx);
+        expect((await findRefundsNeedingReview()).map((x) => x.refund_id)).not.toContain(r.id);
+        await query(`UPDATE billing_transactions SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 hours' WHERE id = $1`, [r.id]);
+        expect((await findRefundsNeedingReview()).find((x) => x.refund_id === r.id)?.reasons).toContain('refund_pending_over_an_hour');
+      });
+    });
+
+    describe('refunds made in the gateway dashboard', () => {
+      it('a full refund creates a row, leaves the plan until period end, and flags it', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        await addCommission(biz, tx);
+        const price = await planPrice('billing_growth');
+        expect(await refundHook('refund.created', 'rfnd_dash1', payId, Math.round(price * 100))).toMatchObject({ ok: true });
+        let [r] = await refundsOf(tx);
+        expect(r).toMatchObject({ status: 'pending', payment_reference: 'rfnd_dash1' });
+        expect(r.metadata.source).toBe('gateway_dashboard');
+        expect((await planOf(biz))!.cancel_at_period_end).toBe(false);
+
+        await refundHook('refund.processed', 'rfnd_dash1', payId, Math.round(price * 100));
+        [r] = await refundsOf(tx);
+        expect(r.status).toBe('completed');
+        expect(await refundsOf(tx)).toHaveLength(1);
+        expect((await payRow(tx))!.status).toBe('refunded');
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', cancel_at_period_end: true });
+        expect(r.metadata.review_reasons).toContain('refund_made_in_gateway_dashboard');
+        expect((await queryOne<{ status: string }>(`SELECT status FROM partner_commissions WHERE billing_transaction_id = $1`, [tx]))!.status).toBe('cancelled');
+        expect((await findRefundsNeedingReview()).map((x) => x.refund_id)).toContain(r.id);
+        // The same event again changes nothing.
+        expect(await refundHook('refund.processed', 'rfnd_dash1', payId, Math.round(price * 100))).toMatchObject({ duplicate: true });
+      });
+
+      it('a partial dashboard refund is recorded and flagged but the plan is not changed', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        await refundHook('refund.processed', 'rfnd_dash2', payId, 10000);
+        const [r] = await refundsOf(tx);
+        expect(r).toMatchObject({ status: 'completed', total_amount: '100.00' });
+        expect(r.metadata.plan_effect).toBe('none_partial_gateway_refund');
+        expect((await payRow(tx))!.status).toBe('completed');
+        expect(await planOf(biz)).toMatchObject({ plan_id: 'billing_growth', cancel_at_period_end: false });
+      });
+
+      it('a refund for a payment that is not ours, or a bad signature, changes nothing', async () => {
+        expect(await refundHook('refund.processed', 'rfnd_unknown', 'pay_unknown1', 10000)).toMatchObject({ ok: true });
+        expect(await eventRow('rfnd_unknown', 'refund.processed')).toMatchObject({ status: 'ignored' });
+        const raw = JSON.stringify({ event: 'refund.processed', payload: { refund: { entity: { id: 'rfnd_forged', payment_id: 'pay_x', amount: 100 } } } });
+        expect(await processPlatformRazorpayWebhook(raw, { 'x-razorpay-signature': 'ab'.repeat(32) })).toMatchObject({ ok: false });
+        expect(await count(`platform_billing_webhook_events WHERE payload::text LIKE '%rfnd_forged%'`)).toBe(0);
+      });
+
+      it('a refund event never completes or activates a checkout', async () => {
+        const tx = await pendingCheckout(biz, 'billing_growth', 499);
+        const raw = JSON.stringify({
+          event: 'refund.processed',
+          payload: { payment: { entity: { id: 'pay_x1', status: 'captured', amount: 49900, notes: notesFor(biz, tx, 'billing_growth') } } },
+        });
+        const sig = createHmac('sha256', 'whsec_plan').update(raw).digest('hex');
+        expect(await processPlatformRazorpayWebhook(raw, { 'x-razorpay-signature': sig })).toMatchObject({ ok: true });
+        expect((await txRow(tx))!.status).toBe('pending');
+        expect(await moduleRow(biz)).toBeNull();
+      });
+
+      it('two refunds of one payment get separate idempotency keys in the event log', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        await refundHook('refund.processed', 'rfnd_a1', payId, 10000);
+        await refundHook('refund.processed', 'rfnd_a2', payId, 20000);
+        const rows = await refundsOf(tx);
+        expect(rows.map((r) => r.payment_reference).sort()).toEqual(['rfnd_a1', 'rfnd_a2']);
+      });
+    });
+
+    describe('fix round 1: one gateway attempt, credit, history, notices, nightly settle', () => {
+      const POSTS = () => calls.filter((c) => c.method === 'POST');
+      const easePay = (businessId: string, amount = 499) =>
+        pay(businessId, 'billing_growth', amount, -5, 25, {
+          method: 'easebuzz', ref: 'TXN' + sfx().replace(/-/g, 'x'), gateway: { webhook: { easepayid: 'E2409040A97T7L' } },
+        });
+
+      it('two simultaneous Easebuzz calls send ONE refund request; the row is not failed and the amount stays reserved', async () => {
+        const tx = await easePay(biz);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        let first = true;
+        stubGateway((c) => {
+          if (c.url.includes('/transaction/v2/refund')) {
+            // Easebuzz refuses a second request with the same merchant refund id.
+            if (first) { first = false; return { json: { status: true } }; }
+            return { json: { status: false, reason: 'Duplicate merchant_refund_id' } };
+          }
+          return {};
+        });
+        const rs = await Promise.all([
+          refundPlatformPayment(req(biz, tx, { amount: 200, endPlan: 'now' })),
+          refundPlatformPayment(req(biz, tx, { amount: 200, endPlan: 'now' })),
+        ]);
+        expect(POSTS()).toHaveLength(1);
+        expect(rs.map((r) => r.status)).toEqual(['pending', 'pending']);
+        const rows = await refundsOf(tx);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].status).toBe('pending');
+        expect((await payRow(tx))!.metadata.refunded_paise).toBe(20000);
+        // Another refund of the same money is still refused.
+        await expect(refundPlatformPayment(req(biz, tx, { amount: 400 }))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+      });
+
+      it('two simultaneous Razorpay calls send ONE refund request', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk('rfnd_one'));
+        const rs = await Promise.all([
+          refundPlatformPayment(req(biz, tx, { amount: 100 })),
+          refundPlatformPayment(req(biz, tx, { amount: 100 })),
+        ]);
+        expect(POSTS()).toHaveLength(1);
+        expect(rs[0].refundTransactionId).toBe(rs[1].refundTransactionId);
+        const rows = await refundsOf(tx);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].status).toBe('completed');
+      });
+
+      it('an Easebuzz duplicate-id refusal on an attempted refund is "already exists": status lookup settles it, never failed', async () => {
+        const tx = await easePay(biz);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(() => ({ reject: true })); // first attempt: timeout (the refund may have reached Easebuzz)
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        expect((await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }))).status).toBe('pending');
+        err.mockRestore();
+        const [row] = await refundsOf(tx);
+        // Retry: the status lookup answers first.
+        stubGateway((c) =>
+          c.url.includes('/refund/v1/retrieve')
+            ? { json: { status: true, refunds: [{ merchant_refund_id: gatewayRefundKey(row.id), refund_status: 'refunded' }] } }
+            : { json: { status: false, reason: 'Duplicate merchant_refund_id' } },
+        );
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(res.status).toBe('processed');
+        expect(POSTS().filter((c) => c.url.includes('/transaction/v2/refund'))).toHaveLength(0);
+        expect((await refundsOf(tx))[0].status).toBe('completed');
+      });
+
+      it('a refusal reply is never trusted alone: if the status lookup cannot answer, the row stays pending', async () => {
+        const tx = await easePay(biz);
+        stubGateway((c) =>
+          c.url.includes('/transaction/v2/refund') ? { status: 400, json: { reason: 'bad' } } : { status: 500, json: {} },
+        );
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        const res = await refundPlatformPayment(req(biz, tx));
+        err.mockRestore();
+        expect(res.status).toBe('pending');
+        expect((await refundsOf(tx))[0].status).toBe('pending');
+      });
+
+      it('a definite refusal fails the row only when the gateway also has no such refund (Easebuzz)', async () => {
+        const tx = await easePay(biz);
+        stubGateway((c) =>
+          c.url.includes('/transaction/v2/refund')
+            ? { json: { status: false, reason: 'Refund amount exceeds' } }
+            : { json: { status: true, refunds: [] } },
+        );
+        await expect(refundPlatformPayment(req(biz, tx))).rejects.toMatchObject({ code: 'GATEWAY_REFUSED' });
+        expect((await refundsOf(tx))[0].status).toBe('failed');
+      });
+
+      it('Razorpay timeout then retry where Razorpay did refund: the refund is found by listing, no second request', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(() => ({ reject: true }));
+        const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        expect((await refundPlatformPayment(req(biz, tx, { amount: 120 }))).status).toBe('pending');
+        err.mockRestore();
+        stubGateway((c) => (c.method === 'GET' ? { json: { items: [{ id: 'rfnd_found', amount: 12000, status: 'processed' }] } } : {}));
+        const res = await refundPlatformPayment(req(biz, tx, { amount: 120 }));
+        expect(res.status).toBe('processed');
+        expect(POSTS()).toHaveLength(0);
+        const rows = await refundsOf(tx);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ status: 'completed', payment_reference: 'rfnd_found' });
+      });
+
+      it('a webhook that settles the refund while the API call is in flight: the result says processed, not pending', async () => {
+        const tx = await paidAndActivated(biz, 'billing_growth');
+        const payId = (await payRow(tx))!.payment_reference!;
+        const price = await planPrice('billing_growth');
+        (global.fetch as unknown as jest.Mock).mockReset();
+        (global.fetch as unknown as jest.Mock).mockImplementation(async () => {
+          await refundHook('refund.processed', 'rfnd_race', payId, Math.round(price * 100));
+          return { ok: true, status: 200, json: async () => ({ id: 'rfnd_race', status: 'pending' }) };
+        });
+        const res = await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        expect(res.status).toBe('processed');
+        expect(res.message).toMatch(/free plan/);
+        expect(await refundsOf(tx)).toHaveLength(1);
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('a payment method that is not razorpay, easebuzz or manual is refused (fails closed)', async () => {
+        const odd = await pay(biz, 'billing_growth', 499, -5, 25, { method: 'bank_transfer', ref: null });
+        await expect(refundPlatformPayment(req(biz, odd))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        await query(`UPDATE billing_transactions SET payment_method = NULL WHERE id = $1`, [odd]);
+        await expect(refundPlatformPayment(req(biz, odd))).rejects.toMatchObject({ code: 'NOT_REFUNDABLE' });
+        expect(await refundsOf(odd)).toHaveLength(0);
+      });
+
+      it('the refund holds the payment row, and only then waits for the module lock (payment row -> module lock)', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk());
+        const holder = await getPool().connect();
+        const probe = await getPool().connect();
+        try {
+          await holder.query('BEGIN');
+          await holder.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`module_plan_change:${biz}:billing`]);
+          const refund = refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+          // Wait until the refund transaction is blocked on the advisory lock.
+          let blocked = false;
+          for (let i = 0; i < 50 && !blocked; i++) {
+            await new Promise((r) => setTimeout(r, 50));
+            blocked = (await probe.query(`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)).rowCount! > 0;
+          }
+          expect(blocked).toBe(true);
+          await probe.query('BEGIN');
+          await expect(probe.query(`SELECT 1 FROM billing_transactions WHERE id = $1 FOR UPDATE NOWAIT`, [tx])).rejects.toMatchObject({ code: '55P03' });
+          await probe.query('ROLLBACK');
+          await holder.query('COMMIT');
+          expect((await refund).status).toBe('processed');
+        } finally {
+          holder.release();
+          probe.release();
+        }
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      it('ending the plan runs on the refund transaction: a failed commit leaves the plan as it was', async () => {
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk());
+        // A refund of a payment the module is not on cannot touch it, whatever the choice.
+        const cnt = (await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM subscription_events WHERE business_id = $1 AND event_type = 'refunded'`, [biz]))!.n;
+        await refundPlatformPayment(req(biz, tx, { endPlan: 'now' }));
+        const after = (await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM subscription_events WHERE business_id = $1 AND event_type = 'refunded'`, [biz]))!.n;
+        expect(Number(after)).toBe(Number(cnt) + 1);
+        expect((await planOf(biz))!.plan_id).toBe('free');
+      });
+
+      describe('upgrade credit from a partly refunded payment', () => {
+        async function checkout(planId: string) {
+          const spy = jest
+            .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+            .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+          try {
+            const r = await createSubscriptionCheckout({ businessId: biz, planId, billingCycle: 'monthly' });
+            return { tx: r.billingTransactionId, amount: r.amount };
+          } finally {
+            spy.mockRestore();
+          }
+        }
+        const meta = (id: string) => queryOne<{ metadata: Record<string, any> }>(`SELECT metadata FROM billing_transactions WHERE id = $1`, [id]);
+
+        it('a refund made BEFORE the credit was granted does not reject it: full period, source consumed', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          const src = await pay(biz, 'billing_starter', 300, -10, 20);
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, src, { amount: 150, endPlan: 'period_end' }));
+          stubGateway(() => ({ reject: true }));
+          const q = await checkout('billing_growth');
+          const m0 = await meta(q.tx);
+          expect(m0!.metadata.upgrade_credit.amount).toBe(100);
+          expect(m0!.metadata.upgrade_credit.allocation[0]).toMatchObject({ id: src, refundedPaise: 15000 });
+          await hook('payment.captured', 'pay_cr_' + sfx(), 'captured', notesFor(biz, q.tx, 'billing_growth'), Math.round(q.amount * 100));
+          const after = await moduleRow(biz);
+          expect(after!.plan_id).toBe('billing_growth');
+          expect(after!.end_date).toBe(await monthsFromToday(1));
+          const m = await meta(q.tx);
+          expect(m!.metadata.upgrade_credit.rejected).toBeUndefined();
+          expect((await meta(src))!.metadata.credit_consumed_by).toBe(q.tx);
+        });
+
+        it('a refund made AFTER the credit was granted rejects it: the period is shortened and flagged', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+          const src = await pay(biz, 'billing_starter', 300, -10, 20);
+          stubGateway(() => ({ reject: true }));
+          const q = await checkout('billing_growth');
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, src, { amount: 100, endPlan: 'period_end' }));
+          await hook('payment.captured', 'pay_cr_' + sfx(), 'captured', notesFor(biz, q.tx, 'billing_growth'), Math.round(q.amount * 100));
+          const m = await meta(q.tx);
+          expect(m!.metadata.upgrade_credit.rejected).toBe('source_refunded');
+          const after = await moduleRow(biz);
+          expect(after!.end_date! < (await monthsFromToday(1))).toBe(true);
+        });
+      });
+
+      describe('customer billing history', () => {
+        async function history() {
+          const res = await (await import('@/app/api/subscriptions/billing-history/route')).GET(
+            new NextRequest('http://localhost/api/subscriptions/billing-history', {
+              headers: { 'x-authenticated-business-id': biz, 'x-authenticated-user-id': adminOf.get(biz)! },
+            }),
+          );
+          expect(res.status).toBe(200);
+          return (await res.json()).transactions as any[];
+        }
+
+        it('shows a completed refund as a negative "Refund for <plan> payment of <date>", never pending or failed ones, never a uuid', async () => {
+          const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+          stubGateway(razorpayOk());
+          await refundPlatformPayment(req(biz, tx, { amount: 100 }));
+          // A pending refund and a failed refund of this payment.
+          stubGateway(razorpayOk(undefined, 'pending'));
+          await refundPlatformPayment(req(biz, tx, { amount: 110 }));
+          stubGateway((c) => (c.method === 'GET' ? { json: { items: [] } } : { status: 400, json: {} }));
+          const pend = (await refundsOf(tx)).find((r) => r.status === 'pending')!;
+          await settlePlatformRefund(pend.id).catch(() => undefined);
+          const h = await history();
+          const refunds = h.filter((t) => t.type === 'refund');
+          expect(refunds).toHaveLength(1);
+          expect(refunds[0]).toMatchObject({ amount: -100, status: 'refunded' });
+          expect(refunds[0].description).toMatch(/^Refund for .+ payment of \d{2} \w{3} \d{4}$/);
+          expect(JSON.stringify(h)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.*Refund of payment/);
+          expect(refunds[0].description).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
+          expect(h.find((t) => t.id === tx)).toMatchObject({ type: 'payment', amount: 499 });
+        });
+
+        it('a stale pending refund is not closed by the 48-hour checkout expiry', async () => {
+          const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+          stubGateway(razorpayOk(undefined, 'pending'));
+          await refundPlatformPayment(req(biz, tx, { amount: 100 }));
+          const [r] = await refundsOf(tx);
+          await query(`UPDATE billing_transactions SET created_at = CURRENT_TIMESTAMP - INTERVAL '5 days' WHERE id = $1`, [r.id]);
+          await (await import('@/lib/platform-billing')).expireStaleCheckouts(48);
+          expect((await refundsOf(tx))[0].status).toBe('pending');
+        });
+      });
+
+      describe('customer notice', () => {
+        it('a completed refund sends one email and one in-app event; pending and failed send none', async () => {
+          const { sendPlatformEmail, getBusinessPlatformRecipient } = await import('@/lib/platform-email');
+          (sendPlatformEmail as jest.Mock).mockClear();
+          (getBusinessPlatformRecipient as jest.Mock).mockResolvedValue({ email: 'owner@example.test', businessName: 'Biz' });
+          try {
+            const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+            await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+            stubGateway(razorpayOk(undefined, 'pending'));
+            await refundPlatformPayment(req(biz, tx, { amount: 100 }));
+            expect(sendPlatformEmail).not.toHaveBeenCalled();
+            const [p] = await refundsOf(tx);
+            await settlePlatformRefund(p.id).catch(() => undefined);
+            stubGateway(() => ({ json: { id: p.payment_reference ?? 'x', status: 'processed' } }));
+            await settlePlatformRefund(p.id);
+            expect(sendPlatformEmail).toHaveBeenCalledTimes(1);
+            const mail = (sendPlatformEmail as jest.Mock).mock.calls[0][0];
+            expect(mail.to).toBe('owner@example.test');
+            expect(mail.text).toMatch(/refunded ₹100/);
+            expect(mail.text).toMatch(/plan was not changed|plan stays/);
+            const ev = await query(`SELECT details FROM subscription_events WHERE business_id = $1 AND event_type = 'refund_completed'`, [biz]);
+            expect(ev.rows).toHaveLength(1);
+            await settlePlatformRefund(p.id);
+            expect(sendPlatformEmail).toHaveBeenCalledTimes(1);
+          } finally {
+            (getBusinessPlatformRecipient as jest.Mock).mockResolvedValue(null);
+          }
+        });
+      });
+
+      describe('nightly settle of unconfirmed refunds', () => {
+        it('asks the gateway about attempted refunds pending over an hour, and never sends one that was never attempted', async () => {
+          const tx = await easePay(biz);
+          await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+          stubGateway((c) => (c.url.includes('/transaction/v2/refund') ? { json: { status: true } } : {}));
+          await refundPlatformPayment(req(biz, tx, { amount: 100, endPlan: 'period_end' }));
+          const [row] = await refundsOf(tx);
+          expect(row.status).toBe('pending');
+          // Not old enough yet.
+          stubGateway(() => ({ reject: true }));
+          const before = await (await import('@/lib/subscription/lifecycle')).processExpiredModuleSubscriptions();
+          expect(before.refundsSettled).toBe(0);
+          await query(`UPDATE billing_transactions SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 hours' WHERE id = $1`, [row.id]);
+          // A reserved refund that never reached the gateway, also old.
+          const tx2 = await pay(biz, 'billing_growth', 499, -5, 25);
+          const unsent = randomUUID();
+          await query(
+            `INSERT INTO billing_transactions (id, business_id, type, status, amount, total_amount, plan_id, payment_method, metadata, module_key, created_at)
+             VALUES ($1, $2, 'refund', 'pending', 50, 50, 'billing_growth', 'razorpay', $3::jsonb, 'billing', CURRENT_TIMESTAMP - INTERVAL '2 hours')`,
+            [unsent, biz, JSON.stringify({ refund_of: tx2 })],
+          );
+          stubGateway((c) =>
+            c.url.includes('/refund/v1/retrieve')
+              ? { json: { status: true, refunds: [{ merchant_refund_id: gatewayRefundKey(row.id), refund_status: 'refunded' }] } }
+              : {},
+          );
+          const { settleStalePendingPlatformRefunds } = await import('@/lib/platform-refunds');
+          expect(await settleStalePendingPlatformRefunds(10)).toBeGreaterThanOrEqual(1);
+          expect((await refundsOf(tx))[0].status).toBe('completed');
+          // Only lookups: nothing is ever raised or re-sent by the nightly step.
+          expect(POSTS().filter((c) => c.url.includes('/transaction/v2/refund') || /\/payments\/[^/]+\/refund$/.test(c.url))).toHaveLength(0);
+          expect((await queryOne<{ status: string }>(`SELECT status FROM billing_transactions WHERE id = $1`, [unsent]))!.status).toBe('pending');
+        });
+      });
+
+      describe('cancelling a refund that was never sent', () => {
+        const unsentRow = async (businessId: string, tx: string, claimed = false) => {
+          const id = randomUUID();
+          await query(
+            `INSERT INTO billing_transactions (id, business_id, type, status, amount, total_amount, plan_id, payment_method, metadata, module_key)
+             VALUES ($1, $2, 'refund', 'pending', 100, 100, 'billing_growth', 'razorpay', $3::jsonb, 'billing')`,
+            [id, businessId, JSON.stringify({ refund_of: tx, ...(claimed ? { gateway_requested: true } : {}) })],
+          );
+          await query(`UPDATE billing_transactions SET metadata = metadata || '{"refunded_paise": 10000}'::jsonb WHERE id = $1`, [tx]);
+          return id;
+        };
+        const cancelCall = async (business: string, tx: string, body: unknown) => {
+          const { POST } = await import('@/app/api/admin/businesses/[id]/billing/[txId]/refund/cancel/route');
+          return POST(
+            new NextRequest('http://localhost/x', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }),
+            { params: { id: business, txId: tx } },
+          );
+        };
+
+        it('frees the reserved amount; refuses one that reached the gateway; checks ownership and auth', async () => {
+          (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
+          const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+          const claimed = await unsentRow(biz, tx, true);
+          const r1 = await cancelCall(biz, tx, { refund_id: claimed });
+          expect(r1.status).toBe(409);
+          expect(await r1.json()).toMatchObject({ code: 'NOT_REFUNDABLE' });
+          await query(`UPDATE billing_transactions SET status = 'failed' WHERE id = $1`, [claimed]);
+
+          const unsent = await unsentRow(biz, tx);
+          const other = await newBusiness('cx');
+          expect((await cancelCall(other, tx, { refund_id: unsent })).status).toBe(404);
+          expect((await cancelCall(biz, tx, { refund_id: 'nope' })).status).toBe(400);
+          const ok = await cancelCall(biz, tx, { refund_id: unsent });
+          expect(ok.status).toBe(200);
+          const [row] = (await refundsOf(tx)).filter((r) => r.id === unsent);
+          expect(row.status).toBe('failed');
+          expect(row.metadata.cancelled_by_admin).toBe(ADMIN);
+          expect((await payRow(tx))!.metadata.refunded_paise).toBe(0);
+          stubGateway(razorpayOk());
+          expect((await refundPlatformPayment(req(biz, tx))).fullyRefunded).toBe(true);
+
+          const { NextResponse } = await import('next/server');
+          (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'no' }, { status: 403 }) });
+          expect((await cancelCall(biz, tx, { refund_id: unsent })).status).toBe(403);
+        });
+      });
+    });
+
+    describe('the admin route', () => {
+      const call = (tx: string, body: unknown, business = biz, headers: Record<string, string> = {}) =>
+        refundPost(
+          new NextRequest(`http://localhost/api/admin/businesses/${business}/billing/${tx}/refund`, {
+            method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers },
+          }),
+          { params: { id: business, txId: tx } },
+        );
+      const asAdmin = () =>
+        (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
+
+      it('rejects a caller who is not a platform admin before doing anything', async () => {
+        const { NextResponse } = await import('next/server');
+        (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'no' }, { status: 403 }) });
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        const r = await call(tx, { end_plan: 'now' });
+        expect(r.status).toBe(403);
+        expect(calls).toHaveLength(0);
+        expect(requirePlatformRequest).toHaveBeenCalledWith(expect.anything(), 'admin', 'can_manage_subscriptions');
+      });
+
+      it('validates the body, then returns { success, refund } or { error, code }', async () => {
+        asAdmin();
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        await setRow(biz, 'billing_growth', { startOffset: -5, endOffset: 25 });
+        stubGateway(razorpayOk());
+        expect((await call(tx, {})).status).toBe(400);
+        expect((await call(tx, { end_plan: 'soon' })).status).toBe(400);
+        expect((await call(tx, { end_plan: 'now', amount: 'lots' })).status).toBe(400);
+        expect(calls).toHaveLength(0);
+
+        const tooMuch = await call(tx, { end_plan: 'now', amount: 600 });
+        expect(tooMuch.status).toBe(422);
+        expect(await tooMuch.json()).toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT', error: expect.any(String) });
+
+        const ok = await call(tx, { end_plan: 'now', amount: 499, business_id: randomUUID(), created_by: 'x' });
+        expect(ok.status).toBe(200);
+        const body = await ok.json();
+        expect(body).toMatchObject({ success: true, refund: { status: 'processed', fully_refunded: true, refunded_total: 499 } });
+        expect((await refundsOf(tx))[0].metadata.requested_by_admin).toBe(ADMIN);
+
+        const again = await call(tx, { end_plan: 'now' });
+        expect(again.status).toBe(409);
+        expect(await again.json()).toMatchObject({ code: 'NOT_REFUNDABLE' });
+      });
+
+      it('a gateway refusal is 502 GATEWAY_REFUSED; a payment of another business is 404; the idempotency header is honoured', async () => {
+        asAdmin();
+        const tx = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway((c) => (c.method === 'GET' ? { json: { items: [] } } : { status: 400, json: {} }));
+        const r = await call(tx, { end_plan: 'now' });
+        expect(r.status).toBe(502);
+        expect(await r.json()).toMatchObject({ code: 'GATEWAY_REFUSED' });
+        const other = await newBusiness('route');
+        expect((await call(tx, { end_plan: 'now' }, other)).status).toBe(404);
+
+        const tx2 = await pay(biz, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        const a = await (await call(tx2, { end_plan: 'period_end', amount: 100 }, biz, { 'idempotency-key': 'hdr-1' })).json();
+        const b = await (await call(tx2, { end_plan: 'period_end', amount: 100 }, biz, { 'idempotency-key': 'hdr-1' })).json();
+        expect(b.refund.id).toBe(a.refund.id);
+        expect(calls).toHaveLength(1);
+      });
+    });
+
+    describe('billing archive', () => {
+      it('refund rows are archived with the payment when a business is deleted', async () => {
+        const b3 = await newBusiness('arch');
+        const tx = await pay(b3, 'billing_growth', 499, -5, 25);
+        stubGateway(razorpayOk());
+        await refundPlatformPayment(req(b3, tx, { amount: 100 }));
+        const [r] = await refundsOf(tx);
+        await deleteBusinessCompletely(b3, ADMIN);
+        const rows = await query(
+          `SELECT type, status, total_amount::text AS total_amount, metadata->>'refund_of' AS refund_of
+           FROM billing_transactions_archive WHERE id = $1`, [r.id],
+        );
+        expect(rows.rows[0]).toMatchObject({ type: 'refund', status: 'completed', total_amount: '100.00', refund_of: tx });
+        expect(await count(`billing_transactions_archive WHERE business_id = $1`, [b3])).toBe(2);
+        expect(typeof archiveBusinessBillingTransactions).toBe('function');
+      });
     });
   });
 });

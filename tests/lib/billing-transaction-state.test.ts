@@ -40,4 +40,13 @@ describe('assertBillingTransactionTransition', () => {
       BillingTransactionStateError,
     );
   });
+
+  it('allows completed → refunded (only the refund code writes it)', () => {
+    expect(() => assertBillingTransactionTransition('completed', 'refunded')).not.toThrow();
+  });
+
+  it('blocks refunded → refunded and refunded → completed', () => {
+    expect(() => assertBillingTransactionTransition('refunded', 'refunded')).toThrow(BillingTransactionStateError);
+    expect(() => assertBillingTransactionTransition('refunded', 'completed')).toThrow(BillingTransactionStateError);
+  });
 });

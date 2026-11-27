@@ -21,6 +21,8 @@ type BillingTxRow = {
   billing_cycle: string | null;
   plan_display_name: string | null;
   product_line: string | null;
+  type: string;
+  refunded_payment_date: string | null;
 };
 
 function mapStatusForUi(status: string): string {
@@ -48,10 +50,15 @@ export async function GET(request: NextRequest) {
            bt.module_key,
            bt.billing_cycle,
            sp.display_name AS plan_display_name,
-           sp.product_line
+           sp.product_line,
+           bt.type,
+           to_char(orig.created_at, 'DD Mon YYYY') AS refunded_payment_date
          FROM billing_transactions bt
          LEFT JOIN subscription_plans sp ON sp.id = bt.plan_id
+         LEFT JOIN billing_transactions orig
+           ON bt.type = 'refund' AND orig.id::text = bt.metadata->>'refund_of' AND orig.business_id = bt.business_id
          WHERE bt.business_id = $1
+           AND (bt.type <> 'refund' OR bt.status = 'completed')
          ORDER BY bt.created_at DESC
          LIMIT 50`,
         [businessId],
@@ -71,10 +78,15 @@ export async function GET(request: NextRequest) {
              NULL::varchar AS module_key,
              bt.billing_cycle,
              sp.display_name AS plan_display_name,
-             sp.product_line
+             sp.product_line,
+             bt.type,
+             to_char(orig.created_at, 'DD Mon YYYY') AS refunded_payment_date
            FROM billing_transactions bt
            LEFT JOIN subscription_plans sp ON sp.id = bt.plan_id
+           LEFT JOIN billing_transactions orig
+             ON bt.type = 'refund' AND orig.id::text = bt.metadata->>'refund_of' AND orig.business_id = bt.business_id
            WHERE bt.business_id = $1
+             AND (bt.type <> 'refund' OR bt.status = 'completed')
            ORDER BY bt.created_at DESC
            LIMIT 50`,
           [businessId],
@@ -88,10 +100,12 @@ export async function GET(request: NextRequest) {
       const moduleKey =
         tx.module_key ?? productLineToModuleKey(tx.product_line ?? 'billing');
       const planName = tx.plan_display_name ?? tx.plan_id ?? 'Plan';
-      const amount = Number(tx.total_amount ?? tx.amount ?? 0);
-      const description =
-        tx.description ||
-        formatModulePlanReceiptLabel(moduleKey, planName, tx.billing_cycle);
+      const isRefund = tx.type === 'refund';
+      // A refund is shown as money going back: negative, with a plain label (never the internal row id).
+      const amount = (isRefund ? -1 : 1) * Number(tx.total_amount ?? tx.amount ?? 0);
+      const description = isRefund
+        ? `Refund for ${planName} payment${tx.refunded_payment_date ? ` of ${tx.refunded_payment_date}` : ''}`
+        : tx.description || formatModulePlanReceiptLabel(moduleKey, planName, tx.billing_cycle);
 
       return {
         id: tx.id,
@@ -100,7 +114,8 @@ export async function GET(request: NextRequest) {
         description,
         amount,
         total_amount: amount,
-        status: mapStatusForUi(tx.status),
+        type: isRefund ? 'refund' : 'payment',
+        status: isRefund ? 'refunded' : mapStatusForUi(tx.status),
         raw_status: tx.status,
         plan_id: tx.plan_id,
         plan_display_name: planName,

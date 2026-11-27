@@ -1,7 +1,10 @@
 /**
  * Strict billing_transactions status transitions.
- * Allowed: pending → completed | failed, and failed → completed (a retry on the same link can succeed)
- * Blocked: completed/refunded → any other state (including completed → completed)
+ * Allowed: pending → completed | failed, failed → completed (a retry on the same link can succeed),
+ * and completed → refunded (only lib/platform-refunds.ts writes it, once the refunds against a payment
+ * add up to everything that can be refunded; a partial refund leaves the payment `completed`).
+ * Blocked: refunded → any other state, completed → anything else (including completed → completed),
+ * and pending → refunded.
  */
 
 export type BillingTxStatus = 'pending' | 'completed' | 'failed' | 'refunded';
@@ -47,6 +50,10 @@ export function assertBillingTransactionTransition(
       fromStatus,
       toStatus,
     );
+  }
+
+  if (fromStatus === 'completed' && toStatus === 'refunded') {
+    return;
   }
 
   if (TERMINAL.has(fromStatus)) {

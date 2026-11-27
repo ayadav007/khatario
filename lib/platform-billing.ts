@@ -36,6 +36,8 @@ import {
   getPlatformEasebuzzProvider,
   getPlatformRazorpayProvider,
 } from '@/lib/platform-subscription-checkout';
+import { applyRazorpayRefundNotice, PlatformRefundError } from '@/lib/platform-refunds';
+import { readRazorpayRefundNotice } from '@/lib/payments/providers/razorpay-payment-provider';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { getPrimaryModuleSubscription } from '@/lib/subscription/module-subscriptions';
@@ -140,7 +142,7 @@ export async function recordBillingTransaction(
   if (input.paymentReference?.trim()) {
     const existing = await queryOne<{ id: string; status: string }>(
       `SELECT id, status FROM billing_transactions
-       WHERE business_id = $1 AND payment_reference = $2
+       WHERE business_id = $1 AND payment_reference = $2 AND type <> 'refund'
        LIMIT 1`,
       [input.businessId, input.paymentReference.trim()],
     );
@@ -215,6 +217,15 @@ export async function updateBillingTransactionStatus(
   status: BillingTxStatus,
   gatewayResponse?: unknown,
 ): Promise<void> {
+  // A payment becomes `refunded` only through lib/platform-refunds.ts, which returns the money at the gateway first.
+  if (status === 'refunded') {
+    throw new BillingTransactionStateError(
+      'REFUND_REQUIRES_REFUND_FLOW',
+      'A payment can only be marked refunded by refunding it (refundPlatformPayment), which returns the money through the payment gateway.',
+      'completed',
+      'refunded',
+    );
+  }
   const current = await queryOne<{ status: BillingTxStatus }>(
     `SELECT status FROM billing_transactions WHERE id = $1`,
     [transactionId],
@@ -251,18 +262,6 @@ export async function updateBillingTransactionStatus(
     );
   }
   await dispatchBillingEmails(transactionId, status);
-
-  if (status === 'refunded') {
-    try {
-      const { cancelPartnerCommissionForRefund } = await import('@/lib/partners/commission');
-      await cancelPartnerCommissionForRefund({
-        billingTransactionId: transactionId,
-        reason: 'billing_transaction_refunded',
-      });
-    } catch (partnerErr) {
-      console.error('Partner commission cancel on refund failed:', partnerErr);
-    }
-  }
 }
 
 /**
@@ -308,6 +307,7 @@ export async function expireStaleCheckouts(olderThanHours = 48): Promise<number>
          description = COALESCE(description, '') || ' (checkout expired)',
          updated_at = CURRENT_TIMESTAMP
      WHERE status = 'pending'
+       AND type = 'payment'
        AND payment_method IN ('razorpay', 'easebuzz')
        AND created_at < NOW() - make_interval(hours => $1)
      RETURNING id, business_id`,
@@ -627,7 +627,14 @@ export async function processPlatformRazorpayWebhook(
     return { ok: false, error: verified.reason || 'Verification failed' };
   }
 
-  const idemKey = verified.providerPaymentId
+  const refundNotice = readRazorpayRefundNotice((verified.rawPayload ?? {}) as Record<string, unknown>);
+  const isRefundEvent = (verified.eventType ?? '').startsWith('refund.');
+  const idemKey = isRefundEvent && refundNotice.providerRefundId
+    ? // One refund has several events (created, processed, failed) and one payment can have several refunds.
+      createHash('sha256')
+        .update(`platform|razorpay|refund|${verified.eventType}|${refundNotice.providerRefundId}`)
+        .digest('hex')
+    : verified.providerPaymentId
     ? createHash('sha256')
         .update(`platform|razorpay|${verified.eventType}|${verified.providerPaymentId}|${verified.status}`)
         .digest('hex')
@@ -655,7 +662,7 @@ export async function processPlatformRazorpayWebhook(
       [idemKey, errorMessage(err)],
     ).catch((markErr) => console.error('[platform-billing] could not mark webhook event error', markErr));
     // Link the event to its checkout row (business taken from that row, not from notes) for the admin log.
-    const txRef = extractCheckoutMetaFromWebhookNotes(verified).billingTransactionId;
+    const txRef = isRefundEvent ? null : extractCheckoutMetaFromWebhookNotes(verified).billingTransactionId;
     if (txRef) {
       await query(
         `UPDATE platform_billing_webhook_events e
@@ -687,6 +694,26 @@ async function handleVerifiedRazorpayEvent(
        WHERE provider = 'razorpay' AND idempotency_key = $1`,
       [idemKey, status, notes, businessId, billingTransactionId],
     );
+
+  // Refund events settle refund rows only; they never reach the payment or activation code below.
+  if ((verified.eventType ?? '').startsWith('refund.')) {
+    try {
+      const outcome = await applyRazorpayRefundNotice(
+        readRazorpayRefundNotice((verified.rawPayload ?? {}) as Record<string, unknown>),
+      );
+      const status: PlatformWebhookEventStatus =
+        outcome.outcome === 'ignored' ? 'ignored' : outcome.outcome === 'failed' ? 'failed' : outcome.outcome === 'pending' ? 'pending' : 'processed';
+      await markEvent(status, outcome.note, outcome.businessId, outcome.billingTransactionId);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof PlatformRefundError) {
+        // A definite answer about this event: redelivery will not change it.
+        await markEvent('ignored', err.message);
+        return { ok: true, error: err.message };
+      }
+      throw err;
+    }
+  }
 
   const businessId = extractBusinessIdFromWebhook(verified);
   if (!businessId) {

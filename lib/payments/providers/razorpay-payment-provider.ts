@@ -261,6 +261,25 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     return { providerRefundId, status };
   }
 
+  /** GET /v1/payments/{pid}/refunds: every refund Razorpay has for one payment (used to find a refund whose reply we lost). */
+  async fetchPaymentRefunds(providerPaymentId: string): Promise<{ id: string; amountPaise: number; status: 'processed' | 'pending' | 'failed' }[]> {
+    this.ensureCredentials();
+    const res = await fetch(`${this.baseUrl}/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds?count=100`, {
+      method: 'GET',
+      headers: { Authorization: this.authHeader() },
+    });
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) throw new Error(`Razorpay refund list failed: ${res.status}`);
+    const items = Array.isArray(json.items) ? (json.items as Record<string, unknown>[]) : [];
+    return items
+      .filter((r) => typeof r.id === 'string' && typeof r.amount === 'number')
+      .map((r) => ({
+        id: r.id as string,
+        amountPaise: r.amount as number,
+        status: r.status === 'processed' ? 'processed' : r.status === 'failed' ? 'failed' : 'pending',
+      }));
+  }
+
   /** GET /v1/payments/{pid}/refunds/{rid}: where a refund we asked for has got to. */
   async fetchRefund(params: {
     providerPaymentId: string;

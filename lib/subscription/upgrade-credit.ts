@@ -4,11 +4,14 @@ import type { PlatformModule } from '@/lib/platform-modules';
 import { comparePlanTier } from '@/lib/subscription/plan-tier';
 
 /**
- * The amount a payment actually paid for the subscription itself, excluding any tax. Today that is
- * `total_amount`. When a later task stores tax separately, change this one expression (for example
- * to `bt.total_amount - COALESCE(bt.tax_amount, 0)`); nothing else reads the column for credit.
+ * The amount a payment actually paid for the subscription itself, excluding any tax, minus what has
+ * been refunded or is being refunded (`metadata.refunded_paise`, kept by lib/platform-refunds.ts), so a
+ * partly refunded payment gives credit only on what remains. Today the paid amount is `total_amount`.
+ * When a later task stores tax separately, change the first term (for example to
+ * `bt.total_amount - COALESCE(bt.tax_amount, 0)`); nothing else reads the column for credit.
  */
-export const PAID_SUBSCRIPTION_AMOUNT_SQL = 'bt.total_amount';
+export const PAID_SUBSCRIPTION_AMOUNT_SQL =
+  `(bt.total_amount - COALESCE((bt.metadata->>'refunded_paise')::numeric, 0) / 100)`;
 
 export type CreditSource = {
   id: string;
@@ -16,6 +19,8 @@ export type CreditSource = {
   creditPaise: number;
   unusedDays: number;
   periodDays: number;
+  /** Paise already refunded (or being refunded) on this payment when the credit was computed. */
+  refundedPaise: number;
 };
 
 export type UpgradeCredit = {
@@ -44,7 +49,8 @@ export const NO_UPGRADE_CREDIT: UpgradeCredit = {
   sources: [],
 };
 
-export type CreditAllocation = { id: string; paise: number };
+/** `refundedPaise` is stored only when above 0: what the source had already refunded when the credit was granted. */
+export type CreditAllocation = { id: string; paise: number; refundedPaise?: number };
 
 /** Takes `appliedPaise` of credit from the sources oldest first; sources that are not needed get nothing. */
 export function allocateCredit(sources: CreditSource[], appliedPaise: number): CreditAllocation[] {
@@ -54,7 +60,7 @@ export function allocateCredit(sources: CreditSource[], appliedPaise: number): C
     if (left <= 0) break;
     const take = Math.min(left, s.creditPaise);
     if (take > 0) {
-      out.push({ id: s.id, paise: take });
+      out.push(s.refundedPaise > 0 ? { id: s.id, paise: take, refundedPaise: s.refundedPaise } : { id: s.id, paise: take });
       left -= take;
     }
   }
@@ -130,7 +136,8 @@ export async function computeUpgradeCredit(
               (bt.period_end - GREATEST(bt.period_start, CURRENT_DATE))::int AS unused_days,
               (bt.period_end - bt.period_start)::int AS period_days,
               floor(${PAID_SUBSCRIPTION_AMOUNT_SQL} * (bt.period_end - GREATEST(bt.period_start, CURRENT_DATE))
-                    / (bt.period_end - bt.period_start) * 100)::bigint AS credit_paise
+                    / (bt.period_end - bt.period_start) * 100)::bigint AS credit_paise,
+              COALESCE((bt.metadata->>'refunded_paise')::numeric, 0)::bigint AS refunded_paise
        FROM billing_transactions bt
        WHERE bt.business_id = $1 AND bt.module_key = $2 AND bt.plan_id = $3
          AND bt.type = 'payment' AND bt.status = 'completed'
@@ -142,7 +149,7 @@ export async function computeUpgradeCredit(
        ORDER BY bt.period_start, bt.created_at, bt.id`,
       [businessId, moduleKey, cur.plan_id],
     )
-  ).rows as { id: string; unused_days: number; period_days: number; credit_paise: string | number }[];
+  ).rows as { id: string; unused_days: number; period_days: number; credit_paise: string | number; refunded_paise: string | number }[];
 
   const sources: CreditSource[] = rows
     .map((r) => ({
@@ -150,6 +157,7 @@ export async function computeUpgradeCredit(
       creditPaise: Number(r.credit_paise),
       unusedDays: r.unused_days,
       periodDays: r.period_days,
+      refundedPaise: Number(r.refunded_paise),
     }))
     .filter((r) => r.creditPaise > 0);
   if (!sources.length) return NO_UPGRADE_CREDIT;
@@ -182,6 +190,8 @@ export type StoredUpgradeCredit = {
  *  - plan_changed: the module row is no longer on the plan the credit was computed from
  *  - not_higher_tier: the target is no longer a higher tier than the current plan
  *  - source_unavailable: a source is missing, no longer completed, or refunded
+ *  - source_refunded: a source was refunded further after the credit was granted (a refund that was
+ *    already there at grant time is recorded in the allocation and is fine: the credit was computed on what remained)
  *  - source_consumed: a source was already used as credit by another checkout
  */
 export async function recheckUpgradeCredit(
@@ -217,15 +227,18 @@ export async function recheckUpgradeCredit(
 
   const src = (
     await client.query(
-      `SELECT id::text AS id, status, metadata->>'credit_consumed_by' AS consumed_by
+      `SELECT id::text AS id, status, metadata->>'credit_consumed_by' AS consumed_by,
+              COALESCE((metadata->>'refunded_paise')::numeric, 0) AS refunded_paise
        FROM billing_transactions
        WHERE id = ANY($1::uuid[]) AND business_id = $2 AND module_key = $3
        ORDER BY id
        FOR UPDATE`,
       [ids, params.businessId, params.moduleKey],
     )
-  ).rows as { id: string; status: string; consumed_by: string | null }[];
+  ).rows as { id: string; status: string; consumed_by: string | null; refunded_paise: string | number }[];
   if (src.length !== new Set(ids).size || src.some((r) => r.status !== 'completed')) return 'source_unavailable';
+  const grantedAt = new Map((params.stored.allocation ?? []).map((a) => [a.id, Number(a.refundedPaise ?? 0)]));
+  if (src.some((r) => Number(r.refunded_paise) > (grantedAt.get(r.id) ?? 0))) return 'source_refunded';
   if (src.some((r) => r.consumed_by && r.consumed_by !== params.checkoutId)) return 'source_consumed';
   return null;
 }
