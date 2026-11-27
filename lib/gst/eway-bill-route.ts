@@ -27,7 +27,7 @@ export async function authorizeEwayBill(
 
 export function ewayBillErrorResponse(error: any, fallback: string): NextResponse {
   if (error instanceof EwayBillInputError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json(error.code ? { error: error.message, code: error.code } : { error: error.message }, { status: error.status });
   }
   if (error?.code === '22P02') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (error?.code === '23505') {

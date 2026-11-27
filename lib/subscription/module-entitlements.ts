@@ -32,6 +32,7 @@ export const LIMIT_OWNER_MODULE: Partial<Record<LimitCheckType, PlatformModule>>
   credit_notes: 'billing',
   sales_orders: 'billing',
   purchase_orders: 'billing',
+  eway_bills: 'billing',
   employees: 'hr',
   attendance: 'hr',
   leave_requests: 'hr',

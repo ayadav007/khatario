@@ -84,7 +84,7 @@ export function hoursToExpiry(validUntil: Date | string | null, now = new Date()
 }
 
 export class EwayBillInputError extends Error {
-  constructor(message: string, readonly status = 400) {
+  constructor(message: string, readonly status = 400, readonly code?: string) {
     super(message);
   }
 }
@@ -117,7 +117,8 @@ export interface EwayBillInput {
 export interface ParsedEwayBill extends Required<Omit<EwayBillInput, 'vehicle_number' | 'transporter_name' | 'transporter_gstin' | 'transport_mode' | 'notes' | 'source_id'>> {
   source_id: string | null;
   generated: Date;
-  valid_until: Date;
+  /** Null only for a Part A bill the portal gave no validity. */
+  valid_until: Date | null;
   vehicle_number: string | null;
   transporter_name: string | null;
   transporter_gstin: string | null;

@@ -58,6 +58,16 @@ export interface EwayBillView {
   vehicle_number: string | null;
   transporter_name: string | null;
   notes: string | null;
+  generated_via: 'manual' | 'api' | 'irn';
+  print_url: string | null;
+}
+
+/** How a bill generated through the GSP was made, for the register. */
+export interface EwayGspRecord {
+  generatedVia: 'api' | 'irn';
+  requestId: string | null;
+  printUrl: string | null;
+  transactionType: number | null;
 }
 
 const SELECT_VIEW = `
@@ -103,6 +113,8 @@ function toView(r: any, now = new Date()): EwayBillView {
     vehicle_number: r.vehicle_number ?? null,
     transporter_name: r.transporter_name ?? null,
     notes: r.notes ?? null,
+    generated_via: r.generated_via ?? 'manual',
+    print_url: r.print_url ?? null,
   };
 }
 
@@ -135,20 +147,23 @@ export async function createEwayBill(
   client: PoolClient,
   businessId: string,
   p: ParsedEwayBill,
-  userId: string | null
+  userId: string | null,
+  gsp?: EwayGspRecord
 ): Promise<EwayBillView> {
   await assertSource(client, businessId, p.source_type, p.source_id);
   const ins = await client.query(
     `INSERT INTO eway_bills (
        business_id, source_type, source_id, direction, ewb_number, doc_type, sub_supply_type,
        from_gstin, to_gstin, from_pincode, to_pincode, distance_km, is_odc, goods_value,
-       generated_at, valid_until, notes, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       generated_at, valid_until, notes, created_by,
+       generated_via, gsp_request_id, print_url, transaction_type
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       businessId, p.source_type, p.source_id, p.direction, p.ewb_number, p.doc_type, p.sub_supply_type,
       p.from_gstin, p.to_gstin, p.from_pincode, p.to_pincode, p.distance_km, p.is_odc, p.goods_value,
       p.generated, p.valid_until, p.notes, userId,
+      gsp?.generatedVia ?? 'manual', gsp?.requestId ?? null, gsp?.printUrl ?? null, gsp?.transactionType ?? null,
     ]
   );
   const id = ins.rows[0].id as string;

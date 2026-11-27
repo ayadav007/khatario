@@ -37,7 +37,8 @@ export type LimitCheckType =
   | 'holidays'
   | 'shifts'
   | 'designations'
-  | 'performance_reviews';
+  | 'performance_reviews'
+  | 'eway_bills';
 
 export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   invoices: 'max_invoices_per_month',
@@ -68,6 +69,7 @@ export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   shifts: 'max_shifts',
   designations: 'max_designations',
   performance_reviews: 'max_performance_reviews_per_month',
+  eway_bills: 'max_eway_bills_per_month',
 };
 
 /** JSONB fallback: registry limit_key → same key in features.limits. */
@@ -217,6 +219,13 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
         sql: `SELECT COUNT(*)::int AS count FROM employee_performance ep
               INNER JOIN employees e ON e.id = ep.employee_id
               WHERE e.business_id = $1 AND ep.created_at >= ${monthStart}`,
+        params: p,
+      };
+    case 'eway_bills':
+      // Only bills generated through the GSP count; ones recorded by hand from the portal do not.
+      return {
+        sql: `SELECT COUNT(*)::int AS count FROM eway_bills
+              WHERE business_id = $1 AND generated_via <> 'manual' AND generated_at >= ${monthStart}`,
         params: p,
       };
     default: {
