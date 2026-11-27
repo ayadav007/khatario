@@ -6,6 +6,7 @@ import type { PlatformModule } from '@/lib/platform-modules';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import {
   getEntitlementPlanIdForModuleSub,
+  getEntitlementTermsIdForModuleSub,
   getOperationalModuleSubscriptions,
   type ModuleSubscriptionRow,
 } from '@/lib/subscription/module-subscriptions';
@@ -14,6 +15,7 @@ import {
   isAccountWideLimit,
 } from '@/lib/subscription/module-entitlements';
 import type { LimitCheckType } from '@/lib/subscription/limit-registry';
+import { planLimitValueQuery } from '@/lib/subscription/plan-terms';
 import * as db from '@/lib/db';
 
 export type ResolvedLimit = {
@@ -32,17 +34,13 @@ async function resolvePlanLimitValueLocal(
   planId: string,
   limitKey: string,
   queryFn: typeof db.queryOne = db.queryOne,
+  termsId?: string | null,
 ): Promise<number | null> {
   // A failing lookup throws: the caller refuses the request (fails closed) instead of reading the
   // missing value as "no registry entry" and falling back to the legacy JSON.
-  const result = await queryFn<{ limit_value: number | string | null }>(
-    `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
-     FROM platform_limits pl
-     LEFT JOIN subscription_plan_limits spl
-       ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
-     WHERE pl.limit_key = $2 AND pl.is_active = true`,
-    [planId, limitKey],
-  );
+  // A business pinned to older plan terms reads its snapshot's value (see plan-terms.ts).
+  const q = planLimitValueQuery(planId, limitKey, termsId);
+  const result = await queryFn<{ limit_value: number | string | null }>(q.sql, q.params);
   if (!result || result.limit_value === null || result.limit_value === undefined) {
     return null;
   }
@@ -59,7 +57,7 @@ async function planLimitForSub(
   queryFn?: typeof db.queryOne,
 ): Promise<number | null> {
   const planId = getEntitlementPlanIdForModuleSub(sub);
-  return resolvePlanLimitValueLocal(planId, limitKey, queryFn);
+  return resolvePlanLimitValueLocal(planId, limitKey, queryFn, getEntitlementTermsIdForModuleSub(sub));
 }
 
 /** MAX across module plans (industry standard for shared console seats). */
@@ -153,7 +151,12 @@ export async function resolveBusinessLimit(
   }
 
   const planId = getEntitlementPlanIdForModuleSub(moduleSub);
-  const maxLimit = await resolvePlanLimitValueLocal(planId, limitKey, queryFn);
+  const maxLimit = await resolvePlanLimitValueLocal(
+    planId,
+    limitKey,
+    queryFn,
+    getEntitlementTermsIdForModuleSub(moduleSub),
+  );
 
   if (maxLimit === null) {
     return { maxLimit: 0, moduleKey: owner, fromRegistry: false };

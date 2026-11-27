@@ -3,7 +3,8 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { scheduleKbReindex } from '@/lib/rag/queue';
-import { applyPlanFeatureEdit, confirmationRequired, countBusinessesOnPlan } from '@/lib/admin-plan-edit';
+import { applyPlanFeatureEdit, countBusinessesOnPlan, planEditFailureResponse } from '@/lib/admin-plan-edit';
+import { countBusinessesOnOlderTerms } from '@/lib/subscription/plan-terms';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,6 +78,7 @@ export async function GET(
     return NextResponse.json({
       planId,
       affected_businesses: await countBusinessesOnPlan(planId),
+      on_older_terms: await countBusinessesOnOlderTerms(planId),
       features: grouped,
       categories: Object.keys(grouped)
     });
@@ -106,7 +108,7 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const { planId } = params;
-    const { features, confirm_affected_count } = await request.json(); // { feature_id: enabled }
+    const { features, confirm_affected_count, scope } = await request.json(); // { feature_id: enabled }
 
     if (!features || typeof features !== 'object') {
       return NextResponse.json(
@@ -133,8 +135,9 @@ export async function POST(
       adminId: auth.admin.id,
       features,
       confirmAffectedCount: confirm_affected_count,
+      scope,
     });
-    if (!result.ok) return confirmationRequired(result.affected);
+    if (!result.ok) return planEditFailureResponse(result);
 
     // Clear subscription cache so changes take effect immediately
     clearAllSubscriptionCaches();

@@ -17,9 +17,11 @@ import {
   buildLimitCountQuery,
 } from './subscription/limit-registry';
 import { resolveBusinessLimit, type ResolvedLimit } from './subscription/resolve-limit';
+import { planEnabledFeaturesQuery, planLimitRowsQuery, planLimitValueQuery } from './subscription/plan-terms';
 import {
   clearModuleSubscriptionCache,
   getEntitlementPlanIdForModuleSub,
+  getEntitlementTermsIdForModuleSub,
   getModuleSubscription,
   getModuleSubscriptions,
   upsertModuleSubscription,
@@ -132,12 +134,9 @@ export async function getBusinessSubscription(
 
       // MERGE LIMITS FROM REGISTRY (same logic as admin plans API)
       try {
-        const planLimits = await db.query(
-          `SELECT limit_key, limit_value 
-           FROM subscription_plan_limits 
-           WHERE plan_id = $1`,
-          [row.plan_id]
-        );
+        // A business pinned to older plan terms shows (and is limited by) its snapshot's values.
+        const limitsQ = planLimitRowsQuery(row.plan_id, row.plan_terms_id ?? null);
+        const planLimits = await db.query(limitsQ.sql, limitsQ.params);
 
         if (planLimits.rows.length > 0) {
           if (!features.limits) features.limits = {};
@@ -258,17 +257,13 @@ export async function hasFeature(businessId: string, featureKey: string): Promis
 export async function resolvePlanLimitValue(
   planId: string,
   limitKey: string,
-  queryFn: typeof db.queryOne = db.queryOne
+  queryFn: typeof db.queryOne = db.queryOne,
+  /** The plan-terms snapshot a pinned business reads (see lib/subscription/plan-terms.ts); null = live plan. */
+  termsId?: string | null
 ): Promise<number | null> {
   try {
-    const result = await queryFn<{ limit_value: number | string | null }>(
-      `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
-       FROM platform_limits pl
-       LEFT JOIN subscription_plan_limits spl
-         ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
-       WHERE pl.limit_key = $2 AND pl.is_active = true`,
-      [planId, limitKey]
-    );
+    const q = planLimitValueQuery(planId, limitKey, termsId);
+    const result = await queryFn<{ limit_value: number | string | null }>(q.sql, q.params);
     if (!result || result.limit_value === null || result.limit_value === undefined) {
       return null;
     }
@@ -645,14 +640,10 @@ async function connectPlanGrants(
       // would stretch the staleness past 30 seconds.
       const sub = await getModuleSubscription(businessId, 'connect', true);
       if (sub && isModuleSubscriptionOperational(sub)) {
-        const row = await db.queryOne<{ ok: boolean }>(
-          `SELECT true AS ok
-           FROM subscription_plan_features spf
-           JOIN platform_features pf ON pf.id = spf.feature_id AND pf.is_active = true
-           WHERE spf.plan_id = $1 AND spf.feature_id = $2 AND spf.enabled = true`,
-          [getEntitlementPlanIdForModuleSub(sub), featureId],
-        );
-        granted = !!row?.ok;
+        const planId = getEntitlementPlanIdForModuleSub(sub);
+        const q = planEnabledFeaturesQuery(planId, getEntitlementTermsIdForModuleSub(sub));
+        const ids = await db.query<{ id: string }>(q.sql, q.params);
+        granted = ids.rows.some((r) => r.id === featureId);
       }
     }
     addonCache.set(cacheKey, { hasAddon: granted, timestamp: Date.now() });

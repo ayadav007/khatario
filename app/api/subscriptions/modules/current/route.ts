@@ -5,7 +5,8 @@ import { userCanMutateSubscription } from '@/lib/security/require-subscription-m
 import { computePlanAmount, normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { PLATFORM_MODULE_LABELS, type PlatformModule } from '@/lib/platform-modules';
-import { getModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
+import { getEntitlementTermsIdForModuleSub, getModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
+import { planLimitRowsQuery } from '@/lib/subscription/plan-terms';
 import {
   getDisplayPlanId,
   getEntitlementPlanId,
@@ -27,17 +28,15 @@ const USAGE_TYPES_BY_MODULE: Record<string, string[]> = {
   connect: ['whatsapp', 'connect_agents'],
 };
 
-async function mergePlanFeatures(planId: string, features: Record<string, unknown>) {
+async function mergePlanFeatures(planId: string, features: Record<string, unknown>, termsId: string | null = null) {
   const merged = { ...features, limits: { ...(features.limits as object) } } as {
     limits: Record<string, number>;
     features: Record<string, boolean>;
   };
 
   try {
-    const planLimits = await db.query(
-      `SELECT limit_key, limit_value FROM subscription_plan_limits WHERE plan_id = $1`,
-      [planId],
-    );
+    const limitsQ = planLimitRowsQuery(planId, termsId);
+    const planLimits = await db.query(limitsQ.sql, limitsQ.params);
     for (const row of planLimits.rows as { limit_key: string; limit_value: number }[]) {
       merged.limits[row.limit_key] = row.limit_value;
     }
@@ -120,11 +119,21 @@ export async function GET(request: NextRequest) {
           [limitsPlanId, sub.scheduled_plan_id ?? null],
         );
 
+        // A pinned business shows (and is judged paid by) the prices it pays, not the plan's current ones.
+        const pinnedTermsId = getEntitlementTermsIdForModuleSub(sub);
+        const pinnedPrices = pinnedTermsId
+          ? await db.queryOne<{ price_monthly: number; price_yearly: number; price_3year: number | null }>(
+              `SELECT price_monthly, price_yearly, price_3year FROM subscription_plan_terms WHERE id = $1 AND plan_id = $2`,
+              [pinnedTermsId, limitsPlanId],
+            )
+          : null;
+        if (planRow && pinnedPrices) Object.assign(planRow, pinnedPrices);
+
         let features =
           typeof planRow?.features === 'string'
             ? JSON.parse(planRow.features)
             : planRow?.features ?? {};
-        features = await mergePlanFeatures(limitsPlanId, features as Record<string, unknown>);
+        features = await mergePlanFeatures(limitsPlanId, features as Record<string, unknown>, getEntitlementTermsIdForModuleSub(sub));
 
         let trialDaysRemaining: number | null = null;
         if (sub.trial_end_date) {

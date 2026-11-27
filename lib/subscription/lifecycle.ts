@@ -422,7 +422,8 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
       // needed either, so no end date and no grace.
       const updatedFree = await query(
         `UPDATE business_module_subscriptions
-         SET plan_id = $3,
+         SET plan_terms_id = CASE WHEN plan_id IS DISTINCT FROM $3 THEN NULL ELSE plan_terms_id END,
+             plan_id = $3,
              status = 'active',
              scheduled_plan_id = NULL,
              end_date = NULL,
@@ -453,7 +454,8 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     // lapsed end_date and give the usual 7-day grace so the customer can pay for the new plan.
     const updated = await query(
       `UPDATE business_module_subscriptions
-       SET plan_id = $3,
+       SET plan_terms_id = CASE WHEN plan_id IS DISTINCT FROM $3 THEN NULL ELSE plan_terms_id END,
+           plan_id = $3,
            scheduled_plan_id = NULL,
            downgraded_from = $4,
            grace_period_end = (end_date + ${GRACE_DAYS})::date,

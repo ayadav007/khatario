@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3, Tags } from 'lucide-react';
 import { PlanFeatureMatrix } from '@/components/admin/PlanFeatureMatrix';
 import { PlanLimitsMatrix } from '@/components/admin/PlanLimitsMatrix';
+import { PlanPriceEditor } from '@/components/admin/PlanPriceEditor';
+import { PlanOlderTermsNotice } from '@/components/admin/PlanOlderTermsNotice';
 import { PricingDisplaySettings } from '@/components/admin/PricingDisplaySettings';
 import { SupplierHubVisibilitySwitch } from '@/components/admin/SupplierHubVisibilitySwitch';
 import { SupplierHubListingsReview } from '@/components/admin/SupplierHubListingsReview';
@@ -49,6 +51,9 @@ export default function PlansManagement() {
   const [showLimitsMatrix, setShowLimitsMatrix] = useState(false);
   const [limitsMatrixPlan, setLimitsMatrixPlan] = useState<{ id: string; name: string } | null>(null);
   const [showPricingDisplay, setShowPricingDisplay] = useState(false);
+  const [priceEditorPlan, setPriceEditorPlan] = useState<{ id: string; name: string } | null>(null);
+  /** Bumped after a plan change so every card re-reads how many businesses are on older terms. */
+  const [termsRefresh, setTermsRefresh] = useState(0);
 
   useEffect(() => {
     fetchPlans();
@@ -138,12 +143,20 @@ export default function PlansManagement() {
     setShowFeatureMatrix(false);
     setFeatureMatrixPlan(null);
     fetchPlans(); // Refresh to show updated features
+    setTermsRefresh((n) => n + 1);
   }
 
   function handleLimitsMatrixClose() {
     setShowLimitsMatrix(false);
     setLimitsMatrixPlan(null);
     fetchPlans(); // Refresh to show updated limits
+    setTermsRefresh((n) => n + 1);
+  }
+
+  function handlePriceEditorClose() {
+    setPriceEditorPlan(null);
+    fetchPlans(); // Refresh to show updated prices
+    setTermsRefresh((n) => n + 1);
   }
 
   const getPlanColor = (planId: string) => {
@@ -258,6 +271,8 @@ export default function PlansManagement() {
               )}
             </div>
 
+            <PlanOlderTermsNotice planId={plan.id} refreshKey={termsRefresh} />
+
             {/* Limits */}
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-700 mb-2">Usage Limits</h4>
@@ -330,6 +345,12 @@ export default function PlansManagement() {
                 >
                   <Edit2 className="w-4 h-4" />
                   <span className="text-sm font-medium">Edit Plan</span>
+                </button>
+                <button
+                  onClick={() => setPriceEditorPlan({ id: plan.id, name: plan.display_name })}
+                  className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition"
+                >
+                  <span className="text-sm font-medium">Prices</span>
                 </button>
               </div>
               <div className="flex space-x-2">
@@ -450,6 +471,10 @@ export default function PlansManagement() {
 
       {showPricingDisplay && <PricingDisplaySettings onClose={() => setShowPricingDisplay(false)} />}
 
+      {priceEditorPlan && (
+        <PlanPriceEditor planId={priceEditorPlan.id} planName={priceEditorPlan.name} onClose={handlePriceEditorClose} />
+      )}
+
       {/* Limits Matrix Modal */}
       {showLimitsMatrix && limitsMatrixPlan && (
         <PlanLimitsMatrix
@@ -474,6 +499,8 @@ function EditPlanModal({
 }) {
   const [formData, setFormData] = useState<SubscriptionPlan>(plan);
   const [saving, setSaving] = useState(false);
+  /** An existing plan's prices change from the Prices screen, where the admin chooses who gets the new price. */
+  const isExisting = !!plan.id;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -613,6 +640,11 @@ function EditPlanModal({
           </div>
 
           {/* Pricing */}
+          {isExisting && (
+            <p className="text-xs text-gray-600">
+              Prices are changed with the Prices button on the plan card, where you choose whether current customers get the new price.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -623,6 +655,7 @@ function EditPlanModal({
                 step="0.01"
                 value={formData.price_monthly}
                 onChange={(e) => updateField('price_monthly', parseFloat(e.target.value) || 0)}
+                readOnly={isExisting}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 required
               />
@@ -636,6 +669,7 @@ function EditPlanModal({
                 step="0.01"
                 value={formData.price_yearly}
                 onChange={(e) => updateField('price_yearly', parseFloat(e.target.value) || 0)}
+                readOnly={isExisting}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
@@ -648,6 +682,7 @@ function EditPlanModal({
                 step="0.01"
                 value={formData.price_3year ?? 0}
                 onChange={(e) => updateField('price_3year', parseFloat(e.target.value) || 0)}
+                readOnly={isExisting}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>

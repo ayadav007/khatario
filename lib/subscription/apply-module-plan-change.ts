@@ -180,6 +180,7 @@ async function applyOnClient(
      ) VALUES ($1, $2, $3, 'active', $4, $5, $6, NULL, NULL)
      ON CONFLICT (business_id, module_key) DO UPDATE SET
        plan_id = EXCLUDED.plan_id,
+       plan_terms_id = CASE WHEN business_module_subscriptions.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE business_module_subscriptions.plan_terms_id END,
        status = 'active',
        start_date = EXCLUDED.start_date,
        end_date = EXCLUDED.end_date,

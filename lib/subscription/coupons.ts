@@ -1,6 +1,7 @@
 import { getPool, queryOne, queryRows } from '@/lib/db';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
+import { loadEffectivePlanPrices } from '@/lib/subscription/plan-terms';
 import { planTierRank } from '@/lib/subscription/plan-tier';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 
@@ -189,10 +190,8 @@ export async function validateCoupon(
   const problem = await couponProblem(runnerFor(), coupon, businessId, planId);
   if (problem) return { valid: false, error: problem };
 
-  const plan = await queryOne<PlanPriceRow>(
-    `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
-    [planId],
-  );
+  // The discount is worked out on the price this business pays (its own terms when pinned on the plan).
+  const plan = await loadEffectivePlanPrices(businessId, planId);
 
   const discount = calculateCycleDiscount(coupon, plan, billingCycle);
 
@@ -300,10 +299,7 @@ export async function redeemCoupon(
   if (tx) {
     discountAmount = Number(tx.discount_amount) || 0;
   } else {
-    const plan = await run<PlanPriceRow>(
-      `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
-      [planId],
-    );
+    const plan = await loadEffectivePlanPrices(businessId, planId, run);
     discountAmount = calculateCycleDiscount({ type: coupon.type, value }, plan, billingCycle).amount;
   }
 

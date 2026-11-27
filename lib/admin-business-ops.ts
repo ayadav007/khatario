@@ -16,6 +16,7 @@ import {
   isAllowedAdminStatus,
 } from '@/lib/subscription/admin-plan-status';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
+import { loadEffectivePlanPrices } from '@/lib/subscription/plan-terms';
 import { normalizeProductLine, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { productLineToModule, type PlatformModule } from '@/lib/platform-modules';
 import { getBusinessPlatformRecipient, notifyAdminsSubscriptionChange } from '@/lib/platform-email';
@@ -401,6 +402,7 @@ export async function adminUpdateSubscription(params: {
      )
      ON CONFLICT (business_id, module_key) DO UPDATE SET
        plan_id = EXCLUDED.plan_id,
+       plan_terms_id = CASE WHEN bms.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE bms.plan_terms_id END,
        status = EXCLUDED.status,
        end_date = EXCLUDED.end_date,
        trial_end_date = EXCLUDED.trial_end_date,
@@ -479,7 +481,9 @@ export async function adminUpdateSubscription(params: {
     try {
       const recipient = await getBusinessPlatformRecipient(params.businessId);
       if (!onlyTrialExtension && status !== 'cancelled') {
-        const amount = planMeta ? computePlanAmount(planMeta, billingCycle) : 0;
+        // The amount a business pinned to older plan terms pays for this same plan is its own price.
+        const effectivePrices = await loadEffectivePlanPrices(params.businessId, planId);
+        const amount = planMeta ? computePlanAmount(effectivePrices ?? planMeta, billingCycle) : 0;
         await recordUpgradeBilling({
           businessId: params.businessId,
           moduleKey,

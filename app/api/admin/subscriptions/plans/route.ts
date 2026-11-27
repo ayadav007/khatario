@@ -4,6 +4,7 @@ import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
 import { scheduleKbReindex } from '@/lib/rag/queue';
+import { PRICE_KEYS, loadPlanPricesPaise, parsePriceEdit } from '@/lib/admin-plan-edit';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Prices are the owner's "everyone now / only new customers" decision: an existing plan's prices change only
+    // through POST /api/admin/plans/[planId]/prices (choice, confirmation and log). This route refuses a price that
+    // differs from the stored one and never writes prices on an existing plan. A new plan takes the same price rules.
+    const sentPaise = {
+      price_monthly: Math.round((Number(price_monthly) || 0) * 100),
+      price_yearly: Math.round((Number(price_yearly) || 0) * 100),
+      price_3year: Math.round((Math.max(0, Number(price_3year) || 0)) * 100),
+    };
+    const existingPrices = await loadPlanPricesPaise(String(id));
+    if (existingPrices) {
+      const differs = PRICE_KEYS.some((k) => existingPrices[k] !== sentPaise[k]);
+      if (differs) {
+        return NextResponse.json(
+          {
+            error:
+              'Prices of an existing plan are changed from the plan\'s price screen, where you choose whether current customers get the new price. Nothing was saved.',
+            code: 'USE_PRICE_ROUTE',
+          },
+          { status: 409 },
+        );
+      }
+    } else {
+      const parsed = parsePriceEdit(sentPaise);
+      if (!parsed.ok) return NextResponse.json({ error: parsed.message, code: 'INVALID_PRICE' }, { status: 400 });
+      if (sentPaise.price_monthly === 0 && (sentPaise.price_yearly > 0 || sentPaise.price_3year > 0)) {
+        return NextResponse.json(
+          { error: 'The monthly price cannot be 0 while the yearly or three-year price is set.', code: 'INVALID_PRICE' },
+          { status: 400 },
+        );
+      }
+    }
+
     // Upsert plan
     const plan = await db.queryOne(`
       INSERT INTO subscription_plans (
@@ -75,9 +108,6 @@ export async function POST(request: NextRequest) {
         name = EXCLUDED.name,
         display_name = EXCLUDED.display_name,
         description = EXCLUDED.description,
-        price_monthly = EXCLUDED.price_monthly,
-        price_yearly = EXCLUDED.price_yearly,
-        price_3year = EXCLUDED.price_3year,
         currency = EXCLUDED.currency,
         features = EXCLUDED.features,
         is_active = EXCLUDED.is_active,

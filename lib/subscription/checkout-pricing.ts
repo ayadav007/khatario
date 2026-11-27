@@ -5,7 +5,7 @@ import {
   validateCoupon,
   type Coupon,
 } from '@/lib/subscription/coupons';
-import { queryOne } from '@/lib/db';
+import { loadEffectivePlanPrices } from '@/lib/subscription/plan-terms';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { resolveCheckoutTax, type CheckoutTax } from '@/lib/platform-tax';
 import { allocateCredit, computeUpgradeCredit, type CreditAllocation } from '@/lib/subscription/upgrade-credit';
@@ -49,15 +49,10 @@ export async function resolveCheckoutPricing(params: {
   billingCycle: BillingCycle;
   couponCode?: string | null;
 }): Promise<CheckoutPricingResult> {
-  const plan = await queryOne<{
-    price_monthly: string | number;
-    price_yearly: string | number;
-    price_3year: string | number | null;
-    is_active: boolean;
-  }>(
-    `SELECT price_monthly, price_yearly, price_3year, is_active FROM subscription_plans WHERE id = $1`,
-    [params.planId],
-  );
+  // The price this business pays: its own terms when it is pinned on this very plan (a renewal after an
+  // "only new customers" price change), otherwise the plan's current price. Decided here, at checkout
+  // creation, and stored on the pending row, so the paid-amount check at completion stays consistent.
+  const plan = await loadEffectivePlanPrices(params.businessId, params.planId);
 
   if (!plan?.is_active) {
     throw new Error('Invalid or inactive plan');

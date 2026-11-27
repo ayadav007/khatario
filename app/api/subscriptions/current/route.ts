@@ -11,6 +11,7 @@ import {
   shouldShowTrialBadge,
 } from '@/lib/subscription/effective-plan';
 import { moveSubscriptionToFree } from '@/lib/subscription/lifecycle';
+import { planEnabledFeatureDetailQuery, planLimitRowsQuery } from '@/lib/subscription/plan-terms';
 import {
   shouldDowngradeStaleTrial,
   shouldOfferTrialExtension,
@@ -32,14 +33,17 @@ async function loadPrimarySubscriptionRow(businessId: string) {
       bs.end_date,
       bs.trial_end_date,
       bs.end_date::text AS ends_on,
-      (COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0
-        OR COALESCE(sp.price_3year, 0) > 0) AS is_paid_plan,
+      (CASE WHEN t.id IS NULL THEN COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0
+                                        OR COALESCE(sp.price_3year, 0) > 0
+            ELSE COALESCE(t.price_monthly, 0) > 0 OR COALESCE(t.price_yearly, 0) > 0
+                 OR COALESCE(t.price_3year, 0) > 0 END) AS is_paid_plan,
       bs.cancel_at_period_end,
       bs.cancelled_at,
       bs.grace_period_end,
       CURRENT_DATE::text AS db_today,
       bs.downgraded_from,
       bs.scheduled_plan_id,
+      bs.plan_terms_id::text AS plan_terms_id,
       (SELECT display_name FROM subscription_plans WHERE id = bs.scheduled_plan_id) AS scheduled_plan_display_name,
       bs.billing_cycle,
       COALESCE(bs.trial_extension_granted, false) AS trial_extension_granted,
@@ -48,12 +52,14 @@ async function loadPrimarySubscriptionRow(businessId: string) {
       sp.name as plan_name,
       sp.display_name as plan_display_name,
       sp.description as plan_description,
-      sp.price_monthly,
-      sp.price_yearly,
+      -- A business pinned to older plan terms (an "only new customers" plan change) shows the price it pays.
+      CASE WHEN t.id IS NULL THEN sp.price_monthly ELSE COALESCE(t.price_monthly, 0) END AS price_monthly,
+      CASE WHEN t.id IS NULL THEN sp.price_yearly ELSE COALESCE(t.price_yearly, 0) END AS price_yearly,
       sp.currency,
       sp.features
     FROM business_module_subscriptions bs
     JOIN subscription_plans sp ON bs.plan_id = sp.id
+    LEFT JOIN subscription_plan_terms t ON t.id = bs.plan_terms_id AND t.plan_id = bs.plan_id
     JOIN businesses b ON b.id = bs.business_id
     WHERE bs.business_id = $1
     ORDER BY
@@ -161,6 +167,10 @@ export async function GET(request: NextRequest) {
       !!subscription.ends_on &&
       isOperational;
 
+    // The pin applies only while the plan shown is the stored plan (an expired trial shows Free's live terms).
+    const termsId: string | null =
+      subscription.plan_terms_id && limitsPlanId === subscription.plan_id ? subscription.plan_terms_id : null;
+
     let planRow = subscription;
     if (limitsPlanId !== subscription.plan_id) {
       const displayPlan = await db.queryOne(`
@@ -187,12 +197,8 @@ export async function GET(request: NextRequest) {
         : planRow.features || {};
 
     try {
-      const planLimits = await db.query(
-        `SELECT limit_key, limit_value 
-         FROM subscription_plan_limits 
-         WHERE plan_id = $1`,
-        [limitsPlanId],
-      );
+      const limitsQ = planLimitRowsQuery(limitsPlanId, termsId);
+      const planLimits = await db.query(limitsQ.sql, limitsQ.params);
 
       if (planLimits.rows.length > 0) {
         if (!features.limits) features.limits = {};
@@ -230,14 +236,8 @@ export async function GET(request: NextRequest) {
       description: string | null;
     }[] = [];
     try {
-      const registryFeatures = await db.query(
-        `SELECT pf.id, pf.label, pf.category, pf.description
-         FROM subscription_plan_features spf
-         JOIN platform_features pf ON spf.feature_id = pf.id
-         WHERE spf.plan_id = $1 AND spf.enabled = true AND pf.is_active = true
-         ORDER BY pf.category, pf.sort_order`,
-        [limitsPlanId],
-      );
+      const featuresQ = planEnabledFeatureDetailQuery(limitsPlanId, termsId);
+      const registryFeatures = await db.query(featuresQ.sql, featuresQ.params);
       enabledFeatures = registryFeatures.rows;
     } catch {
       // Registry tables may not exist yet

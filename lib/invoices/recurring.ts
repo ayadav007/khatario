@@ -13,6 +13,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError, resolveRegistryFeatureId } from '@/lib/subscription/feature-access';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { getEntitlementPlanIdForModuleSub, getModuleSubscription, getOperationalModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
+import { entitlementTermsId, planEnabledFeaturesQuery } from '@/lib/subscription/plan-terms';
 import { getSubscriptionUsability, isTrialEntitlementActive } from '@/lib/subscription/effective-plan';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
@@ -59,15 +60,8 @@ async function planConfirmedWithoutRecurring(businessId: string): Promise<boolea
     if (!sub) return false;
     // Same plan choice as assertFeatureAccess: a running trial uses its trial plan, otherwise the entitlement plan.
     const planId = isTrialEntitlementActive(sub) ? sub.plan_id : getEntitlementPlanIdForModuleSub(sub);
-    const rows = (
-      await db.query(
-        `SELECT pf.id
-           FROM subscription_plan_features spf
-           JOIN platform_features pf ON pf.id = spf.feature_id
-          WHERE spf.plan_id = $1 AND spf.enabled = true AND pf.is_active = true`,
-        [planId]
-      )
-    ).rows as Array<{ id: string }>;
+    const featuresQ = planEnabledFeaturesQuery(planId, entitlementTermsId(sub, planId));
+    const rows = (await db.query(featuresQ.sql, featuresQ.params)).rows as Array<{ id: string }>;
     if (rows.length === 0) return false; // matrix unreadable or empty: not proof
     return !rows.some((r) => r.id === resolveRegistryFeatureId(FeatureKeys.RECURRING_INVOICES));
   } catch (e) {

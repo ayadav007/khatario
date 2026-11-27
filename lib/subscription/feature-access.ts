@@ -35,6 +35,7 @@ import type { PlatformModule } from '@/lib/platform-modules';
 import * as db from '../db';
 import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
 import { SUPPLIER_HUB_FEATURE_ID } from '@/lib/subscription/plan-path-gate';
+import { entitlementTermsId, planEnabledFeaturesQuery } from '@/lib/subscription/plan-terms';
 import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
 
 /** Built-in matrix when `subscription_plan_features` rows are missing (migration drift). */
@@ -241,7 +242,12 @@ async function loadUnionEnabledRegistryFeatureIds(businessId: string): Promise<s
         const planId = isTrialEntitlementActive(modSub)
           ? modSub.plan_id
           : getEntitlementPlanIdForModuleSub(modSub);
-        const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
+        // A business pinned to older plan terms reads its snapshot's feature set (plan-terms.ts).
+        const ids = await getEnabledFeaturesFromRegistry(
+          businessId,
+          planId,
+          entitlementTermsId(modSub, planId),
+        );
         ids.forEach((id) => merged.add(id));
       } catch (error) {
         console.error(
@@ -356,7 +362,8 @@ async function assertOperationalSubscriptionExists(
  */
 async function getEnabledFeaturesFromRegistry(
   businessId: string,
-  planId: string
+  planId: string,
+  termsId: string | null = null,
 ): Promise<string[]> {
   if (process.env.NODE_ENV === 'development') {
     console.log('[getEnabledFeaturesFromRegistry] Starting for plan:', planId);
@@ -402,15 +409,8 @@ async function getEnabledFeaturesFromRegistry(
   }
 
   // Fetch enabled features from Feature Registry
-  const result = await db.query(
-    `SELECT pf.id
-     FROM subscription_plan_features spf
-     JOIN platform_features pf ON pf.id = spf.feature_id
-     WHERE spf.plan_id = $1 
-       AND spf.enabled = true
-       AND pf.is_active = true`,
-    [planId]
-  );
+  const featuresQ = planEnabledFeaturesQuery(planId, termsId);
+  const result = await db.query(featuresQ.sql, featuresQ.params);
 
   let enabledIds = result.rows.map((r: any) => r.id);
 

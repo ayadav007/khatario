@@ -173,7 +173,7 @@ run('admin and housekeeping (kh_phase2_test)', () => {
       await putOnPlan(await newBusiness(), plan);
       const def = await queryOne<{ default_value: number }>(`SELECT default_value FROM platform_limits WHERE limit_key = 'max_customers'`);
       const res = await postPlanLimits(
-        req(`/api/admin/plans/${plan}/limits`, { limits: { max_customers: 77 }, confirm_affected_count: 1 }),
+        req(`/api/admin/plans/${plan}/limits`, { limits: { max_customers: 77 }, confirm_affected_count: 1, scope: 'everyone' }),
         { params: { planId: plan } },
       );
       expect(res.status).toBe(200);
@@ -199,12 +199,12 @@ run('admin and housekeeping (kh_phase2_test)', () => {
       expect(await queryOne(`SELECT 1 FROM subscription_plan_features WHERE plan_id = $1`, [plan])).toBeNull();
 
       const ok = await postPlanFeatures(
-        req(`/api/admin/plans/${plan}/features`, { features: { [feats[0]]: true }, confirm_affected_count: 1 }),
+        req(`/api/admin/plans/${plan}/features`, { features: { [feats[0]]: true }, confirm_affected_count: 1, scope: 'everyone' }),
         { params: { planId: plan } },
       );
       expect(ok.status).toBe(200);
       const swap = await postPlanFeatures(
-        req(`/api/admin/plans/${plan}/features`, { features: { [feats[1]]: true }, confirm_affected_count: 1 }),
+        req(`/api/admin/plans/${plan}/features`, { features: { [feats[1]]: true }, confirm_affected_count: 1, scope: 'everyone' }),
         { params: { planId: plan } },
       );
       expect(swap.status).toBe(200);

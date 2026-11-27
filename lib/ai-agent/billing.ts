@@ -15,6 +15,7 @@ import { getBusinessAssistantSettings, loadProviderRow } from './settings';
 import { hasWhatsAppBotAddon, resolvePlanLimitValue } from '@/lib/subscription';
 import {
   getEntitlementPlanIdForModuleSub,
+  getEntitlementTermsIdForModuleSub,
   getModuleSubscription,
 } from '@/lib/subscription/module-subscriptions';
 import type { AgentUsage } from './types';
@@ -43,7 +44,12 @@ export async function khatarioMonthlyQuota(businessId: string): Promise<number> 
   if (connect) {
     const sub = await getModuleSubscription(businessId, 'connect');
     const planLimit = sub
-      ? await resolvePlanLimitValue(getEntitlementPlanIdForModuleSub(sub), 'max_ai_replies_per_month')
+      ? await resolvePlanLimitValue(
+          getEntitlementPlanIdForModuleSub(sub),
+          'max_ai_replies_per_month',
+          undefined,
+          getEntitlementTermsIdForModuleSub(sub),
+        )
       : null;
     if (planLimit === -1) return -1;
     quota += planLimit ?? 0;

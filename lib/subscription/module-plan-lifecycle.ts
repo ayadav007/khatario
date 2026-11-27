@@ -213,7 +213,8 @@ export async function moveModuleSubscriptionToFree(
 
   const result = await (tx ? tx.client.query.bind(tx.client) : query)(
     `UPDATE business_module_subscriptions
-     SET plan_id = $3,
+     SET plan_terms_id = CASE WHEN plan_id IS DISTINCT FROM $3 THEN NULL ELSE plan_terms_id END,
+         plan_id = $3,
          status = 'active',
          trial_end_date = NULL,
          end_date = NULL,

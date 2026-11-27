@@ -13,6 +13,7 @@ import {
 } from '@/lib/subscription/effective-plan';
 import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
 import { isModuleSubscriptionOperational } from '@/lib/subscription/module-operational-check';
+import { entitlementTermsId } from '@/lib/subscription/plan-terms';
 
 export interface ModuleSubscriptionRow extends SubscriptionForEffectivePlan {
   business_id: string;
@@ -27,6 +28,8 @@ export interface ModuleSubscriptionRow extends SubscriptionForEffectivePlan {
   db_today?: string | null;
   billing_cycle?: 'monthly' | 'yearly' | 'three_year';
   scheduled_plan_id?: string | null;
+  /** The plan-terms snapshot this row is pinned to (an "only new customers" plan change), or null for the plan's current terms. */
+  plan_terms_id?: string | null;
   cancel_at_period_end?: boolean;
   cancelled_at?: string | null;
   downgraded_from?: string | null;
@@ -68,6 +71,7 @@ async function loadModuleSubscriptionsFromDb(
          CURRENT_DATE::text AS db_today,
          bms.billing_cycle,
          bms.scheduled_plan_id,
+         bms.plan_terms_id::text AS plan_terms_id,
          bms.cancel_at_period_end,
          bms.cancelled_at::text AS cancelled_at,
          bms.downgraded_from,
@@ -158,6 +162,11 @@ export function getEntitlementPlanIdForModuleSub(row: ModuleSubscriptionRow): st
   return getEntitlementPlanId(row);
 }
 
+/** The plan-terms snapshot the entitlement reads (null = the entitlement plan's live terms). */
+export function getEntitlementTermsIdForModuleSub(row: ModuleSubscriptionRow): string | null {
+  return entitlementTermsId(row, getEntitlementPlanId(row));
+}
+
 /** Seed or update a module subscription (signup, add-module). */
 export async function upsertModuleSubscription(
   client: { query: typeof db.query },
@@ -174,6 +183,7 @@ export async function upsertModuleSubscription(
        ) VALUES ($1, $2, $3, 'trial', CURRENT_DATE, CURRENT_DATE + ($4::text || ' days')::interval)
        ON CONFLICT (business_id, module_key) DO UPDATE SET
          plan_id = EXCLUDED.plan_id,
+         plan_terms_id = CASE WHEN business_module_subscriptions.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE business_module_subscriptions.plan_terms_id END,
          status = EXCLUDED.status,
          start_date = CURRENT_DATE,
          trial_end_date = EXCLUDED.trial_end_date,
@@ -187,6 +197,7 @@ export async function upsertModuleSubscription(
        ) VALUES ($1, $2, $3, $4, CURRENT_DATE, NULL)
        ON CONFLICT (business_id, module_key) DO UPDATE SET
          plan_id = EXCLUDED.plan_id,
+         plan_terms_id = CASE WHEN business_module_subscriptions.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE business_module_subscriptions.plan_terms_id END,
          status = EXCLUDED.status,
          start_date = CURRENT_DATE,
          trial_end_date = NULL,

@@ -367,6 +367,7 @@ async function grantConnectMonthForLegacyAddon(businessId: string, client?: Pool
        (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
      VALUES ($1, 'connect', $2, 'active', CURRENT_DATE, (CURRENT_DATE + INTERVAL '1 month')::date, 'monthly')
      ON CONFLICT (business_id, module_key) DO UPDATE SET
+       plan_terms_id = CASE WHEN business_module_subscriptions.plan_id IS DISTINCT FROM $2 THEN NULL ELSE business_module_subscriptions.plan_terms_id END,
        plan_id = $2,
        status = 'active',
        end_date = (

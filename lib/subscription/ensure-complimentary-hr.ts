@@ -110,6 +110,7 @@ export async function ensureComplimentaryHrForBilling(
      ) VALUES ($1, 'hr', $2, 'active', CURRENT_DATE, NULL, NULL)
      ON CONFLICT (business_id, module_key) DO UPDATE SET
        plan_id = EXCLUDED.plan_id,
+       plan_terms_id = CASE WHEN business_module_subscriptions.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE business_module_subscriptions.plan_terms_id END,
        status = 'active',
        trial_end_date = NULL,
        end_date = NULL,
