@@ -930,7 +930,9 @@ CREATE TRIGGER update_subscription_plans_updated_at BEFORE UPDATE ON subscriptio
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Base subscription plans (also in database/seed_subscriptions.sql). Present on a fresh database so later migrations can attach features and limits.
-INSERT INTO subscription_plans (id, name, display_name, description, price_monthly, price_yearly, currency, features, is_active, sort_order) VALUES
+-- Seeds only a truly empty subscription_plans table, so re-running this file never re-adds a plan that was deliberately removed.
+INSERT INTO subscription_plans (id, name, display_name, description, price_monthly, price_yearly, currency, features, is_active, sort_order)
+SELECT id, name, display_name, description, price_monthly, price_yearly, currency, features, is_active, sort_order FROM (VALUES
 
 -- FREE PLAN
 ('free', 'free', 'Free / Starter', 'Perfect for solo freelancers and trying out the platform', 0, 0, 'INR', 
@@ -1115,6 +1117,8 @@ INSERT INTO subscription_plans (id, name, display_name, description, price_month
   }
 }'::jsonb, true, 4)
 
+) AS v(id, name, display_name, description, price_monthly, price_yearly, currency, features, is_active, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM subscription_plans)
 ON CONFLICT (id) DO NOTHING;
 
 DROP TRIGGER IF EXISTS update_business_subscriptions_updated_at ON business_subscriptions;

@@ -578,7 +578,8 @@ export async function completeSubscriptionCheckoutPayment(params: {
       `UPDATE billing_transactions bt
        SET period_start = bms.start_date, period_end = bms.end_date
        FROM business_module_subscriptions bms
-       WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3`,
+       WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3
+         AND bt.business_id = bms.business_id`,
       [billingTransactionId, params.businessId, moduleKey],
     );
 

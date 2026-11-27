@@ -154,6 +154,14 @@ export async function deleteBusinessCompletely(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    // Lock 1: the business row. A concurrent insert of a child row (a new payment row) takes a
+    // FOR KEY SHARE lock on it through the foreign key, which conflicts with FOR UPDATE, so it waits
+    // until this transaction ends instead of being cascade-deleted with no archive copy.
+    // Lock 2: the existing payment rows. A completion in flight holds them; we wait for it, and the
+    // archive snapshot below (taken after the lock is granted) then sees the committed state instead
+    // of an older 'pending' one. A deadlock with an in-flight completion is acceptable: one side aborts and retries.
+    await client.query(`SELECT 1 FROM businesses WHERE id = $1 FOR UPDATE`, [businessId]);
+    await client.query(`SELECT 1 FROM billing_transactions WHERE business_id = $1 FOR UPDATE`, [businessId]);
     // Payment records are Khatario's revenue records: copy them out before anything is deleted.
     // Refuses the whole delete (and rolls back) when migration 479 has not been applied.
     await archiveBusinessBillingTransactions(client, businessId, 'business_deleted');

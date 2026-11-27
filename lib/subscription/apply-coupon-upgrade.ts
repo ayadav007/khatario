@@ -14,13 +14,19 @@ import type { CheckoutPricingResult } from '@/lib/subscription/checkout-pricing'
 
 /** Period the row paid for = the module row after the plan change and any free months (not transactional here). */
 async function recordPeriodFromModuleRow(txId: string, businessId: string, moduleKey: string): Promise<void> {
-  await query(
-    `UPDATE billing_transactions bt
-     SET period_start = bms.start_date, period_end = bms.end_date
-     FROM business_module_subscriptions bms
-     WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3`,
-    [txId, businessId, moduleKey],
-  );
+  try {
+    await query(
+      `UPDATE billing_transactions bt
+       SET period_start = bms.start_date, period_end = bms.end_date
+       FROM business_module_subscriptions bms
+       WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3
+         AND bt.business_id = bms.business_id`,
+      [txId, businessId, moduleKey],
+    );
+  } catch (err) {
+    // Informational column only: never skip coupon redemption or fail the upgrade over it.
+    console.error('[apply-coupon-upgrade] failed to record billing period', err);
+  }
 }
 
 /** Zero-amount upgrade (100% coupon, free_months, or free plan) with optional coupon redemption. */
@@ -70,7 +76,6 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
         params.billingCycle,
       ) + ' (coupon)',
     });
-    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey);
     await redeemCoupon(
       params.pricing.couponId,
       params.businessId,
@@ -78,6 +83,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       billingTxId,
       params.billingCycle,
     );
+    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey);
   } else if (params.pricing.finalAmount <= 0 && params.pricing.baseAmount <= 0) {
     const { id: zeroTxId } = await recordBillingTransaction({
       businessId: params.businessId,

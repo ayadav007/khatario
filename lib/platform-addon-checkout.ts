@@ -302,11 +302,13 @@ export async function completeAddonCheckoutPayment(params: {
         ? `UPDATE billing_transactions bt
            SET period_start = COALESCE($3::date, bms.start_date), period_end = bms.end_date
            FROM business_module_subscriptions bms
-           WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = 'connect'`
+           WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = 'connect'
+             AND bt.business_id = bms.business_id`
         : `UPDATE billing_transactions bt
            SET period_start = COALESCE($3::date, CURRENT_DATE), period_end = wa.end_date
            FROM whatsapp_addons wa
-           WHERE bt.id = $1 AND wa.business_id = $2 AND wa.addon_type = 'khatario_ai'`,
+           WHERE bt.id = $1 AND wa.business_id = $2 AND wa.addon_type = 'khatario_ai'
+             AND bt.business_id = wa.business_id`,
       [billingTransactionId, params.businessId, prev.rows[0]?.start ?? null],
     );
 

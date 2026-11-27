@@ -12,6 +12,11 @@ describe('fresh database catalogue', () => {
     expect(block).toMatch(/ON CONFLICT \(id\) DO NOTHING/);
   });
 
+  it('seeds only a truly empty subscription_plans table', () => {
+    expect(block).toContain('WHERE NOT EXISTS (SELECT 1 FROM subscription_plans)');
+    expect(block.indexOf('WHERE NOT EXISTS (SELECT 1 FROM subscription_plans)')).toBeLessThan(block.indexOf('ON CONFLICT (id)'));
+  });
+
   it('the seed block comes after the subscription_plans table and uses only its original columns', () => {
     const create = sql.indexOf('CREATE TABLE IF NOT EXISTS subscription_plans');
     expect(create).toBeGreaterThan(-1);

@@ -35,4 +35,20 @@ describe('archiveBusinessBillingTransactions', () => {
       expect(sql).toContain(`bt.${c}`);
     }
   });
+  it.each(['Bad-Name', 'x; DROP TABLE y', '1abc', 'UPPER', ''])('rejects the archive table name %j without querying', async (name) => {
+    const query = jest.fn();
+    await expect(archiveBusinessBillingTransactions({ query } as never, 'b1', 'x', { archiveTable: name })).rejects.toThrow(
+      /Invalid archive table name/,
+    );
+    expect(query).not.toHaveBeenCalled();
+  });
+  it('prefixes an insert failure with "Payment archive failed: "', async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('to_regclass')) return { rows: [{ t: 'x' }] };
+      throw new Error('column "foo" does not exist');
+    });
+    await expect(archiveBusinessBillingTransactions({ query } as never, 'b1', 'r')).rejects.toThrow(
+      'Payment archive failed: column "foo" does not exist',
+    );
+  });
 });

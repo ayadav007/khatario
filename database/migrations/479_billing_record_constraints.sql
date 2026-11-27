@@ -5,10 +5,14 @@
 -- Idempotent. Never fails on existing data: when data would violate a rule, the rule is skipped with a NOTICE.
 -- Never modifies or deletes an existing payment row.
 
+SET LOCAL lock_timeout = '5s';
+
 DO $$
 DECLARE
   dup_refs integer;
 BEGIN
+  -- Blocks concurrent writers while we count and build, so no duplicate can slip in between.
+  LOCK TABLE billing_transactions IN SHARE ROW EXCLUSIVE MODE;
   IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'uq_billing_tx_completed_payment_ref') THEN
     RAISE NOTICE '479: uq_billing_tx_completed_payment_ref already exists';
   ELSE
@@ -51,7 +55,8 @@ BEGIN
     ELSE
       ALTER TABLE business_module_subscriptions
         ADD CONSTRAINT bms_billing_cycle_check
-        CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly', 'yearly', 'three_year'));
+        CHECK (billing_cycle IS NULL OR billing_cycle IN ('monthly', 'yearly', 'three_year')) NOT VALID;
+      ALTER TABLE business_module_subscriptions VALIDATE CONSTRAINT bms_billing_cycle_check;
     END IF;
   END IF;
 END $$;

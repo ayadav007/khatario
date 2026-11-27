@@ -211,6 +211,9 @@ async function main() {
 
   const pool = new Pool(dbConfig);
   const client = await pool.connect();
+  // A migration may skip a rule with RAISE NOTICE (e.g. 479); never let that go unseen.
+  let currentMigrationFile = '(setup)';
+  client.on('notice', (n) => console.log('[migration notice] ' + currentMigrationFile + ': ' + n.message));
 
   try {
     console.log('Connecting to database...');
@@ -300,6 +303,7 @@ async function main() {
         continue;
       }
 
+      currentMigrationFile = file;
       process.stdout.write(`📝 ${file} ... `);
       const autocommit = needsAutocommit(sql);
       const sqlToRun = autocommit ? String(sql) : unwrapExplicitTransaction(sql);

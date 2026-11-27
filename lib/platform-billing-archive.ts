@@ -63,18 +63,25 @@ export async function archiveBusinessBillingTransactions(
   opts: { archiveTable?: string } = {},
 ): Promise<number> {
   const table = opts.archiveTable ?? BILLING_ARCHIVE_TABLE;
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error(`Invalid archive table name: ${table}`);
   await assertBillingArchiveExists(client, table);
   const cols = BILLING_TRANSACTION_COLUMNS.join(', ');
   const selectCols = BILLING_TRANSACTION_COLUMNS.map((c) => `bt.${c}`).join(', ');
-  const r = await client.query(
-    `INSERT INTO ${table} (${cols}, archived_at, business_name, business_gstin, archive_reason)
-     SELECT ${selectCols}, CURRENT_TIMESTAMP, b.name, b.gstin, $2
-       FROM billing_transactions bt
-       JOIN businesses b ON b.id = bt.business_id
-      WHERE bt.business_id = $1
-     ON CONFLICT (id) DO NOTHING`,
-    [businessId, reason],
-  );
+  let r;
+  try {
+    r = await client.query(
+      `INSERT INTO ${table} (${cols}, archived_at, business_name, business_gstin, archive_reason)
+       SELECT ${selectCols}, CURRENT_TIMESTAMP, b.name, b.gstin, $2
+         FROM billing_transactions bt
+         JOIN businesses b ON b.id = bt.business_id
+        WHERE bt.business_id = $1
+       ON CONFLICT (id) DO NOTHING`,
+      [businessId, reason],
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Payment archive failed: ${msg}`);
+  }
   return r.rowCount ?? 0;
 }
 

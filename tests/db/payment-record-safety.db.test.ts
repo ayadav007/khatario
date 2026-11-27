@@ -56,6 +56,7 @@ import {
   archiveBusinessBillingTransactions,
   listArchivedBillingTransactions,
   ARCHIVE_MISSING_MESSAGE,
+  BILLING_TRANSACTION_COLUMNS,
 } from '@/lib/platform-billing-archive';
 
 const run = enabled ? describe : describe.skip;
@@ -65,6 +66,12 @@ run('payment record safety (kh_phase2_test)', () => {
   const created: string[] = [];
   let bizA: string;
   let bizB: string;
+  // Payment ids are suffixed per run so a crashed run can never collide with this one.
+  const RUN = randomUUID().slice(0, 8);
+  const PAY_REUSE = `pay_reuse_${RUN}`;
+  const PAY_REUSE_ADDON = `pay_reuse_addon_${RUN}`;
+  const PAY_SAME = `pay_same_${RUN}`;
+  const PAY_DUP_OLD = `pay_dup_old_${RUN}`;
 
   async function newBusiness(label: string): Promise<string> {
     const id = randomUUID();
@@ -210,6 +217,14 @@ run('payment record safety (kh_phase2_test)', () => {
 
   beforeAll(async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network disabled in tests'));
+    // Leftovers from crashed runs that used the old fixed payment ids: remove them BEFORE the migration
+    // runs, because duplicate completed references would make it skip the unique index.
+    const oldIds = ['pay_reuse', 'pay_reuse_addon', 'pay_same', 'pay_dup_old'];
+    await query(
+      `DELETE FROM platform_billing_webhook_events WHERE payload::text LIKE ANY($1)`,
+      [oldIds.map((i) => `%"${i}"%`)],
+    ).catch(() => undefined);
+    await query(`DELETE FROM billing_transactions WHERE payment_reference = ANY($1)`, [oldIds]);
     await runMigration479();
   });
 
@@ -246,12 +261,12 @@ run('payment record safety (kh_phase2_test)', () => {
   it('a second completed row with the same gateway payment id is refused by the database', async () => {
     const a = await pendingCheckout(bizA, 'billing_growth', 499);
     const b = await pendingCheckout(bizB, 'billing_growth', 499);
-    await query(`UPDATE billing_transactions SET status='completed', payment_reference='pay_same' WHERE id=$1`, [a]);
+    await query(`UPDATE billing_transactions SET status='completed', payment_reference=$2 WHERE id=$1`, [a, PAY_SAME]);
     try {
-      await expect(query(`UPDATE billing_transactions SET status='completed', payment_reference='pay_same' WHERE id=$1`, [b]))
+      await expect(query(`UPDATE billing_transactions SET status='completed', payment_reference=$2 WHERE id=$1`, [b, PAY_SAME]))
         .rejects.toMatchObject({ code: '23505', constraint: 'uq_billing_tx_completed_payment_ref' });
     } finally {
-      await deleteRows('pay_same');
+      await deleteRows(PAY_SAME);
     }
   });
 
@@ -280,12 +295,12 @@ run('payment record safety (kh_phase2_test)', () => {
   });
 
   it('a webhook that would reuse a payment id is ignored, not retried', async () => {
-    await paidAndActivated(bizA, 'billing_growth', { payId: 'pay_reuse' });
+    await paidAndActivated(bizA, 'billing_growth', { payId: PAY_REUSE });
     try {
       // payment_link.paid, not payment.captured: the same event type + payment id would be dropped as a
       // duplicate delivery by the webhook idempotency key before reaching completion.
       const tx = await pendingCheckout(bizB, 'billing_growth', 499);
-      const r = await hook('payment_link.paid', 'pay_reuse', 'captured', notesFor(bizB, tx, 'billing_growth'), {
+      const r = await hook('payment_link.paid', PAY_REUSE, 'captured', notesFor(bizB, tx, 'billing_growth'), {
         amountPaise: 49900,
         exactPayId: true,
       });
@@ -293,14 +308,14 @@ run('payment record safety (kh_phase2_test)', () => {
       expect((r as { error?: string }).error).toContain('PAYMENT_REFERENCE_ALREADY_USED');
       expect((await txRow(tx))!.status).toBe('pending');
       expect(await moduleRow(bizB, 'billing')).toBeNull();
-      expect(await webhookEventStatus('pay_reuse', bizB)).toBe('ignored');
+      expect(await webhookEventStatus(PAY_REUSE, bizB)).toBe('ignored');
     } finally {
-      await deleteRows('pay_reuse');
+      await deleteRows(PAY_REUSE);
     }
   });
 
   it('an add-on completion that would reuse a payment id fails with the terminal error', async () => {
-    await paidAndActivated(bizA, 'billing_growth', { payId: 'pay_reuse_addon' });
+    await paidAndActivated(bizA, 'billing_growth', { payId: PAY_REUSE_ADDON });
     try {
       const tx = await pendingCheckout(bizB, 'connect', 299);
       await query(
@@ -312,27 +327,27 @@ run('payment record safety (kh_phase2_test)', () => {
           businessId: bizB,
           addonType: 'khatario_ai',
           billingTransactionId: tx,
-          providerPaymentId: 'pay_reuse_addon',
+          providerPaymentId: PAY_REUSE_ADDON,
           amount: 299,
         }),
       ).rejects.toThrow('PAYMENT_REFERENCE_ALREADY_USED');
       expect((await txRow(tx))!.status).toBe('pending');
     } finally {
-      await deleteRows('pay_reuse_addon');
+      await deleteRows(PAY_REUSE_ADDON);
     }
   });
 
   it('the migration skips the unique index when duplicates already exist', async () => {
     try {
       await query(`DROP INDEX IF EXISTS uq_billing_tx_completed_payment_ref`);
-      await insertCompletedPair(bizA, bizB, 'pay_dup_old');
+      await insertCompletedPair(bizA, bizB, PAY_DUP_OLD);
       await runMigration479();
       expect(await indexExists('uq_billing_tx_completed_payment_ref')).toBe(false);
-      await deleteRows('pay_dup_old');
+      await deleteRows(PAY_DUP_OLD);
       await runMigration479();
       expect(await indexExists('uq_billing_tx_completed_payment_ref')).toBe(true);
     } finally {
-      await deleteRows('pay_dup_old');
+      await deleteRows(PAY_DUP_OLD);
       await runMigration479(); // restore the shared local index even when an assertion failed
     }
   });
@@ -345,6 +360,41 @@ run('payment record safety (kh_phase2_test)', () => {
     );
     await expect(query(`UPDATE business_module_subscriptions SET billing_cycle='weekly' WHERE business_id=$1`, [bizA]))
       .rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('a late payment_link.paid after payment.captured on the same checkout is a duplicate', async () => {
+    const tx = await pendingCheckout(bizA, 'billing_growth', 499);
+    const payId = 'pay_late_' + sfx();
+    const notes = notesFor(bizA, tx, 'billing_growth');
+    expect(await hook('payment.captured', payId, 'captured', notes, { amountPaise: 49900 })).toMatchObject({ ok: true });
+    const second = await hook('payment_link.paid', payId, 'captured', notes, { amountPaise: 49900, exactPayId: true });
+    expect(second).toMatchObject({ ok: true });
+    const row = await txRow(tx);
+    expect(row!.status).toBe('completed');
+    expect(row!.payment_reference).toBe(payId);
+    const ev = await queryOne<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM subscription_events WHERE business_id = $1 AND event_type = 'upgraded'`,
+      [bizA],
+    );
+    expect(Number(ev!.n)).toBe(1);
+  });
+
+  it('billing_transactions and its archive have the columns the archive copy expects', async () => {
+    const colsOf = async (table: string) =>
+      new Set(
+        (
+          await query<{ column_name: string }>(
+            `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+            [table],
+          )
+        ).rows.map((r) => r.column_name),
+      );
+    const live = await colsOf('billing_transactions');
+    const archive = await colsOf('billing_transactions_archive');
+    expect(live).toEqual(new Set(BILLING_TRANSACTION_COLUMNS));
+    expect(archive).toEqual(
+      new Set([...BILLING_TRANSACTION_COLUMNS, 'archived_at', 'business_name', 'business_gstin', 'archive_reason']),
+    );
   });
 
   it('billing_transactions_archive has no foreign keys or check constraints', async () => {
@@ -471,10 +521,41 @@ run('business deletion keeps payment rows (kh_phase2_test)', () => {
        VALUES ($1, '2024-2025', '2024-04-01', '2025-03-31', false, $2)`,
       [other.id, a.userId],
     );
-    await expect(deleteBusinessCompletely(a.id, ADMIN)).rejects.toThrow(/Cannot delete tenant|Failed to delete tenant/);
+    await expect(deleteBusinessCompletely(a.id, ADMIN)).rejects.toThrow(/period_locks/);
     expect(await cnt(`businesses WHERE id = $1`, [a.id])).toBe(1);
     expect(await cnt(`billing_transactions WHERE id = $1`, [tx])).toBe(1);
     expect(await cnt(`billing_transactions_archive WHERE business_id = $1`, [a.id])).toBe(0);
+  });
+
+  it('a payment completed while the delete waits is archived as completed', async () => {
+    const b = await biz('race');
+    const { id: tx } = await recordBillingTransaction({
+      businessId: b.id, planId: 'billing_growth', amount: 499, billingCycle: 'monthly',
+      paymentMethod: 'razorpay', status: 'pending', skipEmails: true,
+    });
+    const other = await getPool().connect();
+    let committed = false;
+    let del: Promise<unknown> | undefined;
+    try {
+      await other.query('BEGIN');
+      await other.query(`SELECT 1 FROM billing_transactions WHERE id = $1 FOR UPDATE`, [tx]);
+      await other.query(`UPDATE billing_transactions SET status = 'completed' WHERE id = $1`, [tx]);
+      del = deleteBusinessCompletely(b.id, ADMIN);
+      del.catch(() => undefined); // surfaced by the await below; avoids an unhandled rejection if we throw first
+      await new Promise((r) => setTimeout(r, 200));
+      await other.query('COMMIT');
+      committed = true;
+      await del;
+    } finally {
+      if (!committed) await other.query('ROLLBACK').catch(() => undefined);
+      other.release();
+      if (del) await del.catch(() => undefined);
+      // The delete may not have completed (e.g. an assertion or error above): do not leak the business.
+      await query(`DELETE FROM businesses WHERE id = $1`, [b.id]).catch(() => undefined);
+    }
+    const a = await queryOne<{ status: string }>(`SELECT status FROM billing_transactions_archive WHERE id = $1`, [tx]);
+    expect(a?.status).toBe('completed');
+    expect(await cnt(`businesses WHERE id = $1`, [b.id])).toBe(0);
   });
 
   it('refuses to archive when the archive table does not exist, without touching anything', async () => {
