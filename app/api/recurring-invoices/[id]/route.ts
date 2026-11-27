@@ -3,6 +3,8 @@ import { getPool, queryOne, queryRows } from '@/lib/db';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { runRecurringInvoices } from '@/lib/invoices/recurring';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +76,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (body.action !== 'run_now') return NextResponse.json({ error: "action must be 'run_now'" }, { status: 400 });
   const g = await guard(request, body.business_id, 'create');
   if (!g.ok) return g.response;
+  try {
+    await assertFeatureAccess(g.businessId, FeatureKeys.RECURRING_INVOICES);
+  } catch (error) {
+    if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+    throw error;
+  }
   const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
   const [result] = await runRecurringInvoices(getPool(), {
     today,

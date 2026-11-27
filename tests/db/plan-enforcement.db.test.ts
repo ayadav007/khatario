@@ -73,6 +73,8 @@ import { PATCH as patchEmployeeRoute } from '@/app/api/employees/[id]/route';
 import { POST as postInvoiceWhatsApp } from '@/app/api/invoices/[id]/whatsapp/route';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { runRecurringInvoices } from '@/lib/invoices/recurring';
+import * as featureAccess from '@/lib/subscription/feature-access';
+import { POST as postRecurringRoute } from '@/app/api/recurring-invoices/[id]/route';
 import { processCampaign } from '@/lib/campaign-processor';
 import { checkLimit, clearAddonCache } from '@/lib/subscription';
 import { GET as getLedgerRoute } from '@/app/api/ledger/route';
@@ -385,7 +387,7 @@ run('plan enforcement (kh_phase2_test)', () => {
    * RECURRING_START), with one inline item (no template invoice) and its own customer. Returns its id.
    * The table is recurring_invoices; the column is next_run_date.
    */
-  async function makeDueSchedule(biz: string, opts: { autoFinalize?: boolean } = {}): Promise<string> {
+  async function makeDueSchedule(biz: string, opts: { autoFinalize?: boolean; start?: string } = {}): Promise<string> {
     const customerId = randomUUID();
     const id = randomUUID();
     await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Recurring cust', $3)`, [
@@ -398,7 +400,7 @@ run('plan enforcement (kh_phase2_test)', () => {
          (id, business_id, customer_id, frequency, interval_value, start_date, next_run_date, items, created_by, auto_finalize)
        VALUES ($1, $2, $3, 'monthly', 1, $4, $4, $5::jsonb, $6, $7)`,
       [
-        id, biz, customerId, RECURRING_START,
+        id, biz, customerId, opts.start ?? RECURRING_START,
         JSON.stringify([{ item_name: 'Monthly service', quantity: 1, unit_price: 1000, tax_rate: 18 }]),
         owner!.id, opts.autoFinalize ?? false,
       ],
@@ -1567,26 +1569,101 @@ run('plan enforcement (kh_phase2_test)', () => {
 
   describe('SUB-20: automation checks the plan when it runs', () => {
     describe('recurring invoices', () => {
-      it('a due schedule is skipped after the plan drops below Growth and resumes when it returns', async () => {
+      it('a due schedule is skipped after the plan drops below Growth; its due period is dropped and nothing back-fills when the plan returns', async () => {
         const { biz } = await newBusinessWithOwner('billing_growth', { label: 'rec1' });
         const sched = await makeDueSchedule(biz);
-        const before = await scheduleRow(sched);
         await setPlan(biz, 'billing', 'billing_starter');
         const r1 = await runRecurring();
         expect(r1.skippedNoPlan).toBeGreaterThanOrEqual(1);
-        expect(r1.summaries.find((r) => r.recurring_invoice_id === sched)).toMatchObject({ skippedNoPlan: true, created: [] });
+        expect(r1.summaries.find((r) => r.recurring_invoice_id === sched)).toMatchObject({
+          skippedNoPlan: true, created: [], droppedThrough: '2026-07-01',
+        });
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
-        // unchanged: not paused, not advanced, no run recorded, no error written
-        expect(await scheduleRow(sched)).toEqual(before);
+        // only next_run_date moved (2026-06-01 -> 2026-07-01); still active, no run, no error, no history
+        expect(await scheduleRow(sched)).toEqual({
+          next_run_date: '2026-07-01', last_run_date: null, is_active: true, last_error: null,
+        });
         expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched])).toBe(0);
 
         await setPlan(biz, 'billing', 'billing_growth');
         const r2 = await runRecurring();
-        const ran = r2.summaries.find((r) => r.recurring_invoice_id === sched)!;
-        expect(ran.skippedNoPlan).toBe(false);
-        expect(ran.error).toBeUndefined();
+        const ran = r2.summaries.find((r) => r.recurring_invoice_id === sched);
+        expect(ran).toBeUndefined(); // not due yet: no back-fill of the dropped period
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
+
+        await query(`UPDATE recurring_invoices SET next_run_date = $2::date WHERE id = $1`, [sched, RECURRING_RUN_DAY]);
+        const r3 = await runRecurring();
+        const s3 = r3.summaries.find((r) => r.recurring_invoice_id === sched)!;
+        expect(s3.skippedNoPlan).toBe(false);
+        expect(s3.error).toBeUndefined();
+        expect(s3.created).toHaveLength(1);
+        expect(await count(`invoices WHERE business_id = $1 AND invoice_date = $2::date`, [biz, RECURRING_RUN_DAY])).toBe(1);
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
+      });
+
+      it('a monthly schedule six months overdue on a plan without the feature jumps to the first date after today', async () => {
+        const { biz } = await newBusinessWithOwner('billing_starter', { label: 'rec1b' });
+        const sched = await makeDueSchedule(biz, { start: '2025-12-01' });
+        const r = await runRecurring();
+        expect(r.summaries.find((x) => x.recurring_invoice_id === sched)).toMatchObject({
+          skippedNoPlan: true, droppedThrough: '2026-07-01',
+        });
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
         expect((await scheduleRow(sched))!.next_run_date).toBe('2026-07-01');
+        expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched])).toBe(0);
+      });
+
+      it('a failing plan check for one business does not abort the run: it is skipped unchanged, the other generates', async () => {
+        const A = await newBusinessWithOwner('billing_growth', { label: 'recErrA' });
+        const B = await newBusinessWithOwner('billing_growth', { label: 'recErrB' });
+        const sa = await makeDueSchedule(A.biz);
+        const sb = await makeDueSchedule(B.biz);
+        const before = await scheduleRow(sa);
+        const original = featureAccess.hasFeatureAccess;
+        const spy = jest.spyOn(featureAccess, 'hasFeatureAccess').mockImplementation(async (biz, key) => {
+          if (biz === A.biz) throw new Error('transient db error');
+          return original(biz, key);
+        });
+        const errLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+          const r = await runRecurring();
+          const byId = (id: string) => r.summaries.find((x) => x.recurring_invoice_id === id)!;
+          expect(byId(sa)).toMatchObject({ skippedPlanCheckFailed: true, skippedNoPlan: false, created: [] });
+          expect(byId(sb).created).toHaveLength(1);
+        } finally {
+          spy.mockRestore();
+          errLog.mockRestore();
+        }
+        expect(await count(`invoices WHERE business_id = $1`, [A.biz])).toBe(0);
+        expect(await scheduleRow(sa)).toEqual(before); // next_run_date unchanged
+        expect(await count(`invoices WHERE business_id = $1`, [B.biz])).toBe(1);
+      });
+
+      describe('manual run now', () => {
+        const runNow = (biz: string, userId: string, id: string) =>
+          callRoute(postRecurringRoute as unknown as RouteHandler, {
+            biz, userId, method: 'POST', path: `/api/recurring-invoices/${id}`, params: { id },
+            body: { action: 'run_now' },
+          });
+
+        it('is refused with FEATURE_NOT_IN_PLAN on a plan without the feature, and creates nothing', async () => {
+          const { biz, owner } = await newBusinessWithOwner('billing_starter', { label: 'rn1' });
+          const sched = await makeDueSchedule(biz);
+          const res = await runNow(biz, owner, sched);
+          expect(res.status).toBe(403);
+          expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+          expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
+          expect((await scheduleRow(sched))!.next_run_date).toBe(RECURRING_START);
+        });
+
+        it('passes the plan gate on a plan with the feature', async () => {
+          const { biz, owner } = await newBusinessWithOwner('billing_growth', { label: 'rn2' });
+          const sched = await makeDueSchedule(biz);
+          const res = await runNow(biz, owner, sched);
+          expect(res.status).not.toBe(403);
+          const body = await res.json();
+          expect(body.skippedNoPlan).not.toBe(true);
+        });
       });
 
       it('a business on Free is skipped too', async () => {

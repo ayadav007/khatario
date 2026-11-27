@@ -20,6 +20,11 @@ export interface RecurringRunSummary {
   skipped: string[];
   /** True when the business's current plan lacks recurring invoices: nothing was generated or changed. */
   skippedNoPlan: boolean;
+  /** The plan check itself failed (e.g. a database error): treated as "not allowed" for this run; nothing was changed. */
+  skippedPlanCheckFailed?: boolean;
+  /** With skippedNoPlan: the schedule's new next_run_date. Periods that fell due without the plan are dropped, not deferred. */
+  droppedThrough?: string;
+  message?: string;
   error?: string;
 }
 
@@ -46,18 +51,49 @@ export async function runRecurringInvoices(
   const summaries: RecurringRunSummary[] = [];
   // The plan is checked once per business per run, not once per schedule.
   const planAllows = new Map<string, boolean>();
+  const failedPlanCheck = new Set<string>();
   for (const rec of recs) {
     const summary: RecurringRunSummary = { recurring_invoice_id: rec.id, created: [], skipped: [], skippedNoPlan: false };
     summaries.push(summary);
-    // A schedule the current plan does not allow is skipped silently and left exactly as it is
-    // (still active, next run date and counters untouched), so it resumes if the plan returns.
+    // The plan is evaluated once per business per run. An error in the check fails closed for that
+    // business only (cached as false) and never aborts the run.
     let allowed = planAllows.get(rec.business_id);
+    let checkFailed = false;
     if (allowed === undefined) {
-      allowed = await hasFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+      try {
+        allowed = await hasFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+      } catch (e) {
+        console.error(`[recurring-invoices] plan check failed for business ${rec.business_id}:`, e);
+        allowed = false;
+        checkFailed = true;
+        failedPlanCheck.add(rec.business_id);
+      }
       planAllows.set(rec.business_id, allowed);
+    } else if (!allowed && failedPlanCheck.has(rec.business_id)) {
+      checkFailed = true;
+    }
+    if (!allowed && checkFailed) {
+      summary.skippedPlanCheckFailed = true;
+      summary.message = 'Plan check failed; schedule left unchanged for this run';
+      continue;
     }
     if (!allowed) {
+      // A real "no": periods that fall due while the plan lacks recurring invoices are dropped, not
+      // deferred, so a returning plan never back-fills. Only next_run_date moves, to the first run
+      // date after today; no history, invoice, run count, status or error is written.
       summary.skippedNoPlan = true;
+      if (isRecurringFrequency(rec.frequency)) {
+        const readNext = calendarDateOnly(rec.next_run_date)!;
+        const anchor = Number(calendarDateOnly(rec.start_date)!.slice(8, 10));
+        let d = readNext;
+        while (d <= p.today) d = nextRunDate(d, rec.frequency, rec.interval_value, anchor);
+        await pool.query(
+          `UPDATE recurring_invoices SET next_run_date = $3::date WHERE id = $1 AND next_run_date = $2::date`,
+          [rec.id, readNext, d]
+        );
+        summary.droppedThrough = d;
+      }
+      summary.message = 'Plan does not include recurring invoices; due periods skipped';
       continue;
     }
     if (!isRecurringFrequency(rec.frequency)) {
