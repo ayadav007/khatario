@@ -1,0 +1,15 @@
+{
+  "results": {
+    "message": {
+      "error": false,
+      "ewayBillNo": 371010926768,
+      "validUpto": "06/12/2026 11:59:00 PM",
+      "ewayBillDate": "27/11/2026 09:10:00 PM",
+      "url": "sandb-api.mastersindia.co/api/v1/detailPrintPdf/b2N0X2RlY18yMDI2LTI3-6b09a46da157428ddc7e19f9/",
+      "alert": "E-way bill number already generated on this document number. Please, cancel E-Way bill number on this document number KH/17957940280 then generate E-Way bill number"
+    },
+    "status": "Success",
+    "code": 200,
+    "requestId": "ERP1795794030_KH/17957940280"
+  }
+}

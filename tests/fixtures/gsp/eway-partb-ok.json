@@ -1,0 +1,12 @@
+{
+  "results": {
+    "message": {
+      "vehUpdDate": "27/11/2026 09:11:00 PM",
+      "validUpto": "06/12/2026 11:59:00 PM",
+      "error": false,
+      "url": "https://sandb-api.mastersindia.co/api/v1/detailPrintPdf/b2N0X2RlY18yMDI2LTI3-6b09a46da157428ddc7e19f9/"
+    },
+    "status": "Success",
+    "code": 200
+  }
+}

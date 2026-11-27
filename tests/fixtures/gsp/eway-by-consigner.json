@@ -1,0 +1,12 @@
+{
+  "results": {
+    "message": {
+      "ewayBillNo": 371010926768,
+      "ewayBillDate": "27/11/2026 09:10:00 PM",
+      "validUpto": "06/12/2026 23:59:59 ",
+      "alert": ""
+    },
+    "status": "Success",
+    "code": 200
+  }
+}
