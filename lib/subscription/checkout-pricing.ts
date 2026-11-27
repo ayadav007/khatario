@@ -24,6 +24,8 @@ export interface CheckoutPricingResult {
   couponId?: string;
   couponCode?: string;
   freeMonths?: number;
+  /** True when the coupon would have made the price zero on a longer cycle, so it took off one month only. */
+  couponCapped?: boolean;
   /** Credit the customer's unused paid time is worth towards this plan (0 when none). */
   creditAvailable: number;
   /** The part of it taken off finalAmount (the charge never goes below ₹1). */
@@ -69,6 +71,7 @@ export async function resolveCheckoutPricing(params: {
   let couponId: string | undefined;
   let couponCode: string | undefined;
   let freeMonths: number | undefined;
+  let couponCapped = false;
 
   if (params.couponCode?.trim()) {
     const validation = await validateCoupon(
@@ -88,6 +91,7 @@ export async function resolveCheckoutPricing(params: {
       discountAmount = 0;
     } else if (validation.discount) {
       discountAmount = Math.round(validation.discount.amount * 100) / 100;
+      couponCapped = validation.discount.capped === true;
     }
   }
 
@@ -146,6 +150,7 @@ export async function resolveCheckoutPricing(params: {
     couponId,
     couponCode,
     freeMonths,
+    couponCapped,
   };
 }
 
@@ -155,6 +160,9 @@ export function formatCouponSuccessMessage(
 ): string {
   if (pricing.freeMonths) {
     return `Coupon applied: ${pricing.freeMonths} month(s) free on this plan.`;
+  }
+  if (pricing.couponCapped) {
+    return `Coupon applied: you save ₹${pricing.discountAmount.toLocaleString('en-IN')} (one month). A coupon takes off at most one month on a longer plan, so you pay the rest.`;
   }
   if (pricing.discountAmount > 0) {
     return `Coupon applied: you save ₹${pricing.discountAmount.toLocaleString('en-IN')}.`;

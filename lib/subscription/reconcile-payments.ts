@@ -101,7 +101,7 @@ export type RefundNeedingReview = {
 /**
  * Refunds a person has to look at (last 35 days): refunds flagged in their metadata (a coupon redemption that was
  * kept, a refund made in the gateway dashboard, a partner commission that could not be cancelled, a gateway failure
- * after the refund was recorded) and refunds still `pending` after an hour (the gateway has not confirmed them; repeat
+ * after the refund was recorded; not those an admin marked reviewed) and refunds still `pending` after an hour (the gateway has not confirmed them; repeat
  * the refund in the admin to check). Nothing is deleted or changed. Read-only.
  */
 export async function findRefundsNeedingReview(): Promise<RefundNeedingReview[]> {
@@ -110,12 +110,14 @@ export async function findRefundsNeedingReview(): Promise<RefundNeedingReview[]>
             status,
             CASE WHEN status = 'pending' AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'
                    THEN ARRAY['refund_pending_over_an_hour']::text[] ELSE ARRAY[]::text[] END
-            || COALESCE(ARRAY(SELECT jsonb_array_elements_text(metadata->'review_reasons')), ARRAY[]::text[]) AS reasons,
+            || CASE WHEN metadata->>'reviewed_at' IS NULL
+                    THEN COALESCE(ARRAY(SELECT jsonb_array_elements_text(metadata->'review_reasons')), ARRAY[]::text[])
+                    ELSE ARRAY[]::text[] END AS reasons,
             created_at::text AS created_at
      FROM billing_transactions
      WHERE type = 'refund'
        AND created_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
-       AND ((metadata->>'needs_review') = 'true'
+       AND (((metadata->>'needs_review') = 'true' AND metadata->>'reviewed_at' IS NULL)
             OR (status = 'pending' AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'))
      ORDER BY created_at`,
   );
@@ -171,6 +173,33 @@ export async function findIgnoredSuccessEvents(): Promise<IgnoredSuccessEvent[]>
   );
 }
 
+export type OverLimitCouponRedemption = {
+  billing_transaction_id: string;
+  business_id: string;
+  coupon_id: string | null;
+  reason: string | null;
+  paid_at: string;
+};
+
+/**
+ * Paid payments whose coupon had run out, expired or been used up between checkout and payment
+ * (last 35 days). The customer paid the price shown, so nothing is undone; a person decides
+ * whether the coupon limit needs raising. Read-only.
+ */
+export async function findOverLimitCouponRedemptions(): Promise<OverLimitCouponRedemption[]> {
+  return queryRows<OverLimitCouponRedemption>(
+    `SELECT id::text AS billing_transaction_id, business_id::text AS business_id,
+            metadata->'coupon_over_limit'->>'coupon_id' AS coupon_id,
+            metadata->'coupon_over_limit'->>'reason' AS reason,
+            updated_at::text AS paid_at
+     FROM billing_transactions
+     WHERE metadata ? 'coupon_over_limit'
+       AND status = 'completed'
+       AND updated_at > CURRENT_TIMESTAMP - INTERVAL '35 days'
+     ORDER BY updated_at`,
+  );
+}
+
 /** Alert platform admins about anomalies. Never throws and changes no data. */
 export async function reportBillingAnomalies(): Promise<{
   unapplied: number;
@@ -178,25 +207,33 @@ export async function reportBillingAnomalies(): Promise<{
   ignoredPaid: number;
   rejectedCredits: number;
   refundsNeedingReview: number;
+  overLimitCoupons: number;
 }> {
   try {
-    const [unapplied, stuck, ignored, rejectedCredits, refunds] = await Promise.all([
+    const [unapplied, stuck, ignored, rejectedCredits, refunds, overLimitCoupons] = await Promise.all([
       findUnappliedPayments(),
       findStuckWebhookEvents(),
       findIgnoredSuccessEvents(),
       findRejectedUpgradeCredits(),
       findRefundsNeedingReview(),
+      findOverLimitCouponRedemptions(),
     ]);
     if (
       unapplied.length === 0 && stuck.length === 0 && ignored.length === 0 &&
-      rejectedCredits.length === 0 && refunds.length === 0
+      rejectedCredits.length === 0 && refunds.length === 0 && overLimitCoupons.length === 0
     ) {
-      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0 };
+      return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0, overLimitCoupons: 0 };
     }
 
     for (const r of refunds) {
       console.error(
         `[billing-reconcile] refund needs review: refund=${r.refund_id} payment=${r.refund_of} business=${r.business_id} status=${r.status} reasons=${r.reasons.join(',')} created_at=${r.created_at}`,
+      );
+    }
+
+    for (const r of overLimitCoupons) {
+      console.error(
+        `[billing-reconcile] coupon over its limit at payment: tx=${r.billing_transaction_id} business=${r.business_id} coupon=${r.coupon_id ?? 'n/a'} reason=${r.reason ?? 'n/a'} paid_at=${r.paid_at}`,
       );
     }
 
@@ -228,7 +265,7 @@ export async function reportBillingAnomalies(): Promise<{
       await sendPlatformAdminPush({
         event: 'incident',
         title: 'Billing: payments need attention',
-        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored, ${rejectedCredits.length} upgrade credits rejected, ${refunds.length} refunds need review`,
+        body: `${unapplied.length} paid but not applied, ${stuck.length} webhook events stuck, ${ignored.length} paid events ignored, ${rejectedCredits.length} upgrade credits rejected, ${refunds.length} refunds need review, ${overLimitCoupons.length} coupon redemptions over their limit`,
         url: '/admin/billing',
       });
     } catch (err) {
@@ -240,9 +277,10 @@ export async function reportBillingAnomalies(): Promise<{
       ignoredPaid: ignored.length,
       rejectedCredits: rejectedCredits.length,
       refundsNeedingReview: refunds.length,
+      overLimitCoupons: overLimitCoupons.length,
     };
   } catch (err) {
     console.error('[billing-reconcile] check failed', err);
-    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0 };
+    return { unapplied: 0, stuckEvents: 0, ignoredPaid: 0, rejectedCredits: 0, refundsNeedingReview: 0, overLimitCoupons: 0 };
   }
 }

@@ -615,10 +615,18 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
     // takes the same transaction lock again, which is harmless.
     const credit = tx.upgrade_credit && Number(tx.upgrade_credit.amount) > 0 ? tx.upgrade_credit : null;
     let creditRejected: string | undefined;
-    if (credit) {
+    if (credit || tx.coupon_id) {
       await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `module_plan_change:${params.businessId}:${moduleKey}`,
       ]);
+    }
+    // The coupon row comes right after the module lock and before any other payment row (the credit
+    // sources below), so every path takes: checkout row, module lock, coupon row, other payments,
+    // document counter. The redemption itself happens further down with the lock already held.
+    if (tx.coupon_id) {
+      await client.query(`SELECT id FROM coupons WHERE id = $1 FOR NO KEY UPDATE`, [tx.coupon_id]);
+    }
+    if (credit) {
       creditRejected =
         (await recheckUpgradeCredit(client, {
           businessId: params.businessId,

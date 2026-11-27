@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
       breakdown: {
         listPrice: pricing.baseAmount,
         couponDiscount: pricing.discountAmount,
+        couponCapped: pricing.couponCapped === true,
         creditApplied: pricing.creditApplied,
         creditUnused: pricing.creditUnused,
         creditAvailable: pricing.creditAvailable,

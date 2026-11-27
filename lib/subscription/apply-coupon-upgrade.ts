@@ -1,7 +1,7 @@
 import { query } from '@/lib/db';
-import { recordBillingTransaction } from '@/lib/platform-billing';
+import { markCheckoutFailedIfPending, recordBillingTransaction, updateBillingTransactionStatus } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange, getBusinessPlatformRecipient } from '@/lib/platform-email';
-import { redeemCoupon } from '@/lib/subscription/coupons';
+import { redeemCoupon, releaseCouponClaim } from '@/lib/subscription/coupons';
 import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
 import {
   applyModuleSubscriptionPlanChange,
@@ -47,25 +47,13 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
   const moduleKey =
     normalizePlatformModule(params.moduleKey) ?? (await resolveModuleKeyForPlan(params.planId));
 
-  const moduleSub = await applyModuleSubscriptionPlanChange({
-    businessId: params.businessId,
-    moduleKey,
-    planId: params.planId,
-    billingCycle: params.billingCycle,
-    paymentMethod: params.paymentMethod ?? 'coupon',
-  });
-  const sub = { module_key: moduleSub.module_key };
-
-  if (params.pricing.freeMonths && params.pricing.freeMonths > 0) {
-    await extendModuleSubscriptionForFreeMonths(
-      params.businessId,
-      moduleKey,
-      params.pricing.freeMonths,
-    );
-  }
-
+  // With a coupon the order is: record the payment row (pending), claim the redemption under the
+  // coupon lock (this is where a coupon that ran out or was already used is refused, before the
+  // customer gets anything), then switch the plan, then complete the row. Every redemption carries
+  // its payment row id, so the unique key always applies.
+  let couponTxId: string | null = null;
   if (params.pricing.couponId) {
-    const { id: billingTxId } = await recordBillingTransaction({
+    const { id } = await recordBillingTransaction({
       businessId: params.businessId,
       planId: params.planId,
       moduleKey,
@@ -74,21 +62,61 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       couponId: params.pricing.couponId,
       billingCycle: params.billingCycle,
       paymentMethod: 'coupon',
-      status: 'completed',
+      status: 'pending',
+      skipEmails: true,
       description: formatModulePlanReceiptLabel(
         moduleKey,
         params.planDisplayName,
         params.billingCycle,
       ) + ' (coupon)',
     });
-    await redeemCoupon(
-      params.pricing.couponId,
-      params.businessId,
-      params.planId,
-      billingTxId,
-      params.billingCycle,
-    );
-    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey, moduleSub.paidFrom);
+    couponTxId = id;
+    try {
+      await redeemCoupon(
+        params.pricing.couponId,
+        params.businessId,
+        params.planId,
+        id,
+        params.billingCycle,
+        undefined,
+        { strict: true },
+      );
+    } catch (err) {
+      await markCheckoutFailedIfPending(id, params.businessId, { reason: 'coupon_unavailable' }, false).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  let moduleSub: Awaited<ReturnType<typeof applyModuleSubscriptionPlanChange>>;
+  try {
+    moduleSub = await applyModuleSubscriptionPlanChange({
+      businessId: params.businessId,
+      moduleKey,
+      planId: params.planId,
+      billingCycle: params.billingCycle,
+      paymentMethod: params.paymentMethod ?? 'coupon',
+    });
+    if (params.pricing.freeMonths && params.pricing.freeMonths > 0) {
+      await extendModuleSubscriptionForFreeMonths(
+        params.businessId,
+        moduleKey,
+        params.pricing.freeMonths,
+      );
+    }
+  } catch (err) {
+    if (couponTxId && params.pricing.couponId) {
+      await releaseCouponClaim(params.pricing.couponId, params.businessId, couponTxId).catch((e) =>
+        console.error('[apply-coupon-upgrade] could not release coupon claim', e),
+      );
+      await markCheckoutFailedIfPending(couponTxId, params.businessId, { reason: 'plan_change_failed' }, false).catch(() => undefined);
+    }
+    throw err;
+  }
+  const sub = { module_key: moduleSub.module_key };
+
+  if (couponTxId) {
+    await updateBillingTransactionStatus(couponTxId, 'completed');
+    await recordPeriodFromModuleRow(couponTxId, params.businessId, moduleKey, moduleSub.paidFrom);
   } else if (params.pricing.finalAmount <= 0 && params.pricing.baseAmount <= 0) {
     const { id: zeroTxId } = await recordBillingTransaction({
       businessId: params.businessId,

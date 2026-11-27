@@ -1127,7 +1127,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
       await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = NULL WHERE business_id = $1`, [biz]);
       await processExpiredModuleSubscriptions();
-      expect((await queryOne<any>(`SELECT grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.g).toBe(await daysFromToday(4));
+      expect((await queryOne<any>(`SELECT grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.g).toBe(await daysFromToday(4));
 
       const other = await newBusiness('nullflag');
       await setRow(other, 'billing_growth', { startOffset: -38, endOffset: -8 });
@@ -1137,14 +1137,14 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await setRow(third, 'billing_growth', { startOffset: -38, endOffset: -8 });
       await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = NULL WHERE business_id = $1`, [third]);
       await processExpiredModuleSubscriptions();
-      expect((await queryOne<any>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1`, [third]))!.plan_id).toBe('free');
+      expect((await queryOne<any>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [third]))!.plan_id).toBe('free');
     });
 
     it('a trial plan id on an active row past its end gets no grace under the job or the function', async () => {
       await setRow(biz, 'trial', { startOffset: -33, endOffset: -3 });
       expect(getPaidGraceEndDate({ plan_id: 'trial', status: 'active', end_date: await daysFromToday(-3) })).toBeNull();
       await processExpiredModuleSubscriptions();
-      const r = (await queryOne<any>(`SELECT plan_id, grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!;
+      const r = (await queryOne<any>(`SELECT plan_id, grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!;
       expect(r).toMatchObject({ plan_id: 'trial', g: null });
       clearModuleSubscriptionCache(biz);
       expect((await getOperationalModuleSubscriptions(biz, true)).some((x) => x.module_key === 'billing')).toBe(false);
@@ -1365,12 +1365,12 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
     it('undo restores a cancelled row inside the paid period and logs it', async () => {
       await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
       expect((await post(cancelPost, '/api/subscriptions/cancel', biz, { reason: 'test' })).status).toBe(200);
-      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1`, [biz])).toEqual({ c: true, at: true });
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz])).toEqual({ c: true, at: true });
 
       const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ success: true, module_key: 'billing', end_date: await daysFromToday(20) });
-      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, plan_id, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, plan_id, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))
         .toEqual({ c: false, cleared: true, plan_id: 'billing_growth', e: await daysFromToday(20) });
       expect(Number((await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM subscription_events WHERE business_id = $1 AND event_type = 'cancellation_undone'`, [biz]))!.n)).toBe(1);
       // Undoing twice: nothing left to undo.
@@ -1389,7 +1389,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ code: 'NOT_CANCELLED' });
-      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1`, [biz])).toEqual({ c: true, at: true });
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz])).toEqual({ c: true, at: true });
     });
 
     it('undo on a row that was never cancelled is refused', async () => {
@@ -1407,7 +1407,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         expect(res.status).toBe(400);
         expect(await res.json()).toMatchObject({ code: 'INVALID_MODULE' });
       }
-      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.c).toBe(true);
       expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, { module_key: 'billing' })).status).toBe(200);
     });
 
@@ -1417,7 +1417,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       expect((await post(cancelPost, '/api/subscriptions/cancel', biz, { reason: 'test' })).status).toBe(200);
       await paidAndActivated(biz, 'billing_growth');
       const row = (await queryOne<any>(
-        `SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!;
+        `SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!;
       expect(row).toEqual({ c: false, cleared: true, e: await addMonths(before!.end_date!, 1) });
       // The old end date has passed: the cancel-at-period-end move to Free must not touch the paid-up row.
       await query(`UPDATE business_module_subscriptions SET start_date = CURRENT_DATE - 40, end_date = CURRENT_DATE + 10 WHERE business_id = $1`, [biz]);
@@ -1438,7 +1438,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await setRow(biz, 'billing_growth', { startOffset: -20, endOffset: 10 });
       expect((await post(cancelPost, '/api/subscriptions/cancel', biz, {})).status).toBe(200);
       await applyModuleSubscriptionPlanChange({ businessId: biz, moduleKey: 'billing', planId: 'billing_growth', billingCycle: 'monthly', paymentMethod: 'coupon' });
-      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))
         .toEqual({ c: false, cleared: true });
     });
 
@@ -1451,7 +1451,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, {}, staff)).status).toBe(403);
       const other = await newBusiness('undo-other');
       expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, { business_id: other })).status).toBe(403);
-      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.c).toBe(true);
     });
 
     it('undo only touches the business of the session', async () => {
@@ -1461,7 +1461,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await setRow(other, 'billing_growth', { startOffset: -10, endOffset: 20 });
       await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [other]);
       expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', other)).status).toBe(200);
-      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.c).toBe(true);
     });
 
     it('both current routes report no auto-renew, the end date and grace in grace', async () => {
