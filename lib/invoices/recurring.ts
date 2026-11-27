@@ -8,7 +8,7 @@ import {
 import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { calendarDateOnly } from '@/lib/closing-stock-period-lock';
 import { isPeriodLocked } from '@/lib/period-lock-utils';
-import { hasFeatureAccess } from '@/lib/subscription/feature-access';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
 
@@ -18,10 +18,21 @@ export interface RecurringRunSummary {
   recurring_invoice_id: string;
   created: Array<{ run_date: string; invoice_id: string; invoice_number: string }>;
   skipped: string[];
-  /** True when the business's current plan lacks recurring invoices: nothing was generated or changed. */
+  /**
+   * True when the business's plan does not include recurring invoices (FEATURE_NOT_ENABLED). Nothing is
+   * generated; due periods are dropped (only next_run_date moves, see droppedFrom/droppedThrough).
+   */
   skippedNoPlan: boolean;
+  /**
+   * The subscription is not operational (expired, inactive, none, ...) for any reason other than "plan lacks the
+   * feature": nothing was generated and the schedule is left completely unchanged, so a customer who pays during
+   * grace still gets the invoice.
+   */
+  skippedSubscriptionInactive?: boolean;
   /** The plan check itself failed (e.g. a database error): treated as "not allowed" for this run; nothing was changed. */
   skippedPlanCheckFailed?: boolean;
+  /** With skippedNoPlan: the schedule's next_run_date before the drop. */
+  droppedFrom?: string;
   /** With skippedNoPlan: the schedule's new next_run_date. Periods that fell due without the plan are dropped, not deferred. */
   droppedThrough?: string;
   message?: string;
@@ -50,34 +61,41 @@ export async function runRecurringInvoices(
 
   const summaries: RecurringRunSummary[] = [];
   // The plan is checked once per business per run, not once per schedule.
-  const planAllows = new Map<string, boolean>();
-  const failedPlanCheck = new Set<string>();
+  // 'allowed' | 'no_feature' (plan lacks the feature: drop periods) | 'inactive' (any other denial: leave unchanged)
+  // | 'failed' (the check itself threw: leave unchanged).
+  type PlanDecision = 'allowed' | 'no_feature' | 'inactive' | 'failed';
+  const planDecision = new Map<string, PlanDecision>();
   for (const rec of recs) {
     const summary: RecurringRunSummary = { recurring_invoice_id: rec.id, created: [], skipped: [], skippedNoPlan: false };
     summaries.push(summary);
-    // The plan is evaluated once per business per run. An error in the check fails closed for that
-    // business only (cached as false) and never aborts the run.
-    let allowed = planAllows.get(rec.business_id);
-    let checkFailed = false;
-    if (allowed === undefined) {
+    let decision = planDecision.get(rec.business_id);
+    if (decision === undefined) {
       try {
-        allowed = await hasFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+        await assertFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+        decision = 'allowed';
       } catch (e) {
-        console.error(`[recurring-invoices] plan check failed for business ${rec.business_id}:`, e);
-        allowed = false;
-        checkFailed = true;
-        failedPlanCheck.add(rec.business_id);
+        if (e instanceof FeatureAccessDeniedError) {
+          // Only "the plan does not include the feature" is a real no. An expired/inactive row may just be
+          // waiting for the nightly job to stamp its grace period, so those never drop periods.
+          decision = e.reason === 'FEATURE_NOT_ENABLED' ? 'no_feature' : 'inactive';
+        } else {
+          console.error(`[recurring-invoices] plan check failed for business ${rec.business_id}:`, e);
+          decision = 'failed';
+        }
       }
-      planAllows.set(rec.business_id, allowed);
-    } else if (!allowed && failedPlanCheck.has(rec.business_id)) {
-      checkFailed = true;
+      planDecision.set(rec.business_id, decision);
     }
-    if (!allowed && checkFailed) {
+    if (decision === 'failed') {
       summary.skippedPlanCheckFailed = true;
       summary.message = 'Plan check failed; schedule left unchanged for this run';
       continue;
     }
-    if (!allowed) {
+    if (decision === 'inactive') {
+      summary.skippedSubscriptionInactive = true;
+      summary.message = 'Subscription not operational; schedule left unchanged for this run';
+      continue;
+    }
+    if (decision === 'no_feature') {
       // A real "no": periods that fall due while the plan lacks recurring invoices are dropped, not
       // deferred, so a returning plan never back-fills. Only next_run_date moves, to the first run
       // date after today; no history, invoice, run count, status or error is written.
@@ -87,11 +105,22 @@ export async function runRecurringInvoices(
         const anchor = Number(calendarDateOnly(rec.start_date)!.slice(8, 10));
         let d = readNext;
         while (d <= p.today) d = nextRunDate(d, rec.frequency, rec.interval_value, anchor);
-        await pool.query(
-          `UPDATE recurring_invoices SET next_run_date = $3::date WHERE id = $1 AND next_run_date = $2::date`,
-          [rec.id, readNext, d]
-        );
-        summary.droppedThrough = d;
+        try {
+          await pool.query(
+            `UPDATE recurring_invoices SET next_run_date = $3::date, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $1 AND next_run_date = $2::date`,
+            [rec.id, readNext, d]
+          );
+          summary.droppedFrom = readNext;
+          summary.droppedThrough = d;
+          console.info(
+            `[recurring-invoices] dropped periods: schedule ${rec.id} business ${rec.business_id} from ${readNext} through ${d}`
+          );
+        } catch (e: any) {
+          console.error(`[recurring-invoices] drop failed for schedule ${rec.id}:`, e);
+          summary.error = `Could not skip due periods: ${e?.message || 'failed'}`;
+          continue;
+        }
       }
       summary.message = 'Plan does not include recurring invoices; due periods skipped';
       continue;

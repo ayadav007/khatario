@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { query, queryOne, queryRows } from '@/lib/db';
+import { getPool, queryOne, queryRows } from '@/lib/db';
 import { createSalaryStructure, salaryStructureFromOffer } from '@/lib/hr/salary-structure';
 import { getEmployeePrefillFromOnboarding } from '@/lib/hr/recruitment/onboarding/task-service';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
@@ -78,117 +78,133 @@ export async function convertCandidateToEmployee(
     [params.businessId, candidate.email.toLowerCase(), phoneNorm ?? ''],
   );
 
-  if (existingUser) {
-    userId = existingUser.id;
-    const existingEmp = await queryOne(`SELECT id FROM employees WHERE id = $1`, [userId]);
-    if (existingEmp) throw new Error('An employee record already exists for this person');
-  } else {
-    const passwordHash = await bcrypt.hash(cryptoRandomPassword(), 10);
-    const user = await queryOne<{ id: string }>(
-      `INSERT INTO users (business_id, name, email, phone, password_hash, role, is_active)
-       VALUES ($1, $2, $3, $4, $5, 'user', true) RETURNING id`,
-      [params.businessId, candidate.full_name, candidate.email, phoneNorm, passwordHash],
+  // The user row (an active user with no employee row counts as a console seat), the employee row, its documents
+  // and the salary structure are one unit: a failure part-way must not leave an orphan active user behind.
+  const client = await getPool().connect();
+  const cq = async <T>(text: string, params: unknown[]): Promise<T | null> =>
+    ((await client.query(text, params)).rows[0] as T | undefined) ?? null;
+  let structure: { id: string };
+  try {
+    await client.query('BEGIN');
+    if (existingUser) {
+      userId = existingUser.id;
+      const existingEmp = await queryOne(`SELECT id FROM employees WHERE id = $1`, [userId]);
+      if (existingEmp) throw new Error('An employee record already exists for this person');
+    } else {
+      const passwordHash = await bcrypt.hash(cryptoRandomPassword(), 10);
+      const user = await cq<{ id: string }>(
+        `INSERT INTO users (business_id, name, email, phone, password_hash, role, is_active)
+         VALUES ($1, $2, $3, $4, $5, 'user', true) RETURNING id`,
+        [params.businessId, candidate.full_name, candidate.email, phoneNorm, passwordHash],
+      );
+      if (!user) throw new Error('Failed to create user');
+      userId = user.id;
+    }
+
+    let employeeCode = params.employeeCode?.trim();
+    if (!employeeCode) {
+      const generated = await cq<{ generate_employee_code: string }>(
+        'SELECT generate_employee_code($1) as generate_employee_code',
+        [params.businessId],
+      );
+      employeeCode = generated?.generate_employee_code;
+    }
+    if (!employeeCode) throw new Error('Failed to generate employee code');
+
+    const joiningDate = dateColumnToYmd(offer.joining_date);
+    const prefill = await getEmployeePrefillFromOnboarding(params.businessId, params.candidateId);
+
+    await cq(
+      `INSERT INTO employees (
+        id, business_id, employee_code, designation, department, joining_date,
+        reporting_manager_id, employment_type, access_type, is_active,
+        pan_number, aadhaar_number, bank_account_number, bank_ifsc, bank_name
+      ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, 'full_time', 'attendance_only', true, $8, $9, $10, $11, $12)`,
+      [
+        userId,
+        params.businessId,
+        employeeCode,
+        offer.designation,
+        offer.department ?? null,
+        joiningDate,
+        params.reportingManagerId ?? null,
+        prefill.pan_number,
+        prefill.aadhaar_number,
+        prefill.bank_account_number,
+        prefill.bank_ifsc,
+        prefill.bank_name,
+      ],
     );
-    if (!user) throw new Error('Failed to create user');
-    userId = user.id;
-  }
 
-  let employeeCode = params.employeeCode?.trim();
-  if (!employeeCode) {
-    const generated = await queryOne<{ generate_employee_code: string }>(
-      'SELECT generate_employee_code($1) as generate_employee_code',
-      [params.businessId],
+    const docs = await queryRows<{
+      document_type: string;
+      file_name: string;
+      file_url: string;
+    }>(
+      `SELECT document_type, file_name, file_url FROM candidate_documents
+       WHERE candidate_id = $1 AND business_id = $2 AND verification_status = 'approved'`,
+      [params.candidateId, params.businessId],
     );
-    employeeCode = generated?.generate_employee_code;
-  }
-  if (!employeeCode) throw new Error('Failed to generate employee code');
 
-  const joiningDate = dateColumnToYmd(offer.joining_date);
-  const prefill = await getEmployeePrefillFromOnboarding(params.businessId, params.candidateId);
+    for (const doc of docs) {
+      await client.query(
+        `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+        [userId, doc.document_type, doc.file_name, doc.file_url],
+      );
+    }
 
-  await queryOne(
-    `INSERT INTO employees (
-      id, business_id, employee_code, designation, department, joining_date,
-      reporting_manager_id, employment_type, access_type, is_active,
-      pan_number, aadhaar_number, bank_account_number, bank_ifsc, bank_name
-    ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, 'full_time', 'attendance_only', true, $8, $9, $10, $11, $12)`,
-    [
-      userId,
-      params.businessId,
-      employeeCode,
-      offer.designation,
-      offer.department ?? null,
-      joiningDate,
-      params.reportingManagerId ?? null,
-      prefill.pan_number,
-      prefill.aadhaar_number,
-      prefill.bank_account_number,
-      prefill.bank_ifsc,
-      prefill.bank_name,
-    ],
-  );
-
-  const docs = await queryRows<{
-    document_type: string;
-    file_name: string;
-    file_url: string;
-  }>(
-    `SELECT document_type, file_name, file_url FROM candidate_documents
-     WHERE candidate_id = $1 AND business_id = $2 AND verification_status = 'approved'`,
-    [params.candidateId, params.businessId],
-  );
-
-  for (const doc of docs) {
-    await query(
-      `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-      [userId, doc.document_type, doc.file_name, doc.file_url],
+    const onboardingFiles = await queryRows<{
+      file_name: string;
+      file_url: string;
+      task_name: string;
+    }>(
+      `SELECT f.file_name, f.file_url, t.name AS task_name
+       FROM candidate_task_files f
+       INNER JOIN candidate_onboarding_tasks t ON t.id = f.task_id
+       WHERE f.candidate_id = $1 AND f.business_id = $2`,
+      [params.candidateId, params.businessId],
     );
-  }
 
-  const onboardingFiles = await queryRows<{
-    file_name: string;
-    file_url: string;
-    task_name: string;
-  }>(
-    `SELECT f.file_name, f.file_url, t.name AS task_name
-     FROM candidate_task_files f
-     INNER JOIN candidate_onboarding_tasks t ON t.id = f.task_id
-     WHERE f.candidate_id = $1 AND f.business_id = $2`,
-    [params.candidateId, params.businessId],
-  );
+    for (const f of onboardingFiles) {
+      await client.query(
+        `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
+         VALUES ($1, 'onboarding', $2, $3, CURRENT_TIMESTAMP)`,
+        [userId, `${f.task_name}: ${f.file_name}`, f.file_url],
+      );
+    }
 
-  for (const f of onboardingFiles) {
-    await query(
-      `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
-       VALUES ($1, 'onboarding', $2, $3, CURRENT_TIMESTAMP)`,
-      [userId, `${f.task_name}: ${f.file_name}`, f.file_url],
+    const identityDocs = await queryRows<{ document_key: string; file_name: string | null; file_url: string | null }>(
+      `SELECT document_key, file_name, file_url FROM candidate_identity_documents
+       WHERE candidate_id = $1 AND business_id = $2 AND is_complete = true AND file_url IS NOT NULL`,
+      [params.candidateId, params.businessId],
     );
-  }
 
-  const identityDocs = await queryRows<{ document_key: string; file_name: string | null; file_url: string | null }>(
-    `SELECT document_key, file_name, file_url FROM candidate_identity_documents
-     WHERE candidate_id = $1 AND business_id = $2 AND is_complete = true AND file_url IS NOT NULL`,
-    [params.candidateId, params.businessId],
-  );
+    for (const id of identityDocs) {
+      await client.query(
+        `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+        [userId, id.document_key, id.file_name ?? id.document_key, id.file_url],
+      );
+    }
 
-  for (const id of identityDocs) {
-    await query(
-      `INSERT INTO employee_documents (employee_id, document_type, document_name, file_url, uploaded_at)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-      [userId, id.document_key, id.file_name ?? id.document_key, id.file_url],
+    const structureInput = salaryStructureFromOffer(offer, userId, params.businessId);
+    structure = await createSalaryStructure(structureInput, client);
+
+    await client.query(
+      `UPDATE recruitment_candidates
+       SET status = 'joined', employee_id = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND business_id = $3`,
+      [userId, params.candidateId, params.businessId],
     );
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
-
-  const structureInput = salaryStructureFromOffer(offer, userId, params.businessId);
-  const structure = await createSalaryStructure(structureInput);
-
-  await query(
-    `UPDATE recruitment_candidates
-     SET status = 'joined', employee_id = $1, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $2 AND business_id = $3`,
-    [userId, params.candidateId, params.businessId],
-  );
 
   return { employee_id: userId, salary_structure_id: structure.id };
 }

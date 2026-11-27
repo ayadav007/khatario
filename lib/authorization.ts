@@ -205,10 +205,20 @@ export async function authorize(
     [userId]
   );
 
+  // The plan-gate business is resolved at most once per authorize call (it can cost a membership query),
+  // and only when a gate needs it.
+  let planBusinessPromise: Promise<string | undefined> | undefined;
+  const resolvePlanBusiness = (): Promise<string | undefined> => {
+    if (!planBusinessPromise) {
+      planBusinessPromise = resolveBusinessForPlanChecks(userId, context, callingUser);
+    }
+    return planBusinessPromise;
+  };
+
   // Platform module gate — applies to all users including primary admin.
   const platformModule = resolvePlatformModuleForAuthModule(moduleKey);
   if (platformModule && platformModule !== 'core') {
-    const businessIdForModule = await resolveBusinessForPlanChecks(userId, context, callingUser);
+    const businessIdForModule = await resolvePlanBusiness();
     if (!businessIdForModule) {
       throw new AuthorizationError(
         'businessId is required for module access',
@@ -244,7 +254,7 @@ export async function authorize(
     throw new AuthorizationError('Supplier Hub is not available.', 'FEATURE_HIDDEN', undefined, 404);
   }
   if (pathFeature) {
-    const businessIdForPath = await resolveBusinessForPlanChecks(userId, context, callingUser);
+    const businessIdForPath = await resolvePlanBusiness();
     if (!businessIdForPath) {
       throw new AuthorizationError(
         'businessId is required for plan feature access',
@@ -271,7 +281,7 @@ export async function authorize(
   // Subscription plan must include HR features (applies to all users, including primary admin)
   const hrRegistryFeature = getHrRegistryFeatureForAuthModule(moduleKey);
   if (hrRegistryFeature) {
-    const businessIdForFeature = await resolveBusinessForPlanChecks(userId, context, callingUser);
+    const businessIdForFeature = await resolvePlanBusiness();
     if (!businessIdForFeature) {
       throw new AuthorizationError(
         'businessId is required for HR operations',

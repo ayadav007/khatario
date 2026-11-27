@@ -89,7 +89,10 @@ import { POST as convertCandidateRoute } from '@/app/api/hr/recruitment/candidat
 import { POST as checkInRoute } from '@/app/api/employees/attendance/check-in/route';
 import { POST as checkOutRoute } from '@/app/api/employees/attendance/check-out/route';
 import { POST as faceRoute } from '@/app/api/employees/attendance/face-recognition/route';
-import { AttendanceLimitError, recordCheckIn } from '@/lib/hr/attendance-punch';
+import { AttendanceLimitError, ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE, recordCheckIn } from '@/lib/hr/attendance-punch';
+import { attendanceDateYmd } from '@/lib/hr/attendance-date';
+import { POST as restoreBackupRoute } from '@/app/api/backup/restore/route';
+import { POST as postEmployeeRoute } from '@/app/api/employees/route';
 import { decideRegularizationRequest } from '@/lib/hr/attendance-regularization';
 import { serializeFaceEncoding } from '@/lib/face-recognition';
 import { ownerHasOtherBusiness, provisionBusiness } from '@/lib/businesses/provision-business';
@@ -1139,6 +1142,8 @@ run('plan enforcement (kh_phase2_test)', () => {
     describe('attendance limit on punch, face recognition and regularisation', () => {
       let biz: string, owner: string, filler: string, newcomer: string;
       beforeAll(async () => {
+        // The disposable DB can lag migration 130 (notifications.user_id), which the push trigger reads.
+        await query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE`);
         ({ biz, owner } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'att-limit' }));
         await setPlan(biz, 'hr', 'hr_starter'); // face recognition needs the staff app feature; Starter: 1,600 per month
         filler = await addEmployee(biz);
@@ -1204,7 +1209,8 @@ run('plan enforcement (kh_phase2_test)', () => {
       });
 
       it('a check-in that updates the existing row for the day, and a check-out, are never refused', async () => {
-        await query(`INSERT INTO employee_attendance (employee_id, date, status) VALUES ($1, CURRENT_DATE, 'absent')`, [newcomer]);
+        // The routes record the day in attendanceDateYmd() (IST), not the database's CURRENT_DATE.
+        await query(`INSERT INTO employee_attendance (employee_id, date, status) VALUES ($1, $2::date, 'absent')`, [newcomer, attendanceDateYmd()]);
         const inRes = await callRoute(checkInRoute as unknown as RouteHandler, {
           biz, userId: newcomer, method: 'POST', path: '/api/employees/attendance/check-in', body: {},
         });
@@ -1216,18 +1222,59 @@ run('plan enforcement (kh_phase2_test)', () => {
       });
 
       it('regularisation onto an existing row for the day is not refused at the limit', async () => {
+        // Own employee and own row, so the test passes when run alone (-t) and at any time of day.
+        const day = attendanceDateYmd();
+        const worker = await addEmployee(biz);
+        await query(`INSERT INTO employee_attendance (employee_id, date, status) VALUES ($1, $2::date, 'absent')`, [worker, day]);
         const manager = await addEmployee(biz);
         const reqId = randomUUID();
         await query(
           `INSERT INTO attendance_regularization_requests
              (id, business_id, employee_id, attendance_date, request_type, reason, requested_check_in, approver_user_id)
-           VALUES ($1, $2, $3, CURRENT_DATE, 'override_check_in', 'fix', CURRENT_DATE + TIME '09:00', $4)`,
-          [reqId, biz, newcomer, manager],
+           VALUES ($1, $2, $3, $4::date, 'override_check_in', 'fix', $4::date + TIME '09:00', $5)`,
+          [reqId, biz, worker, day, manager],
         );
         const r = await decideRegularizationRequest({
           requestId: reqId, businessId: biz, managerEmployeeId: manager, action: 'approve',
         });
         expect(r.ok).toBe(true);
+      });
+
+      it('a refused punch tells the employee to tell the manager (not to upgrade) and notifies the business once per day', async () => {
+        const b = await newBusinessWithOwner('billing_growth', { hr: true, label: 'att-msg' });
+        await setPlan(b.biz, 'hr', 'hr_starter');
+        const fill = await addEmployee(b.biz);
+        await fillAttendance(fill, 1600);
+        const e1 = await addEmployee(b.biz);
+        const e2 = await addEmployee(b.biz);
+        clearSubscriptionCache(b.biz);
+        const notices = () =>
+          count(`notifications WHERE business_id = $1 AND reference_type = 'attendance_limit'`, [b.biz]);
+
+        const res1 = await callRoute(checkInRoute as unknown as RouteHandler, {
+          biz: b.biz, userId: e1, method: 'POST', path: '/api/employees/attendance/check-in', body: {},
+        });
+        expect(res1.status).toBe(403);
+        const body1 = await res1.json();
+        expect(body1.code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(body1.error).toBe(ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE);
+        expect(body1.error).toBe(
+          "Attendance could not be recorded: your employer's plan has reached its monthly attendance limit. Please tell your manager.",
+        );
+        expect(body1.error).not.toMatch(/upgrade/i);
+        expect(await notices()).toBe(1);
+
+        await expect(recordCheckIn({ employeeId: e2, businessId: b.biz, method: 'staff_app' })).rejects.toMatchObject({
+          message: ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE, code: 'limit_exceeded', status: 403,
+        });
+        expect(await notices()).toBe(1); // second refusal on the same day: no second notification
+        const n = await queryOne<{ title: string; message: string; type: string }>(
+          `SELECT title, message, type FROM notifications WHERE business_id = $1 AND reference_type = 'attendance_limit'`, [b.biz]);
+        expect(n).toEqual({
+          type: 'general',
+          title: 'Monthly attendance limit reached',
+          message: "Staff could not check in today because your plan's monthly attendance limit is used up. Upgrade your HR plan to continue.",
+        });
       });
     });
 
@@ -1414,13 +1461,28 @@ run('plan enforcement (kh_phase2_test)', () => {
     });
 
     describe('leave types: the seeded HR Admin shape (view, add, modify; no delete) can manage them', () => {
+      const leaveModuleInsertedByTest = { v: false };
+      afterAll(async () => {
+        // Put the shared permission_modules seed back as it was before this block.
+        if (!leaveModuleInsertedByTest.v) return;
+        try {
+          await query(
+            `DELETE FROM role_permissions WHERE module_key = 'leave_requests'
+               AND role_id IN (SELECT id FROM user_roles WHERE role_key IN ('lt_viewer', 'lt_hr_admin'))`,
+          );
+          await query(`DELETE FROM permission_modules WHERE module_key = 'leave_requests'`);
+        } catch {
+          /* still referenced by another role: leave it */
+        }
+      });
       const asRole = async (viewOnly: boolean) => {
         const { full } = fx.leave;
         const roleId = await makeRole(full.biz, viewOnly ? 'lt_viewer' : 'lt_hr_admin');
-        await query(
+        const insertedModule = await queryOne<{ module_key: string }>(
           `INSERT INTO permission_modules (module_key, module_name, is_active) VALUES ('leave_requests', 'leave_requests', true)
-           ON CONFLICT (module_key) DO NOTHING`,
+           ON CONFLICT (module_key) DO NOTHING RETURNING module_key`,
         );
+        if (insertedModule) leaveModuleInsertedByTest.v = true; // shared seed row: removed again in afterAll
         await query(`DELETE FROM role_permissions WHERE role_id = $1`, [roleId]);
         await query(
           `INSERT INTO role_permissions (role_id, module_key, can_view, can_add, can_modify, can_delete, can_share)
@@ -1601,6 +1663,28 @@ run('plan enforcement (kh_phase2_test)', () => {
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
       });
 
+      it('an expired-but-not-yet-graced paying customer loses nothing: schedule untouched, then generated once grace is stamped', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { label: 'recGrace' });
+        const sched = await makeDueSchedule(biz);
+        // paid period ended yesterday; the nightly job has not stamped grace_period_end yet
+        await setPlan(biz, 'billing', 'billing_growth', { end_date: '-1 day' });
+        const before = await scheduleRow(sched);
+        const r1 = await runRecurring();
+        const s1 = r1.summaries.find((x) => x.recurring_invoice_id === sched)!;
+        expect(s1).toMatchObject({ skippedSubscriptionInactive: true, skippedNoPlan: false, created: [] });
+        expect(s1.droppedThrough).toBeUndefined();
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
+        expect(await scheduleRow(sched)).toEqual(before);
+        expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched])).toBe(0);
+
+        await setPlan(biz, 'billing', 'billing_growth', { end_date: '-1 day', grace_period_end: '+6 days' });
+        const r2 = await runRecurring();
+        const s2 = r2.summaries.find((x) => x.recurring_invoice_id === sched)!;
+        expect(s2.skippedSubscriptionInactive).toBeUndefined();
+        expect(s2.created).toHaveLength(1);
+        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
+      });
+
       it('a monthly schedule six months overdue on a plan without the feature jumps to the first date after today', async () => {
         const { biz } = await newBusinessWithOwner('billing_starter', { label: 'rec1b' });
         const sched = await makeDueSchedule(biz, { start: '2025-12-01' });
@@ -1619,8 +1703,8 @@ run('plan enforcement (kh_phase2_test)', () => {
         const sa = await makeDueSchedule(A.biz);
         const sb = await makeDueSchedule(B.biz);
         const before = await scheduleRow(sa);
-        const original = featureAccess.hasFeatureAccess;
-        const spy = jest.spyOn(featureAccess, 'hasFeatureAccess').mockImplementation(async (biz, key) => {
+        const original = featureAccess.assertFeatureAccess;
+        const spy = jest.spyOn(featureAccess, 'assertFeatureAccess').mockImplementation(async (biz, key) => {
           if (biz === A.biz) throw new Error('transient db error');
           return original(biz, key);
         });
@@ -1749,6 +1833,165 @@ run('plan enforcement (kh_phase2_test)', () => {
         expect(r.sent).toBe(2);
         expect(sendWhatsAppMessage).toHaveBeenCalledTimes(2);
         expect((await campaignRow(campaign))!.status).toBe('completed');
+      });
+    });
+  });
+  describe('final fix wave', () => {
+    describe('backup restore never reactivates users (item 2)', () => {
+      it('keeps a deactivated user inactive, reports it, and still applies the other restored fields', async () => {
+        const { biz, owner } = await newBusinessWithOwner('billing_growth', { label: 'restore' });
+        const inactive = await addUser(biz, { isActive: false });
+        const active = await addUser(biz, { isActive: true });
+        const empRow = await addEmployee(biz, { isActive: false });
+        const custId = randomUUID();
+        const res = await callRoute(restoreBackupRoute as unknown as RouteHandler, {
+          biz, userId: owner, method: 'POST', path: '/api/backup/restore',
+          body: {
+            restore_mode: 'merge_smart',
+            backup: {
+              version: '1', business_id: biz,
+              users: [
+                { id: inactive, name: 'Restored Name', phone: '9000000001', role: 'user', is_active: true },
+                { id: active, name: 'Still Here', phone: '9000000002', role: 'user', is_active: false },
+              ],
+              employees: [{ id: empRow, is_active: true }],
+              customers: [{ id: custId, name: 'Restored cust' }],
+            },
+          },
+        });
+        const body = await res.json();
+        expect([res.status, body.error ?? '']).toEqual([200, '']);
+        expect((await userRow(inactive))!.is_active).toBe(false);
+        expect((await userRow(active))!.is_active).toBe(true);
+        expect((await userRow(inactive))!.name).toBe('Restored Name'); // other fields still restored
+        expect(await count(`customers WHERE id = $1 AND business_id = $2`, [custId, biz])).toBe(1);
+        expect(body.users_state_differs).toEqual(
+          expect.arrayContaining([
+            { id: inactive, name: 'Restored Name', backup_is_active: true, current_is_active: false },
+            { id: active, name: 'Still Here', backup_is_active: false, current_is_active: true },
+          ]),
+        );
+        expect(body.users_state_differs).toHaveLength(2);
+        expect(body.employees_state_differs).toEqual([{ id: empRow, backup_is_active: true, current_is_active: false }]);
+        const e = await queryOne<{ is_active: boolean }>(`SELECT is_active FROM employees WHERE id = $1`, [empRow]);
+        expect(e!.is_active).toBe(false);
+      });
+    });
+
+    describe('POST /api/employees seat check for an inactive user that still holds a role (item 3)', () => {
+      async function setup(label: string, fullSeats: boolean) {
+        const { biz, owner } = await newBusinessWithOwner('billing_starter', { hr: true, label });
+        const role = await makeRole(biz, 'cashier');
+        // Starter: 3 console seats. owner + (fullSeats ? 2 : 1) role users.
+        await addUser(biz, { roleId: role });
+        if (fullSeats) await addUser(biz, { roleId: role });
+        const inactive = await addUser(biz, { roleId: role, isActive: false });
+        await addEmployee(biz, { userId: inactive, accessType: 'full', isActive: false });
+        const phoneRow = await queryOne<{ phone: string }>(`SELECT phone FROM users WHERE id = $1`, [inactive]);
+        clearSubscriptionCache(biz);
+        return { biz, owner, role, inactive, phoneNumber: phoneRow!.phone };
+      }
+      const link = (s: { biz: string; owner: string; role: string; phoneNumber: string }) =>
+        callRoute(postEmployeeRoute as unknown as RouteHandler, {
+          biz: s.biz, userId: s.owner, method: 'POST', path: '/api/employees',
+          body: { name: 'Returning', phone: s.phoneNumber, role_id: s.role, password: 'Passw0rdX1' },
+        });
+
+      it('is refused at 3 of 3 seats and the user stays inactive', async () => {
+        const s = await setup('emp-seat-full', true);
+        expect((await queryOne<{ count: number }>(CONSOLE_SEAT_COUNT_SQL, [s.biz]))!.count).toBe(3);
+        const res = await link(s);
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        // The login-seat refusal of this route (not the generic limit reply) is USER_SEAT_LIMIT.
+        expect(body.code).toBe('USER_SEAT_LIMIT');
+        expect((await userRow(s.inactive))!.is_active).toBe(false);
+      });
+
+      it('succeeds with a free seat and reactivates the user', async () => {
+        const s = await setup('emp-seat-free', false);
+        const res = await link(s);
+        const body = await res.json();
+        expect([res.status, body.error ?? '']).toEqual([201, '']);
+        expect((await userRow(s.inactive))!.is_active).toBe(true);
+      });
+    });
+
+    describe('adding a business needs an owner row for the session business (item 5)', () => {
+      it('refuses a user who has no owner row for the session business, and creates nothing', async () => {
+        const { biz } = await newBusinessWithOwner('billing_business', { label: 'addbiz-owner' });
+        const staff = await addUser(biz, { roleId: await makeRole(biz, 'cashier') });
+        const before = await count(`user_businesses WHERE user_id = $1`, [staff]);
+        const res = await callRoute(postBusinessRoute as unknown as RouteHandler, {
+          biz, userId: staff, method: 'POST', path: '/api/businesses', sessionVersion: 1,
+          body: { businessType: 'retail', industry: 'other', businessName: 'Sneaky shop' },
+        });
+        expect(res.status).toBe(403);
+        expect((await res.json()).error).toBe('Only the business owner can add another business');
+        expect(await count(`user_businesses WHERE user_id = $1`, [staff])).toBe(before);
+      });
+    });
+
+    describe('reactivating an attendance-only user through the settings users route (item 6)', () => {
+      it('is not refused at the seat limit when the user takes no seat; a user with a role still is', async () => {
+        const { biz, owner } = await newBusinessWithOwner('billing_starter', { hr: true, label: 'react-seat' });
+        const role = await makeRole(biz, 'cashier');
+        await addUser(biz, { roleId: role });
+        await addUser(biz, { roleId: role }); // 3 of 3 seats
+        const attendanceOnly = await addUser(biz, { accessType: 'attendance_only', isActive: false });
+        await query(`UPDATE employees SET is_active = false WHERE id = $1`, [attendanceOnly]);
+        const withRole = await addUser(biz, { roleId: role, isActive: false });
+        clearSubscriptionCache(biz);
+
+        const refused = await patchUser(biz, owner, withRole, { is_active: true });
+        expect(refused.status).toBe(403);
+        expect((await refused.json()).code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect((await userRow(withRole))!.is_active).toBe(false);
+
+        const ok = await patchUser(biz, owner, attendanceOnly, { is_active: true });
+        expect(ok.status).toBe(200);
+        expect((await userRow(attendanceOnly))!.is_active).toBe(true);
+      });
+    });
+
+    describe('candidate conversion is one transaction (item 7)', () => {
+      it('a failing employee insert leaves no new users row', async () => {
+        const { biz, owner } = await newBusinessWithOwner('billing_growth', { label: 'convert-tx' });
+        await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'hr', true, 'test')`, [biz]);
+        await setPlan(biz, 'hr', 'hr_pro');
+        const taken = await addEmployee(biz);
+        await query(`UPDATE employees SET employee_code = 'DUP-1' WHERE id = $1`, [taken]);
+        const job = randomUUID();
+        await query(`INSERT INTO recruitment_jobs (id, business_id, title) VALUES ($1, $2, 'Clerk')`, [job, biz]);
+        const candidateId = randomUUID();
+        await query(
+          `INSERT INTO recruitment_candidates (id, business_id, job_id, full_name, email, phone, status)
+           VALUES ($1, $2, $3, 'Tx Cand', 'txcand@example.com', '9123456781', 'offer_accepted')`,
+          [candidateId, biz, job],
+        );
+        await query(
+          `INSERT INTO recruitment_offer_letters (business_id, candidate_id, designation, joining_date, status, accepted_at, basic_salary)
+           VALUES ($1, $2, 'Clerk', CURRENT_DATE, 'accepted', CURRENT_TIMESTAMP, 20000)`,
+          [biz, candidateId],
+        );
+        clearSubscriptionCache(biz);
+        const usersBefore = await count('users WHERE business_id = $1', [biz]);
+        const errLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        let res: Response;
+        try {
+          res = await callRoute(convertCandidateRoute as unknown as RouteHandler, {
+            biz, userId: owner, method: 'POST', path: `/api/hr/recruitment/candidates/${candidateId}/convert`,
+            body: { physical_documents_verified: true, employee_code: 'DUP-1' }, params: { id: candidateId },
+          });
+        } finally {
+          errLog.mockRestore();
+        }
+        expect(res.status).toBe(400);
+        expect(await count('users WHERE business_id = $1', [biz])).toBe(usersBefore);
+        expect(await count(`users WHERE business_id = $1 AND email = 'txcand@example.com'`, [biz])).toBe(0);
+        const c = await queryOne<{ employee_id: string | null; status: string }>(
+          `SELECT employee_id, status FROM recruitment_candidates WHERE id = $1`, [candidateId]);
+        expect(c).toEqual({ employee_id: null, status: 'offer_accepted' });
       });
     });
   });

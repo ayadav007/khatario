@@ -70,6 +70,16 @@ describe('authorize: business used for plan checks', () => {
     expect(assertFeatureAccess).toHaveBeenCalledWith('biz-FREE', 'hr_employees');
   });
 
+  it('runs the membership query at most once per authorize call when the session business differs from the pointer', async () => {
+    mockDb({ stored: 'biz-PAID', memberOf: ['biz-FREE'] });
+    requestHeaders.current = { 'x-authenticated-business-id': 'biz-FREE', 'x-khatario-pathname': '/api/ledger' };
+    // 'employees' hits the module gate, the path gate and the HR feature gate: three resolver callers.
+    await authorize('owner', 'employees', 'read');
+    const membershipCalls = queryOne.mock.calls.filter(([sql]) => /FROM user_businesses/.test(sql as string));
+    expect(membershipCalls).toHaveLength(1);
+    expect(assertFeatureAccess).toHaveBeenCalledWith('biz-FREE', 'hr_employees');
+  });
+
   it('an explicit context.businessId wins over the session header', async () => {
     mockDb({ stored: 'biz-A', memberOf: ['biz-B', 'biz-C'] });
     requestHeaders.current = { 'x-authenticated-business-id': 'biz-C', 'x-khatario-pathname': '/api/ledger' };

@@ -18,7 +18,7 @@ async function handle(request: NextRequest) {
     const created = results.reduce((s, r) => s + r.created.length, 0);
     const skippedNoPlan = results.filter((r) => r.skippedNoPlan).length;
     const failed = results.filter((r) => r.error).length;
-    return NextResponse.json({ ok: true, created, failed, skippedNoPlan, skippedPlanCheckFailed: results.filter((r) => r.skippedPlanCheckFailed).length, results });
+    return NextResponse.json({ ok: true, created, failed, skippedNoPlan, skippedPlanCheckFailed: results.filter((r) => r.skippedPlanCheckFailed).length, skippedSubscriptionInactive: results.filter((r) => r.skippedSubscriptionInactive).length, results });
   } catch (error: any) {
     console.error('recurring-invoices cron failed:', error);
     return NextResponse.json({ error: error.message || 'Cron failed' }, { status: 500 });

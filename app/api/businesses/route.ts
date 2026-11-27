@@ -61,33 +61,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  const owner = await queryOne<{
-    id: string;
-    is_primary_admin: boolean | null;
-    business_id: string | null;
-    product_line: string | null;
-  }>(
-    `SELECT u.id, u.is_primary_admin, u.business_id, b.product_line
+  const owner = await queryOne<{ id: string; business_id: string | null }>(
+    `SELECT u.id, u.business_id
      FROM users u
-     LEFT JOIN businesses b ON b.id = u.business_id
      WHERE u.id = $1 AND COALESCE(u.is_active, true) = true`,
     [userId],
   );
   if (!owner?.business_id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
-  if (!owner.is_primary_admin) {
+
+  // Everything is judged on the business this session works in, not on the stored pointer users.business_id
+  // (which moves when the owner switches business in another session): the plan, the ownership and the
+  // product line of the new business.
+  const tenant = requireTenantBusinessId(request);
+  if (!tenant.ok) {
+    return tenant.response;
+  }
+  const sessionBusiness = await queryOne<{ product_line: string | null }>(
+    `SELECT b.product_line
+       FROM user_businesses ub
+       JOIN businesses b ON b.id = ub.business_id
+      WHERE ub.user_id = $1 AND ub.business_id = $2 AND ub.role = 'owner'`,
+    [userId, tenant.businessId],
+  );
+  if (!sessionBusiness) {
     return NextResponse.json(
       { error: 'Only the business owner can add another business' },
       { status: 403 },
     );
-  }
-
-  // The plan that counts is the one of the business this session works in, not the stored pointer
-  // users.business_id (which moves when the owner switches business in another session).
-  const tenant = requireTenantBusinessId(request);
-  if (!tenant.ok) {
-    return tenant.response;
   }
 
   try {
@@ -110,12 +112,14 @@ export async function POST(request: NextRequest) {
   let committed = false;
   try {
     await client.query('BEGIN');
-    await attachUserAsOwner(client, userId, owner.business_id);
+    await attachUserAsOwner(client, userId, tenant.businessId);
 
+    // Every business added through this route starts on Free: the owner already has a business, so
+    // provisionBusiness does not grant another trial (one trial per owner).
     const provisioned = await provisionBusiness(client, {
       ...parsed.value,
       ownerUserId: userId,
-      productLine: normalizeProductLine(owner.product_line),
+      productLine: normalizeProductLine(sessionBusiness.product_line),
     });
     await attachUserAsOwner(client, userId, provisioned.businessId);
     await grantOwnerBranchAccess(client, userId, provisioned.defaultBranchId);

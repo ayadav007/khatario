@@ -336,18 +336,52 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Users (update, don't replace passwords)
-    if (backup.users && restore_mode !== 'replace_all') {
-      // For merge mode, only update non-sensitive fields
+    // A restore never changes users.is_active: reactivating a login takes a console seat, and only Settings
+    // enforces the plan's seat limit. Differences are reported so the owner can reactivate there.
+    const usersStateDiffers: Array<{ id: string; name: string | null; backup_is_active: boolean; current_is_active: boolean }> = [];
+    const employeesStateDiffers: Array<{ id: string; backup_is_active: boolean; current_is_active: boolean }> = [];
+    if (Array.isArray(backup.users)) {
       for (const user of backup.users) {
-        await client.query(`
-          UPDATE users 
-          SET name = $1, phone = $2, role = $3,
-              -- A restore never deactivates the owner or the person running it.
-              is_active = CASE WHEN is_primary_admin OR id = $7 THEN is_active ELSE $4 END
-          WHERE id = $5 AND business_id = $6
-        `, [user.name, user.phone, user.role, user.is_active, user.id, businessId, userId]);
+        if (!user || typeof user !== 'object' || !user.id) continue;
+        if (restore_mode !== 'replace_all') {
+          // For merge mode, only update non-sensitive fields
+          await client.query(`
+            UPDATE users
+            SET name = $1, phone = $2, role = $3
+            WHERE id = $4 AND business_id = $5
+          `, [user.name, user.phone, user.role, user.id, businessId]);
+        }
+        if (typeof user.is_active === 'boolean') {
+          const cur = await client.query(
+            `SELECT name, is_active FROM users WHERE id = $1 AND business_id = $2`,
+            [user.id, businessId]
+          );
+          const row = cur.rows[0];
+          if (row && row.is_active !== user.is_active) {
+            usersStateDiffers.push({
+              id: user.id,
+              name: row.name ?? null,
+              backup_is_active: user.is_active,
+              current_is_active: row.is_active,
+            });
+          }
+        }
       }
-      stats['users'] = backup.users.length;
+      if (restore_mode !== 'replace_all') stats['users'] = backup.users.length;
+    }
+    // Employees are not restored from a backup; their active state is only reported, never reactivated.
+    if (Array.isArray(backup.employees)) {
+      for (const emp of backup.employees) {
+        if (!emp || typeof emp !== 'object' || !emp.id || typeof emp.is_active !== 'boolean') continue;
+        const cur = await client.query(
+          `SELECT is_active FROM employees WHERE id = $1 AND business_id = $2`,
+          [emp.id, businessId]
+        );
+        const row = cur.rows[0];
+        if (row && row.is_active !== emp.is_active) {
+          employeesStateDiffers.push({ id: emp.id, backup_is_active: emp.is_active, current_is_active: row.is_active });
+        }
+      }
     }
 
     // 3. Branches & Warehouses
@@ -443,6 +477,8 @@ export async function POST(request: NextRequest) {
       message: 'Backup restored successfully',
       restore_mode,
       stats,
+      users_state_differs: usersStateDiffers,
+      employees_state_differs: employeesStateDiffers,
       total_records: Object.values(stats).reduce((sum: any, count: any) => sum + count, 0),
     });
 

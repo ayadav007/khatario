@@ -82,14 +82,11 @@ describe('POST /api/businesses', () => {
     expect(queryOneMock).not.toHaveBeenCalled();
   });
 
-  it('refuses staff who are not the primary admin', async () => {
+  it('refuses a user who is not an owner of the session business', async () => {
     sessionMock.mockResolvedValue({ ok: true });
-    queryOneMock.mockResolvedValue({
-      id: '22222222-2222-4222-8222-222222222222',
-      is_primary_admin: false,
-      business_id: '33333333-3333-4333-8333-333333333333',
-      product_line: 'billing',
-    });
+    queryOneMock
+      .mockResolvedValueOnce({ id: '22222222-2222-4222-8222-222222222222', business_id: '33333333-3333-4333-8333-333333333333' })
+      .mockResolvedValueOnce(null); // no owner row for the session business
     const res = await POST(
       request(
         { businessName: 'Second Shop', businessType: 'retail', industry: 'other' },
@@ -102,12 +99,9 @@ describe('POST /api/businesses', () => {
 
   it('refuses a plan that does not include additional businesses', async () => {
     sessionMock.mockResolvedValue({ ok: true });
-    queryOneMock.mockResolvedValue({
-      id: '22222222-2222-4222-8222-222222222222',
-      is_primary_admin: true,
-      business_id: '33333333-3333-4333-8333-333333333333',
-      product_line: 'billing',
-    });
+    queryOneMock
+      .mockResolvedValueOnce({ id: '22222222-2222-4222-8222-222222222222', business_id: '33333333-3333-4333-8333-333333333333' })
+      .mockResolvedValueOnce({ product_line: 'billing' }); // owner row of the session business
     featureMock.mockRejectedValue(
       new FeatureAccessDeniedError('multi_business', '33333333-3333-4333-8333-333333333333', 'FEATURE_NOT_ENABLED'),
     );

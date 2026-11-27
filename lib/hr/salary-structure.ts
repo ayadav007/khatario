@@ -1,3 +1,4 @@
+import type { PoolClient, QueryResultRow } from 'pg';
 import { dateColumnToYmd } from '@/lib/utils/local-date';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { computeProRataMonthlySalary, type ProRataSalaryResult } from '@/lib/hr/salary-payroll-helpers';
@@ -72,7 +73,17 @@ export async function getActiveSalaryStructure(
   );
 }
 
-export async function createSalaryStructure(input: SalaryStructureInput): Promise<{ id: string }> {
+export async function createSalaryStructure(
+  input: SalaryStructureInput,
+  /** Run the writes on this connection (inside the caller's transaction) instead of the pool. */
+  client?: PoolClient,
+): Promise<{ id: string }> {
+  const write = async (text: string, params: unknown[]) => {
+    if (client) await client.query(text, params);
+    else await query(text, params);
+  };
+  const writeOne = async <T extends QueryResultRow>(text: string, params: unknown[]): Promise<T | null> =>
+    client ? ((await client.query(text, params)).rows[0] as T | undefined) ?? null : queryOne<T>(text, params);
   const effectiveFrom = input.effective_from.slice(0, 10);
   const prevDay = new Date(`${effectiveFrom}T12:00:00`);
   prevDay.setDate(prevDay.getDate() - 1);
@@ -104,14 +115,14 @@ export async function createSalaryStructure(input: SalaryStructureInput): Promis
     throw new Error('basic_salary must be greater than 0');
   }
 
-  await query(
+  await write(
     `UPDATE salary_structures
      SET effective_to = $1, updated_at = CURRENT_TIMESTAMP
      WHERE employee_id = $2 AND business_id = $3 AND effective_to IS NULL AND effective_from < $4::date`,
     [prevDayStr, input.employee_id, input.business_id, effectiveFrom],
   );
 
-  const row = await queryOne<{ id: string }>(
+  const row = await writeOne<{ id: string }>(
     `INSERT INTO salary_structures (
       business_id, employee_id, basic_salary, hra, transport_allowance, medical_allowance,
       special_allowance, other_allowances, pf_percentage, pf_fixed_amount, professional_tax,
@@ -158,7 +169,7 @@ export async function createSalaryStructure(input: SalaryStructureInput): Promis
           },
           catalog,
         );
-  await replaceStructureLines(row.id, lineInputs);
+  await replaceStructureLines(row.id, lineInputs, client);
 
   const gross = grossFromComponents({
     basic_salary: resolved.basic_salary,
@@ -174,7 +185,7 @@ export async function createSalaryStructure(input: SalaryStructureInput): Promis
     other_deductions: resolved.other_deductions ?? 0,
   });
 
-  await query(
+  await write(
     `UPDATE employees SET salary = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND business_id = $3`,
     [gross, input.employee_id, input.business_id],
   );

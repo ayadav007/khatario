@@ -23,6 +23,7 @@ import {
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { generateNextEmployeeCode } from '@/lib/hr/employee-settings';
 import { resolveEmployeeLoginDecision } from '@/lib/hr/employee-login-options';
+import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 
 export const dynamic = 'force-dynamic';
 
@@ -279,8 +280,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existingLogin = await queryOne<{ role_id: string | null; is_primary_admin: boolean | null }>(
-      `SELECT role_id, is_primary_admin FROM users WHERE phone = $1 AND business_id = $2`,
+    // The seat rule must see is_active: an inactive user that still holds a role takes a seat when
+    // this call reactivates it, so it is not "already consuming" one.
+    const existingLogin = await queryOne<{
+      role_id: string | null;
+      is_primary_admin: boolean | null;
+      is_active: boolean | null;
+      seat_type: string | null;
+      access_type: string | null;
+    }>(
+      `SELECT u.role_id, u.is_primary_admin, u.is_active, u.seat_type, e.access_type
+         FROM users u
+         LEFT JOIN employees e ON e.id = u.id AND e.business_id = u.business_id
+        WHERE u.phone = $1 AND u.business_id = $2`,
       [phoneNorm, business_id],
     );
     const loginDecision = await resolveEmployeeLoginDecision({
@@ -288,7 +300,7 @@ export async function POST(request: NextRequest) {
       actorUserId: createdByUserId,
       roleId: role_id,
       password,
-      alreadyConsumesSeat: Boolean(existingLogin?.role_id || existingLogin?.is_primary_admin),
+      alreadyConsumesSeat: existingLogin ? userOccupiesConsoleSeat(existingLogin) : false,
     });
     if (!loginDecision.ok) {
       return NextResponse.json(

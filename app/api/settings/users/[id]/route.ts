@@ -228,7 +228,9 @@ export async function PATCH(
       seat_type: targetSeat,
     });
     const gainingSeat = !seatBefore && seatAfter;
-    if (willBeActive && (movingSeat || reactivating || gainingSeat)) {
+    // Billing/HR console seats: only a real seat gain is checked (an attendance-only user takes none, even when
+    // reactivated). Connect seats are a separate pool with no seat-counting rule here, so reactivating one is checked.
+    if (willBeActive && (movingSeat || (reactivating && targetSeat === 'connect') || gainingSeat)) {
       const limitCheck = await checkLimit(businessId, seatLimitType(targetSeat));
       if (!limitCheck.allowed) {
         return NextResponse.json(

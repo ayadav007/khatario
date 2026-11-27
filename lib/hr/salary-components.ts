@@ -360,11 +360,17 @@ export async function ensureStructureLinesFromLegacy(
 export async function replaceStructureLines(
   structureId: string,
   lines: StructureLineInput[],
+  /** Run the writes on this connection (inside the caller's transaction) instead of the pool. */
+  client?: { query: (text: string, params?: unknown[]) => Promise<unknown> },
 ): Promise<void> {
-  await query(`DELETE FROM salary_structure_lines WHERE structure_id = $1`, [structureId]);
+  const run = async (text: string, params: unknown[]) => {
+    if (client) await client.query(text, params);
+    else await query(text, params);
+  };
+  await run(`DELETE FROM salary_structure_lines WHERE structure_id = $1`, [structureId]);
   for (const line of lines) {
     if (!line.component_id) continue;
-    await query(
+    await run(
       `INSERT INTO salary_structure_lines (structure_id, component_id, value)
        VALUES ($1, $2, $3)
        ON CONFLICT (structure_id, component_id) DO UPDATE SET value = EXCLUDED.value`,

@@ -3,7 +3,9 @@
  * Callers decide who may punch and whether the location is good enough; this only records it.
  */
 import { query, queryOne } from '@/lib/db';
+import { NextResponse } from 'next/server';
 import { checkLimit } from '@/lib/subscription';
+import { limitExceededReply } from '@/lib/subscription/limit-response';
 import type { EmployeeAttendance } from '@/types/database';
 import { applyLateFieldsOnCheckIn } from '@/lib/hr/attendance-policy';
 import { attendanceDateYmd } from '@/lib/hr/attendance-date';
@@ -16,14 +18,52 @@ export class AttendancePunchError extends Error {
   }
 }
 
+/** Shown to the employee who tried to punch. An employee cannot upgrade a plan, so it names the manager instead. */
+export const ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE =
+  "Attendance could not be recorded: your employer's plan has reached its monthly attendance limit. Please tell your manager.";
+
+/**
+ * One in-app notification per business per day, on the first punch refused by the monthly attendance limit,
+ * so the owner (who can upgrade) hears about it. Never throws: a notification failure must not change the refusal.
+ */
+export async function notifyAttendanceLimitReached(businessId: string): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO notifications (business_id, type, title, message, reference_type, created_at)
+       SELECT $1, 'general', $2, $3, 'attendance_limit', CURRENT_TIMESTAMP
+        WHERE NOT EXISTS (
+          SELECT 1 FROM notifications
+           WHERE business_id = $1 AND reference_type = 'attendance_limit' AND created_at::date = CURRENT_DATE
+        )`,
+      [
+        businessId,
+        'Monthly attendance limit reached',
+        "Staff could not check in today because your plan's monthly attendance limit is used up. Upgrade your HR plan to continue.",
+      ],
+    );
+  } catch (err) {
+    console.error('[attendance] limit notification failed', err);
+  }
+}
+
 /**
  * The business is at its monthly attendance-record limit and this punch would add a new row.
- * HTTP callers answer with limitExceededReply('attendance', error.check).
+ * HTTP callers answer with limitExceededReply('attendance', error.check); `check.message` is the employee-facing text.
  */
 export class AttendanceLimitError extends AttendancePunchError {
-  constructor(readonly check: { limit: number; current: number; message?: string }) {
-    super(check.message ?? 'Attendance limit reached', 'limit_exceeded', 403);
+  readonly check: { limit: number; current: number; message?: string };
+  constructor(check: { limit: number; current: number; message?: string }) {
+    super(ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE, 'limit_exceeded', 403);
+    this.check = { ...check, message: ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE };
   }
+}
+
+/** For employee-facing punch routes: the standard 403 with the employee text (and the daily owner notice), or null. */
+export async function employeeAttendanceLimitResponse(businessId: string): Promise<NextResponse | null> {
+  const check = await checkLimit(businessId, 'attendance');
+  if (check.allowed) return null;
+  await notifyAttendanceLimitReached(businessId);
+  return limitExceededReply('attendance', { ...check, message: ATTENDANCE_LIMIT_EMPLOYEE_MESSAGE });
 }
 
 export type PunchParams = {
@@ -116,7 +156,10 @@ export async function recordCheckIn(p: PunchParams): Promise<EmployeeAttendance>
   } else {
     // Only a new row for the day counts; updating an existing row (above) is never refused.
     const attendanceLimit = await checkLimit(p.businessId, 'attendance');
-    if (!attendanceLimit.allowed) throw new AttendanceLimitError(attendanceLimit);
+    if (!attendanceLimit.allowed) {
+      await notifyAttendanceLimitReached(p.businessId);
+      throw new AttendanceLimitError(attendanceLimit);
+    }
     attendance = await queryOne<EmployeeAttendance>(
       `INSERT INTO employee_attendance (
         employee_id, date, check_in_time, check_in_method,

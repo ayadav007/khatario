@@ -52,6 +52,10 @@ export default function EwayBillsPage() {
       if (!res.ok) return toast.error(data.error || 'Could not import');
       setResult(data);
       toast.success(`${data.matched.length} matched, ${data.unmatched.length} with no bill`);
+      const overLimit = Array.isArray(data.over_limit) ? data.over_limit.length : 0;
+      if (overLimit > 0) {
+        toast.warning(`${overLimit} e-Way bills were not imported because your plan's monthly limit was reached.`);
+      }
       await load();
     } finally {
       setBusy(false);
