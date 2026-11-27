@@ -294,6 +294,7 @@ export interface ModuleExpiredSubscriptionCounts {
   graceExpired: number;
   addonsExpired: number;
   checkoutsExpired: number;
+  renewalRemindersSent: number;
 }
 
 /**
@@ -307,6 +308,7 @@ export interface ModuleExpiredSubscriptionCounts {
  * 5. Grace over (stamp passed, or no stamp and `end_date + 7` passed) → free
  * 6. Paid add-ons (Khatario AI) whose `end_date` passed → expired
  * 7. Gateway checkouts still pending after 48 hours → failed (no notification)
+ * 8. Renewal reminders (7, 3, 1 days before end, and the day after) for paid plans, once each per period
  *
  * Every UPDATE repeats the condition that selected its row, so a payment that lands in between wins.
  */
@@ -329,6 +331,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     graceExpired: 0,
     addonsExpired: 0,
     checkoutsExpired: 0,
+    renewalRemindersSent: 0,
   };
 
   const expiredTrials = await queryRows<{
@@ -567,6 +570,14 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     counts.checkoutsExpired = await expireStaleCheckouts(48);
   } catch (err) {
     console.error('Expiring stale checkouts failed:', err);
+  }
+
+  // Renewal reminders last, so a row this run moved to Free is no longer selected.
+  try {
+    const { sendRenewalReminders } = await import('@/lib/subscription/notifications');
+    counts.renewalRemindersSent = await sendRenewalReminders();
+  } catch (err) {
+    console.error('Sending renewal reminders failed:', err);
   }
 
   return counts;

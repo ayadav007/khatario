@@ -7,6 +7,7 @@ import { getModuleSubscriptions } from '@/lib/subscription/module-subscriptions'
 import {
   getDisplayPlanId,
   getEntitlementPlanId,
+  getPaidGraceEndDate,
   getSubscriptionUsability,
 } from '@/lib/subscription/effective-plan';
 import { checkLimit } from '@/lib/subscription';
@@ -101,11 +102,12 @@ export async function GET(request: NextRequest) {
           plan_description: string;
           price_monthly: number;
           price_yearly: number;
+          price_3year: number | null;
           currency: string;
           features: unknown;
         }>(
           `SELECT display_name AS plan_display_name, description AS plan_description,
-                  price_monthly, price_yearly, currency, features
+                  price_monthly, price_yearly, price_3year, currency, features
            FROM subscription_plans WHERE id = $1`,
           [limitsPlanId],
         );
@@ -126,6 +128,18 @@ export async function GET(request: NextRequest) {
             );
           }
         }
+
+        // Nothing renews by itself: payments are one-off, so the customer pays again before the end date.
+        const graceEndDate = sub.cancel_at_period_end ? null : getPaidGraceEndDate(subForEffective);
+        const isPaidPlan =
+          Number(planRow?.price_monthly ?? 0) > 0 ||
+          Number(planRow?.price_yearly ?? 0) > 0 ||
+          Number(planRow?.price_3year ?? 0) > 0;
+        const canRenew =
+          isPaidPlan &&
+          sub.status === 'active' &&
+          !!sub.end_date &&
+          usability.operational;
 
         const usageTypes = USAGE_TYPES_BY_MODULE[moduleKey] ?? [];
         const usage = await Promise.all(
@@ -165,6 +179,12 @@ export async function GET(request: NextRequest) {
             is_grace_period_active: usability.graceActive,
             grace_period_end: usability.graceEnd ? toDateText(usability.graceEnd) : null,
             grace_days_remaining: usability.graceDaysRemaining,
+            auto_renew: false,
+            renews_on: null,
+            ends_on: sub.end_date ?? null,
+            grace_ends_on: graceEndDate ? toDateText(graceEndDate) : null,
+            in_grace: usability.graceActive,
+            can_renew: canRenew,
           },
           usage,
         };

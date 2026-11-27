@@ -66,8 +66,10 @@ import {
   getEntitlementPlanIdForModuleSub,
 } from '@/lib/subscription/module-subscriptions';
 import { GRACE_DAYS, getSubscriptionUsability, getPaidGraceEndDate } from '@/lib/subscription/effective-plan';
-import { sendPendingNotifications } from '@/lib/subscription/notifications';
+import { sendPendingNotifications, sendRenewalReminders } from '@/lib/subscription/notifications';
 import { GET as currentGet } from '@/app/api/subscriptions/current/route';
+import { POST as cancelPost } from '@/app/api/subscriptions/cancel/route';
+import { POST as cancelUndoPost } from '@/app/api/subscriptions/cancel/undo/route';
 import { GET as modulesCurrentGet } from '@/app/api/subscriptions/modules/current/route';
 import { runRecurringInvoices } from '@/lib/invoices/recurring';
 import { getPool } from '@/lib/db';
@@ -1078,6 +1080,338 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await sendPendingNotifications();
       expect(Number((await queryOne<{ n: string }>(
         `SELECT COUNT(*)::text AS n FROM subscription_notifications WHERE business_id = $1 AND notification_type = 'grace_expiring_3'`, [biz]))!.n)).toBe(0);
+    });
+  });
+  // ---- Task 4: renewal reminders, honest auto-renew flag, undo cancel ----
+
+  describe('renewal reminders and undoing a cancellation', () => {
+    const remindersFor = async (businessId: string, type?: string) =>
+      Number((await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM subscription_notifications
+         WHERE business_id = $1 AND notification_type LIKE $2`,
+        [businessId, type ?? 'renewal_%'],
+      ))!.n);
+    const withEmail = (businessId: string) =>
+      query(`UPDATE businesses SET email = $2 WHERE id = $1`, [businessId, `renew-${businessId.slice(0, 8)}@example.test`]);
+
+    function post(handler: (r: NextRequest) => Promise<Response>, path: string, businessId: string, body: Record<string, unknown> = {}, userId?: string) {
+      return handler(
+        new NextRequest(`http://localhost${path}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-authenticated-business-id': businessId,
+            'x-authenticated-user-id': userId ?? adminOf.get(businessId)!,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+    async function getSub(handler: (r: NextRequest) => Promise<Response>, path: string, businessId: string) {
+      const res = await handler(new NextRequest(`http://localhost${path}`, {
+        headers: { 'x-authenticated-business-id': businessId, 'x-authenticated-user-id': adminOf.get(businessId)! },
+      }));
+      expect(res.status).toBe(200);
+      return res.json();
+    }
+
+    it.each([[7, '7'], [3, '3'], [1, '1'], [-1, 'lapsed']])(
+      'a paid row %i days from its end gets the %s reminder once, however often the job runs',
+      async (offset, bucket) => {
+        await withEmail(biz);
+        await setRow(biz, 'billing_growth', { startOffset: offset - 30, endOffset: offset });
+        const first = await processExpiredModuleSubscriptions();
+        expect(first.renewalRemindersSent).toBeGreaterThanOrEqual(1);
+        const type = `renewal_reminder_${bucket}:billing:${await daysFromToday(offset)}`;
+        expect(await remindersFor(biz, type)).toBe(1);
+        expect(await remindersFor(biz)).toBe(1);
+        await processExpiredModuleSubscriptions();
+        expect(await remindersFor(biz)).toBe(1);
+        const logged = (await queryOne<any>(
+          `SELECT metadata FROM subscription_notifications WHERE business_id = $1 AND notification_type = $2`, [biz, type]))!.metadata;
+        expect(logged).toMatchObject({ module_key: 'billing', period_end: await daysFromToday(offset), claimed: false });
+        expect(logged.channels).toContain('in_app');
+      },
+    );
+
+    it('a missed run loses nothing: 6 days out sends the 7 bucket with the real days and date, once, and never two buckets in one run', async () => {
+      const { sendPlatformEmail } = jest.requireMock('@/lib/platform-email') as { sendPlatformEmail: jest.Mock };
+      await withEmail(biz);
+      sendPlatformEmail.mockClear();
+      await setRow(biz, 'billing_growth', { startOffset: -24, endOffset: 6 });
+      await processExpiredModuleSubscriptions();
+      await processExpiredModuleSubscriptions();
+      expect(await remindersFor(biz)).toBe(1);
+      expect(await remindersFor(biz, `renewal_reminder_7:billing:${await daysFromToday(6)}`)).toBe(1);
+      const mails = sendPlatformEmail.mock.calls.map((c) => c[0]).filter((m) => String(m.to).startsWith('renew-' + biz.slice(0, 8)));
+      expect(mails).toHaveLength(1);
+      expect(mails[0].subject).toContain('ends in 6 days');
+      const bell = await queryOne<{ title: string }>(`SELECT title FROM notifications WHERE business_id = $1 AND reference_type = 'subscription'`, [biz]);
+      expect(bell!.title).toContain('in 6 days');
+    });
+
+    it('two runs at the same moment send one reminder', async () => {
+      const { sendPlatformEmail } = jest.requireMock('@/lib/platform-email') as { sendPlatformEmail: jest.Mock };
+      await withEmail(biz);
+      sendPlatformEmail.mockClear();
+      await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3 });
+      await Promise.all([sendRenewalReminders(), sendRenewalReminders(), sendRenewalReminders()]);
+      expect(await remindersFor(biz)).toBe(1);
+      expect(sendPlatformEmail.mock.calls.map((c) => c[0]).filter((m) => String(m.to).startsWith('renew-' + biz.slice(0, 8)))).toHaveLength(1);
+      expect(Number((await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM notifications WHERE business_id = $1 AND reference_type = 'subscription'`, [biz]))!.n)).toBe(1);
+    });
+
+    it('two products of one business reminded on the same day each get their own reminder and log row', async () => {
+      await withEmail(biz);
+      await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3 });
+      await query(
+        `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+         VALUES ($1, 'hr', 'hr_starter', 'active', CURRENT_DATE - 27, CURRENT_DATE + 3, 'monthly')`, [biz]);
+      await processExpiredModuleSubscriptions();
+      await processExpiredModuleSubscriptions();
+      const end = await daysFromToday(3);
+      expect(await remindersFor(biz, `renewal_reminder_3:billing:${end}`)).toBe(1);
+      expect(await remindersFor(biz, `renewal_reminder_3:hr:${end}`)).toBe(1);
+      const titles = (await query(`SELECT title FROM notifications WHERE business_id = $1 AND reference_type = 'subscription' ORDER BY title`, [biz])).rows.map((r: any) => r.title);
+      expect(titles).toEqual(['Your Billing plan ends in 3 days', 'Your HR plan ends in 3 days']);
+    });
+
+    it('no reminder outside the window, for Free, trial or cancelled rows, or a scheduled move to a free-tier plan', async () => {
+      await withEmail(biz);
+      for (const [plan, status, end] of [
+        ['billing_growth', 'active', 8], ['billing_growth', 'active', -2],
+        ['free', 'active', 3], ['trial', 'active', 3], ['trial', 'trial', 3],
+      ] as const) {
+        await setRow(biz, plan, { status, startOffset: end - 30, endOffset: end, trialEndOffset: status === 'trial' ? end : null });
+        await processExpiredModuleSubscriptions();
+      }
+      await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      await processExpiredModuleSubscriptions();
+      for (const free of ['free', 'hr_staff_lite']) {
+        await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3 });
+        await query(`UPDATE business_module_subscriptions SET scheduled_plan_id = $2 WHERE business_id = $1`, [biz, free]);
+        await sendRenewalReminders();
+      }
+      expect(await remindersFor(biz)).toBe(0);
+    });
+
+    it('a scheduled move to a cheaper PAID plan still gets a reminder that names the plan that will apply', async () => {
+      const { sendPlatformEmail } = jest.requireMock('@/lib/platform-email') as { sendPlatformEmail: jest.Mock };
+      await withEmail(biz);
+      sendPlatformEmail.mockClear();
+      await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3 });
+      await query(`UPDATE business_module_subscriptions SET scheduled_plan_id = 'billing_starter' WHERE business_id = $1`, [biz]);
+      await sendRenewalReminders();
+      expect(await remindersFor(biz, 'renewal_reminder_3:billing:%')).toBe(1);
+      const mail = sendPlatformEmail.mock.calls.map((c) => c[0]).find((m) => String(m.to).startsWith('renew-' + biz.slice(0, 8)));
+      const starter = (await queryOne<{ d: string }>(`SELECT display_name AS d FROM subscription_plans WHERE id = 'billing_starter'`))!.d;
+      expect(mail.text).toContain(`You scheduled a change to ${starter}`);
+      expect(mail.text).toContain('needs a payment');
+    });
+
+    it('a plan priced at 1 rupee still gets reminders (paid is decided by price, not plan id)', async () => {
+      await withEmail(biz);
+      const id = 'bill_one_' + sfx();
+      await query(
+        `INSERT INTO subscription_plans (id, name, display_name, price_monthly, price_yearly, features)
+         VALUES ($1, $1, 'One Rupee', 1, 0, '{}'::jsonb)`, [id]);
+      try {
+        await setRow(biz, id, { startOffset: -27, endOffset: 3 });
+        await processExpiredModuleSubscriptions();
+        expect(await remindersFor(biz, 'renewal_reminder_3:billing:%')).toBe(1);
+      } finally {
+        await query(`DELETE FROM business_module_subscriptions WHERE business_id = $1`, [biz]);
+        await query(`DELETE FROM subscription_plans WHERE id = $1`, [id]);
+      }
+    });
+
+    it('a reminder recorded for an earlier period does not block the next period at the same bucket', async () => {
+      await withEmail(biz);
+      await query(
+        `INSERT INTO subscription_notifications (business_id, notification_type, metadata, sent_at)
+         VALUES ($1, 'renewal_reminder_7:billing:2020-01-01', $2, NOW() - interval '30 days')`,
+        [biz, JSON.stringify({ module_key: 'billing', period_end: '2020-01-01' })],
+      );
+      await setRow(biz, 'billing_growth', { startOffset: -23, endOffset: 7 });
+      await processExpiredModuleSubscriptions();
+      expect(await remindersFor(biz, 'renewal_reminder_7:%')).toBe(2);
+    });
+
+    it('the reminder text names the product, the date and the computed grace end date (no hard-coded days)', async () => {
+      const { sendPlatformEmail } = jest.requireMock('@/lib/platform-email') as { sendPlatformEmail: jest.Mock };
+      await withEmail(biz);
+      sendPlatformEmail.mockClear();
+      await setRow(biz, 'billing_growth', { startOffset: -23, endOffset: 7 });
+      await processExpiredModuleSubscriptions();
+      const call = sendPlatformEmail.mock.calls.map((c) => c[0]).find((m) => String(m.to).startsWith('renew-' + biz.slice(0, 8)));
+      expect(call).toBeDefined();
+      const label = async (n: number) => (await queryOne<{ l: string }>(`SELECT to_char(CURRENT_DATE + $1::int, 'FMDD FMMonth YYYY') AS l`, [n]))!.l;
+      expect(call.text).toContain(
+        `plan for Renewal ${''}`.slice(0, 0) + `(Billing) ends on ${await label(7)}. Renew before then to keep your current period running without a break. If you do nothing, you keep full access until ${await label(14)} and then move to the Free plan. Your data stays safe.`,
+      );
+      expect(call.text).not.toContain('7 more days');
+      expect(call.subject).toContain('Billing plan ends in 7 days');
+      const bell = await queryOne<{ message: string }>(`SELECT message FROM notifications WHERE business_id = $1 AND reference_type = 'subscription'`, [biz]);
+      expect(bell!.message).toContain('Your data stays safe.');
+    });
+
+    it('the grace date in the text equals the usability answer, including an admin-stamped grace end', async () => {
+      const { sendPlatformEmail } = jest.requireMock('@/lib/platform-email') as { sendPlatformEmail: jest.Mock };
+      await withEmail(biz);
+      sendPlatformEmail.mockClear();
+      await setRow(biz, 'billing_growth', { startOffset: -27, endOffset: 3, graceOffset: 20 });
+      const row = (await getModuleSubscription(biz, 'billing', true))!;
+      const g = getPaidGraceEndDate(row)!;
+      await sendRenewalReminders();
+      const call = sendPlatformEmail.mock.calls.map((c) => c[0]).find((m) => String(m.to).startsWith('renew-' + biz.slice(0, 8)));
+      const expected = (await queryOne<{ l: string }>(
+        `SELECT to_char($1::date, 'FMDD FMMonth YYYY') AS l`,
+        [`${g.getFullYear()}-${String(g.getMonth() + 1).padStart(2, '0')}-${String(g.getDate()).padStart(2, '0')}`]))!.l;
+      expect(call.text).toContain(`until ${expected} and then`);
+    });
+
+    it('undo restores a cancelled row inside the paid period and logs it', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      expect((await post(cancelPost, '/api/subscriptions/cancel', biz, { reason: 'test' })).status).toBe(200);
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1`, [biz])).toEqual({ c: true, at: true });
+
+      const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ success: true, module_key: 'billing', end_date: await daysFromToday(20) });
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, plan_id, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+        .toEqual({ c: false, cleared: true, plan_id: 'billing_growth', e: await daysFromToday(20) });
+      expect(Number((await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM subscription_events WHERE business_id = $1 AND event_type = 'cancellation_undone'`, [biz]))!.n)).toBe(1);
+      // Undoing twice: nothing left to undo.
+      const again = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
+      expect(again.status).toBe(400);
+      expect(await again.json()).toMatchObject({ code: 'NOT_CANCELLED' });
+    });
+
+    it('undo works on the last day and is refused after the end, leaving the row as it was', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -30, endOffset: 0 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz)).status).toBe(200);
+
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ code: 'NOT_CANCELLED' });
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NOT NULL AS at FROM business_module_subscriptions WHERE business_id = $1`, [biz])).toEqual({ c: true, at: true });
+    });
+
+    it('undo on a row that was never cancelled is refused', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ code: 'NOT_CANCELLED' });
+    });
+
+    it('undo with an unknown module_key is a 400 and changes nothing (never the primary product)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      for (const bad of ['typo', 'HR', '', 5]) {
+        const res = await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, { module_key: bad });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ code: 'INVALID_MODULE' });
+      }
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+      expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, { module_key: 'billing' })).status).toBe(200);
+    });
+
+    it('cancel then pay the same plan: the flag is cleared, the period extends from the old end, and the job at the old end date keeps the plan', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -30, endOffset: 5 });
+      const before = await moduleRow(biz);
+      expect((await post(cancelPost, '/api/subscriptions/cancel', biz, { reason: 'test' })).status).toBe(200);
+      await paidAndActivated(biz, 'billing_growth');
+      const row = (await queryOne<any>(
+        `SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared, end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!;
+      expect(row).toEqual({ c: false, cleared: true, e: await addMonths(before!.end_date!, 1) });
+      // The old end date has passed: the cancel-at-period-end move to Free must not touch the paid-up row.
+      await query(`UPDATE business_module_subscriptions SET start_date = CURRENT_DATE - 40, end_date = CURRENT_DATE + 10 WHERE business_id = $1`, [biz]);
+      await processExpiredModuleSubscriptions();
+      expect((await moduleRow(biz))!.plan_id).toBe('billing_growth');
+    });
+
+    it('cancel then upgrade to another plan: the flag is cleared', async () => {
+      await setRow(biz, 'billing_starter', { startOffset: -20, endOffset: 10 });
+      expect((await post(cancelPost, '/api/subscriptions/cancel', biz, {})).status).toBe(200);
+      await paidAndActivated(biz, 'billing_growth');
+      expect(await queryOne<any>(`SELECT plan_id, cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+        .toEqual({ plan_id: 'billing_growth', c: false, cleared: true });
+    });
+
+    it('cancel then a 0 rupee coupon activation of the same plan also clears the flag', async () => {
+      const { applyModuleSubscriptionPlanChange } = await import('@/lib/subscription/apply-module-plan-change');
+      await setRow(biz, 'billing_growth', { startOffset: -20, endOffset: 10 });
+      expect((await post(cancelPost, '/api/subscriptions/cancel', biz, {})).status).toBe(200);
+      await applyModuleSubscriptionPlanChange({ businessId: biz, moduleKey: 'billing', planId: 'billing_growth', billingCycle: 'monthly', paymentMethod: 'coupon' });
+      expect(await queryOne<any>(`SELECT cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+        .toEqual({ c: false, cleared: true });
+    });
+
+    it('undo is owner only, and a business id in the body must match the session', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      const staff = randomUUID();
+      await query(`INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Staff', $3, false)`,
+        [staff, biz, `8${Math.floor(Math.random() * 1e9).toString().padStart(9, '0')}`]);
+      expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, {}, staff)).status).toBe(403);
+      const other = await newBusiness('undo-other');
+      expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', biz, { business_id: other })).status).toBe(403);
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+    });
+
+    it('undo only touches the business of the session', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [biz]);
+      const other = await newBusiness('undo-bystander');
+      await setRow(other, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true, cancelled_at = NOW() WHERE business_id = $1`, [other]);
+      expect((await post(cancelUndoPost, '/api/subscriptions/cancel/undo', other)).status).toBe(200);
+      expect((await queryOne<any>(`SELECT cancel_at_period_end AS c FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.c).toBe(true);
+    });
+
+    it('both current routes report no auto-renew, the end date and grace in grace', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      const expectedGrace = await daysFromToday(4);
+      const one = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(one).toMatchObject({
+        auto_renew: false, renews_on: null, ends_on: await daysFromToday(-3),
+        grace_ends_on: expectedGrace, in_grace: true, can_renew: true,
+      });
+      const mod = (await getSub(modulesCurrentGet, '/api/subscriptions/modules/current', biz)).modules
+        .find((m: any) => m.module_key === 'billing').subscription;
+      expect(mod).toMatchObject({
+        auto_renew: false, renews_on: null, ends_on: await daysFromToday(-3),
+        grace_ends_on: expectedGrace, in_grace: true, can_renew: true,
+      });
+    });
+
+    it('inside the period: not in grace and can renew; a cancelled row can renew (no grace); Free and past-grace rows cannot', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -10, endOffset: 20 });
+      let s = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(s).toMatchObject({ in_grace: false, can_renew: true, auto_renew: false, ends_on: await daysFromToday(20) });
+      expect(s.grace_ends_on).toBe(await daysFromToday(27));
+
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true WHERE business_id = $1`, [biz]);
+      clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
+      s = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(s).toMatchObject({ can_renew: true, in_grace: false, grace_ends_on: null });
+      const m = (await getSub(modulesCurrentGet, '/api/subscriptions/modules/current', biz)).modules.find((x: any) => x.module_key === 'billing').subscription;
+      expect(m).toMatchObject({ can_renew: true, in_grace: false, grace_ends_on: null, cancel_at_period_end: true });
+
+      await setRow(biz, 'free');
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = false WHERE business_id = $1`, [biz]);
+      clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
+      s = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(s).toMatchObject({ can_renew: false, in_grace: false, auto_renew: false, ends_on: null, grace_ends_on: null });
+
+      await setRow(biz, 'billing_growth', { startOffset: -40, endOffset: -10 });
+      clearSubscriptionCache(biz); clearModuleSubscriptionCache(biz);
+      s = (await getSub(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(s).toMatchObject({ in_grace: false, can_renew: false });
     });
   });
 });

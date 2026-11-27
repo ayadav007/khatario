@@ -5,6 +5,7 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import {
   getDisplayPlanId,
   getEntitlementPlanId,
+  getPaidGraceEndDate,
   getSubscriptionUsability,
   shouldShowTrialBadge,
 } from '@/lib/subscription/effective-plan';
@@ -29,7 +30,9 @@ async function loadPrimarySubscriptionRow(businessId: string) {
       bs.start_date,
       bs.end_date,
       bs.trial_end_date,
-      true AS auto_renew,
+      bs.end_date::text AS ends_on,
+      (COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0
+        OR COALESCE(sp.price_3year, 0) > 0) AS is_paid_plan,
       bs.cancel_at_period_end,
       bs.cancelled_at,
       bs.grace_period_end,
@@ -140,6 +143,18 @@ export async function GET(request: NextRequest) {
     const gracePeriodEnd = usability.graceEnd;
     const graceDaysRemaining = usability.graceDaysRemaining;
 
+    // Nothing renews by itself: payments are one-off, so the customer pays again before the end date.
+    // grace_ends_on is the last day of full access if they do not (null for Free, trials and cancelled-at-period-end rows). Paying also keeps a cancelled plan, so can_renew stays true for them.
+    const graceEndDate = subscription.cancel_at_period_end ? null : getPaidGraceEndDate(subForEffective);
+    const graceEndsOn = graceEndDate
+      ? `${graceEndDate.getFullYear()}-${String(graceEndDate.getMonth() + 1).padStart(2, '0')}-${String(graceEndDate.getDate()).padStart(2, '0')}`
+      : null;
+    const canRenew =
+      subscription.is_paid_plan === true &&
+      subscription.status === 'active' &&
+      !!subscription.ends_on &&
+      isOperational;
+
     let planRow = subscription;
     if (limitsPlanId !== subscription.plan_id) {
       const displayPlan = await db.queryOne(`
@@ -249,6 +264,12 @@ export async function GET(request: NextRequest) {
         trial_days_remaining: trialDaysRemaining,
         is_operational: isOperational,
         is_grace_period_active: isGracePeriodActive,
+        auto_renew: false,
+        renews_on: null,
+        ends_on: subscription.ends_on ?? null,
+        grace_ends_on: graceEndsOn,
+        in_grace: isGracePeriodActive,
+        can_renew: canRenew,
         grace_days_remaining: graceDaysRemaining,
         stored_plan_id: subscription.plan_id,
         entitlement_plan_id: entitlementPlanId,

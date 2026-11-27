@@ -13,6 +13,8 @@ import { checkLimit } from '@/lib/subscription';
 import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import { HR_TRIAL_PLAN_ID, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
 import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
+import { FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
+import { normalizePlatformModule, PLATFORM_MODULE_LABELS } from '@/lib/platform-modules';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ type NotificationType =
   | 'trial_expired'
   | 'grace_expiring_3'
   | 'grace_expired'
+  | `renewal_reminder_${string}`
   | 'cancellation_confirmed'
   | 'usage_limit_80'
   | 'usage_limit_90'
@@ -136,6 +139,29 @@ async function createInAppNotification(
 
 type DeliveryChannel = 'email' | 'whatsapp' | 'in_app';
 
+async function sendOnChannels(input: {
+  businessId: string;
+  recipients: RecipientInfo;
+  email: { subject: string; html: string; text: string };
+  inApp?: { title: string; message: string };
+  whatsapp?: {
+    eventKey: 'trial_ending' | 'subscription_ended' | 'subscription_payment_failed';
+    vars: string[];
+  };
+}): Promise<DeliveryChannel[]> {
+  const channels: DeliveryChannel[] = [];
+  if (await sendToRecipients(input.recipients, input.email.subject, input.email.html, input.email.text)) {
+    channels.push('email');
+  }
+  if (input.whatsapp && (await tryTenantWhatsApp(input.businessId, input.whatsapp.eventKey, input.whatsapp.vars))) {
+    channels.push('whatsapp');
+  }
+  if (input.inApp && (await createInAppNotification(input.businessId, input.inApp.title, input.inApp.message))) {
+    channels.push('in_app');
+  }
+  return channels;
+}
+
 /**
  * Sends one lifecycle message on every channel we have for the business and logs it
  * only if at least one channel actually delivered. Returns whether anything was delivered.
@@ -152,16 +178,7 @@ async function deliverLifecycleNotification(input: {
   };
   metadata?: Record<string, unknown>;
 }): Promise<boolean> {
-  const channels: DeliveryChannel[] = [];
-  if (await sendToRecipients(input.recipients, input.email.subject, input.email.html, input.email.text)) {
-    channels.push('email');
-  }
-  if (input.whatsapp && (await tryTenantWhatsApp(input.businessId, input.whatsapp.eventKey, input.whatsapp.vars))) {
-    channels.push('whatsapp');
-  }
-  if (input.inApp && (await createInAppNotification(input.businessId, input.inApp.title, input.inApp.message))) {
-    channels.push('in_app');
-  }
+  const channels = await sendOnChannels(input);
   if (channels.length === 0) return false;
   await logNotification(input.businessId, input.notificationType, { ...input.metadata, channels });
   return true;
@@ -244,6 +261,152 @@ function wrapHtml(title: string, bodyHtml: string): string {
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
+
+/** Reminder buckets: the day counts the customer is told about. `m1` is the day after the end. */
+function renewalBucket(daysLeft: number): '7' | '3' | '1' | 'lapsed' {
+  if (daysLeft < 0) return 'lapsed';
+  if (daysLeft <= 1) return '1';
+  if (daysLeft <= 3) return '3';
+  return '7';
+}
+
+const daysPhrase = (n: number) => (n === 0 ? 'today' : n === 1 ? 'in 1 day' : `in ${n} days`);
+
+/**
+ * Renewal reminders for paid plans. Khatario takes one-off payments (no mandate), so nothing renews by
+ * itself: the customer has to pay again. The nightly job looks at rows whose end date is from 7 days ahead
+ * to 1 day behind and sends ONE reminder per row per run, in the tightest bucket for the real days left
+ * (7, 3, 1, or lapsed). A missed run therefore never loses the reminder, it just goes out late with the real
+ * date and real days left.
+ *
+ * Once only: the log row IS the claim. Its type encodes bucket, product and period end
+ * (`renewal_reminder_3:hr:2027-03-01`; the column is varchar(50), no CHECK, and only this file reads it),
+ * so two products never collide on the per-day unique index, and a renewal (which moves the end date)
+ * makes the next period's reminders eligible again. The row is inserted first with ON CONFLICT DO NOTHING
+ * and the message is sent only when the insert created it, so two overlapping job runs cannot both send.
+ * If sending fails or reaches no channel the claim is deleted so the next run retries.
+ *
+ * Eligible rows: active, paid (any cycle price above zero, never decided by plan id), not trial, not
+ * cancelled at period end, and not scheduled to move to a free-tier plan (that move needs no payment).
+ * A scheduled move to a cheaper PAID plan is included: the customer must pay for it.
+ * Email and in-app bell only: the trial WhatsApp template talks about trials.
+ *
+ * Returns the number of reminders delivered (failures are logged, not counted).
+ */
+export async function sendRenewalReminders(): Promise<number> {
+  const rows = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_name: string;
+    scheduled_plan_name: string | null;
+    end_date: string;
+    end_label: string;
+    grace_end: string;
+    grace_label: string;
+    days_left: number;
+  }>(
+    `SELECT bs.business_id,
+            bs.module_key,
+            COALESCE(sp.display_name, sp.name, bs.plan_id) AS plan_name,
+            CASE WHEN bs.scheduled_plan_id IS NULL THEN NULL
+                 ELSE COALESCE(ssp.display_name, ssp.name, bs.scheduled_plan_id) END AS scheduled_plan_name,
+            bs.end_date::text AS end_date,
+            to_char(bs.end_date, 'FMDD FMMonth YYYY') AS end_label,
+            COALESCE(bs.grace_period_end, bs.end_date + ${GRACE_DAYS})::date::text AS grace_end,
+            to_char(COALESCE(bs.grace_period_end, bs.end_date + ${GRACE_DAYS}), 'FMDD FMMonth YYYY') AS grace_label,
+            (bs.end_date - CURRENT_DATE) AS days_left
+     FROM business_module_subscriptions bs
+     JOIN subscription_plans sp ON sp.id = bs.plan_id
+     LEFT JOIN subscription_plans ssp ON ssp.id = bs.scheduled_plan_id
+     WHERE bs.status = 'active'
+       AND COALESCE(bs.cancel_at_period_end, false) = false
+       AND (bs.scheduled_plan_id IS NULL OR bs.scheduled_plan_id <> ALL($1::text[]))
+       AND bs.plan_id NOT IN ('trial', '${HR_TRIAL_PLAN_ID}')
+       AND (COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0 OR COALESCE(sp.price_3year, 0) > 0)
+       AND bs.end_date IS NOT NULL
+       AND (bs.end_date - CURRENT_DATE) BETWEEN -1 AND 7`,
+    [[...FREE_TIER_PLAN_IDS]],
+  );
+
+  let sent = 0;
+  for (const row of rows) {
+    let claimedType: NotificationType | null = null;
+    try {
+      const bucket = renewalBucket(row.days_left);
+      const notifType: NotificationType = `renewal_reminder_${bucket}:${row.module_key}:${row.end_date}`;
+
+      // Claim first. NOT EXISTS makes it once per type across days; the unique index settles a same-day race.
+      const claim = await query(
+        `INSERT INTO subscription_notifications (business_id, notification_type, metadata, sent_at)
+         SELECT $1::uuid, $2::varchar, $3::jsonb, NOW()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM subscription_notifications WHERE business_id = $1::uuid AND notification_type = $2::varchar
+         )
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [
+          row.business_id,
+          notifType,
+          JSON.stringify({ module_key: row.module_key, period_end: row.end_date, bucket, days_left: row.days_left, claimed: true }),
+        ],
+      );
+      if ((claim.rowCount ?? 0) === 0) continue;
+      claimedType = notifType;
+
+      const recipients = await getRecipients(row.business_id);
+      if (!recipients) throw new Error('no recipients');
+
+      const product = PLATFORM_MODULE_LABELS[normalizePlatformModule(row.module_key) ?? 'billing'];
+      const lapsed = row.days_left < 0;
+      const message = lapsed
+        ? `Your ${row.plan_name} plan for ${recipients.businessName} (${product}) ended on ${row.end_label}. You keep full access until ${row.grace_label}. Renew now to continue without a break; after that you move to the Free plan. Your data stays safe.`
+        : row.scheduled_plan_name
+          ? `Your ${row.plan_name} plan for ${recipients.businessName} (${product}) ends on ${row.end_label}. You scheduled a change to ${row.scheduled_plan_name}, which applies from that date and needs a payment to start a new period. Pay before then to keep it running without a break. If you do nothing, you keep full access until ${row.grace_label} and then move to the Free plan. Your data stays safe.`
+          : `Your ${row.plan_name} plan for ${recipients.businessName} (${product}) ends on ${row.end_label}. Renew before then to keep your current period running without a break. If you do nothing, you keep full access until ${row.grace_label} and then move to the Free plan. Your data stays safe.`;
+      const subject = lapsed
+        ? `[Khatario] Your ${product} plan has ended: renew to keep it going`
+        : `[Khatario] Your ${product} plan ends ${daysPhrase(row.days_left)}`;
+      const url = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription`;
+
+      const html = wrapHtml(lapsed ? 'Plan Ended' : 'Plan Ending Soon', `
+        <p>Hi,</p>
+        <p>${message}</p>
+        <p><a class="cta" href="${url}">Renew Now</a></p>
+        <p>Best regards,<br/><strong>The Khatario Team</strong></p>
+      `);
+      const text = ['Hi,', message, `Renew: ${url}`, 'Best regards, The Khatario Team'].join('\n\n');
+
+      const channels = await sendOnChannels({
+        businessId: row.business_id,
+        recipients,
+        email: { subject, html, text },
+        inApp: {
+          title: lapsed ? `Your ${product} plan has ended` : `Your ${product} plan ends ${daysPhrase(row.days_left)}`,
+          message,
+        },
+      });
+      if (channels.length === 0) throw new Error('no channel delivered');
+
+      await query(
+        `UPDATE subscription_notifications
+         SET metadata = metadata || $3::jsonb
+         WHERE business_id = $1 AND notification_type = $2`,
+        [row.business_id, notifType, JSON.stringify({ channels, claimed: false })],
+      ).catch((err) => console.error('[notifications] Failed to finish reminder log:', err));
+      sent++;
+    } catch (err) {
+      console.error(`[notifications] renewal reminder failed for business ${row.business_id}:`, err);
+      if (claimedType) {
+        // Release the claim so the next run retries.
+        await query(
+          `DELETE FROM subscription_notifications WHERE business_id = $1 AND notification_type = $2`,
+          [row.business_id, claimedType],
+        ).catch((delErr) => console.error('[notifications] Failed to release reminder claim:', delErr));
+      }
+    }
+  }
+  return sent;
+}
 
 /**
  * Send an email when a business's trial is about to expire.
