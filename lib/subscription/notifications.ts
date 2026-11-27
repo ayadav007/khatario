@@ -12,6 +12,7 @@ import { sendPlatformEmail } from '@/lib/platform-email';
 import { checkLimit } from '@/lib/subscription';
 import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import { HR_TRIAL_PLAN_ID, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
+import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -630,8 +631,13 @@ export async function sendPendingNotifications(): Promise<number> {
       `SELECT DISTINCT bs.business_id
        FROM business_module_subscriptions bs
        WHERE bs.status = 'active'
-         AND bs.grace_period_end IS NOT NULL
-         AND bs.grace_period_end::date - CURRENT_DATE = 3`,
+         AND COALESCE(
+               bs.grace_period_end,
+               CASE WHEN COALESCE(bs.cancel_at_period_end, false) = false
+                         AND bs.scheduled_plan_id IS NULL
+                         AND bs.plan_id NOT IN ('trial', '${HR_TRIAL_PLAN_ID}')
+                    THEN bs.end_date + ${GRACE_DAYS} END
+             )::date - CURRENT_DATE = 3`,
     );
 
     for (const row of graceEnding) {

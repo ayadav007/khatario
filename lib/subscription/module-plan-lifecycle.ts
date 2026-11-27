@@ -2,6 +2,8 @@ import { query, queryOne } from '@/lib/db';
 import { type PlatformModule } from '@/lib/platform-modules';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent, getDataImpactWarnings, type DataImpactWarning } from '@/lib/subscription/lifecycle';
+import { HR_TRIAL_PLAN_ID } from '@/lib/product-lines';
+import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
 import { getModuleSubscription, clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
 import { comparePlanTier, FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
@@ -163,11 +165,26 @@ export async function cancelModuleSubscription(
   return { end_date: current.end_date ?? null };
 }
 
+/** SQL form of "paid grace has ended"; the nightly job's selection and the move-to-free guard share it. */
+export const NOT_TRIAL_PLAN_SQL = `plan_id NOT IN ('${TRIAL_PLAN_ID}', '${HR_TRIAL_PLAN_ID}')`;
+
+export const GRACE_EXPIRED_CONDITION = `status = 'active' AND (
+    (grace_period_end IS NOT NULL AND grace_period_end < CURRENT_DATE)
+    OR (grace_period_end IS NULL
+        AND COALESCE(cancel_at_period_end, false) = false
+        AND scheduled_plan_id IS NULL
+        AND ${NOT_TRIAL_PLAN_SQL}
+        AND end_date IS NOT NULL
+        AND end_date + ${GRACE_DAYS} < CURRENT_DATE)
+  )`;
+
 /** Extra conditions that make the move-to-free UPDATE a no-op if the row changed since it was selected. */
 export type MoveToFreeOnlyIf = 'grace_expired' | 'cancel_due' | 'trial_due' | 'scheduled_due';
 
 const MOVE_TO_FREE_CONDITIONS: Record<MoveToFreeOnlyIf, string> = {
-  grace_expired: 'grace_period_end IS NOT NULL AND grace_period_end < CURRENT_DATE',
+  // Grace is over: the stamp has passed, or (no stamp) the end date + GRACE_DAYS has. Mirrors
+  // getPaidGraceEndDate() in effective-plan.ts; the nightly selection uses the same text.
+  grace_expired: GRACE_EXPIRED_CONDITION,
   cancel_due: 'cancel_at_period_end = true AND end_date IS NOT NULL AND end_date < CURRENT_DATE',
   trial_due:
     'trial_extension_granted = true AND trial_end_date IS NOT NULL AND trial_end_date < CURRENT_DATE AND trial_extension_declined_at IS NULL',

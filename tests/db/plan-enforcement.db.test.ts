@@ -1663,26 +1663,27 @@ run('plan enforcement (kh_phase2_test)', () => {
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
       });
 
-      it('an expired-but-not-yet-graced paying customer loses nothing: schedule untouched, then generated once grace is stamped', async () => {
+      it('a paying customer the day after the period ends is generated for at once; past grace the schedule is left untouched', async () => {
         const { biz } = await newBusinessWithOwner('billing_growth', { label: 'recGrace' });
         const sched = await makeDueSchedule(biz);
-        // paid period ended yesterday; the nightly job has not stamped grace_period_end yet
+        // paid period ended yesterday; the nightly job has not stamped grace_period_end, but grace counts from end_date
         await setPlan(biz, 'billing', 'billing_growth', { end_date: '-1 day' });
-        const before = await scheduleRow(sched);
         const r1 = await runRecurring();
         const s1 = r1.summaries.find((x) => x.recurring_invoice_id === sched)!;
-        expect(s1).toMatchObject({ skippedSubscriptionInactive: true, skippedNoPlan: false, created: [] });
-        expect(s1.droppedThrough).toBeUndefined();
-        expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(0);
-        expect(await scheduleRow(sched)).toEqual(before);
-        expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched])).toBe(0);
-
-        await setPlan(biz, 'billing', 'billing_growth', { end_date: '-1 day', grace_period_end: '+6 days' });
-        const r2 = await runRecurring();
-        const s2 = r2.summaries.find((x) => x.recurring_invoice_id === sched)!;
-        expect(s2.skippedSubscriptionInactive).toBeUndefined();
-        expect(s2.created).toHaveLength(1);
+        expect(s1.skippedSubscriptionInactive).toBeUndefined();
+        expect(s1.created).toHaveLength(1);
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
+
+        // 8 days past the end with no stamp: not operational, nothing dropped and nothing changed
+        const sched2 = await makeDueSchedule(biz);
+        await setPlan(biz, 'billing', 'billing_growth', { end_date: '-8 days' });
+        const before = await scheduleRow(sched2);
+        const r2 = await runRecurring();
+        const s2 = r2.summaries.find((x) => x.recurring_invoice_id === sched2)!;
+        expect(s2).toMatchObject({ skippedSubscriptionInactive: true, skippedNoPlan: false, created: [] });
+        expect(s2.droppedThrough).toBeUndefined();
+        expect(await scheduleRow(sched2)).toEqual(before);
+        expect(await count(`recurring_invoice_history WHERE recurring_invoice_id = $1`, [sched2])).toBe(0);
       });
 
       it('a disabled billing module (plan has the feature) never drops periods', async () => {

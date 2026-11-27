@@ -9,14 +9,10 @@ import {
   HR_STAFF_LITE_PLAN_ID,
 } from '@/lib/product-lines';
 import {
-  isPaidGracePeriodActive,
+  isSubscriptionUsable,
   isTrialEntitlementActive,
   type SubscriptionForEffectivePlan,
 } from '@/lib/subscription/effective-plan';
-import {
-  isLocalCalendarOnOrBeforeToday,
-  parseLocalDateOnly,
-} from '@/lib/subscription/date-only';
 import type { ModuleSubscriptionRow } from '@/lib/subscription/module-subscriptions';
 
 export function getFreePlanIdForModule(moduleKey: PlatformModule): string {
@@ -32,40 +28,15 @@ function asEffectiveSub(row: ModuleSubscriptionRow): SubscriptionForEffectivePla
     trial_end_date: row.trial_end_date,
     end_date: row.end_date,
     grace_period_end: row.grace_period_end,
+    cancel_at_period_end: row.cancel_at_period_end,
+    scheduled_plan_id: row.scheduled_plan_id,
+    db_today: row.db_today,
   };
 }
 
 /** Whether this module row still grants product access (including free tier after trial). */
 export function isModuleSubscriptionOperational(row: ModuleSubscriptionRow): boolean {
-  if (row.status === 'cancelled' || row.status === 'expired') {
-    return false;
-  }
-
-  if (row.status !== 'active' && row.status !== 'trial') {
-    return false;
-  }
-
-  const effective = asEffectiveSub(row);
-
-  if (row.end_date && row.status === 'active') {
-    const end = parseLocalDateOnly(row.end_date);
-    if (end && !isLocalCalendarOnOrBeforeToday(end) && !isPaidGracePeriodActive(effective)) {
-      return false;
-    }
-  }
-
-  if (row.cancel_at_period_end && row.end_date) {
-    const end = parseLocalDateOnly(row.end_date);
-    if (end && !isLocalCalendarOnOrBeforeToday(end)) {
-      return false;
-    }
-  }
-
-  if (row.status === 'trial' && !isTrialEntitlementActive(effective)) {
-    return true;
-  }
-
-  return true;
+  return isSubscriptionUsable(asEffectiveSub(row));
 }
 
 export function isModuleOnFreePlan(row: ModuleSubscriptionRow): boolean {

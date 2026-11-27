@@ -23,6 +23,8 @@ export interface ModuleSubscriptionRow extends SubscriptionForEffectivePlan {
   trial_end_date: string | null;
   end_date: string | null;
   grace_period_end?: string | null;
+  /** The database's CURRENT_DATE (YYYY-MM-DD), selected with the row; the clock for grace and expiry. */
+  db_today?: string | null;
   billing_cycle?: 'monthly' | 'yearly' | 'three_year';
   scheduled_plan_id?: string | null;
   cancel_at_period_end?: boolean;
@@ -63,6 +65,7 @@ async function loadModuleSubscriptionsFromDb(
          bms.end_date::text AS end_date,
          bms.trial_end_date::text AS trial_end_date,
          bms.grace_period_end::text AS grace_period_end,
+         CURRENT_DATE::text AS db_today,
          bms.billing_cycle,
          bms.scheduled_plan_id,
          bms.cancel_at_period_end,

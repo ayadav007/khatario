@@ -7,8 +7,14 @@ import { getModuleSubscriptions } from '@/lib/subscription/module-subscriptions'
 import {
   getDisplayPlanId,
   getEntitlementPlanId,
+  getSubscriptionUsability,
 } from '@/lib/subscription/effective-plan';
 import { checkLimit } from '@/lib/subscription';
+
+function toDateText(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +88,11 @@ export async function GET(request: NextRequest) {
           trial_end_date: sub.trial_end_date,
           end_date: sub.end_date,
           grace_period_end: sub.grace_period_end,
+          cancel_at_period_end: sub.cancel_at_period_end,
+          scheduled_plan_id: sub.scheduled_plan_id,
+          db_today: sub.db_today,
         };
+        const usability = getSubscriptionUsability(subForEffective);
         const displayPlanId = getDisplayPlanId(subForEffective);
         const limitsPlanId = getEntitlementPlanId(subForEffective);
 
@@ -151,7 +161,10 @@ export async function GET(request: NextRequest) {
             currency: planRow?.currency ?? 'INR',
             features,
             trial_days_remaining: trialDaysRemaining,
-            is_operational: sub.status === 'active' || sub.status === 'trial',
+            is_operational: usability.operational,
+            is_grace_period_active: usability.graceActive,
+            grace_period_end: usability.graceEnd ? toDateText(usability.graceEnd) : null,
+            grace_days_remaining: usability.graceDaysRemaining,
           },
           usage,
         };

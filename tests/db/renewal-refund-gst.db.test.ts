@@ -32,6 +32,18 @@ jest.mock('@/lib/platform-whatsapp-send', () => ({
   sendPlatformEventWhatsApp: jest.fn(async () => undefined),
 }));
 jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
+jest.mock('@/lib/whatsapp', () => ({ sendWhatsAppMessage: jest.fn(async () => undefined) }));
+jest.mock('@/lib/jwt', () => ({
+  clearSessionCookie: jest.fn(),
+  setSessionCookies: jest.fn(),
+  signAccessToken: jest.fn(async () => 'access-token'),
+  signRefreshToken: jest.fn(async () => 'refresh-token'),
+}));
+// The recurring-invoice job and its feature check run with no request (cron): headers carry nothing.
+jest.mock('next/headers', () => ({
+  headers: jest.fn(async () => ({ get: () => null })),
+  cookies: jest.fn(async () => ({ get: () => undefined })),
+}));
 
 import { query, queryOne, closePool } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
@@ -46,6 +58,19 @@ import { POST as checkoutPost } from '@/app/api/subscriptions/checkout/route';
 import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
 import { findRejectedUpgradeCredits, reportBillingAnomalies } from '@/lib/subscription/reconcile-payments';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
+import { processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
+import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lifecycle';
+import {
+  getModuleSubscription,
+  getOperationalModuleSubscriptions,
+  getEntitlementPlanIdForModuleSub,
+} from '@/lib/subscription/module-subscriptions';
+import { GRACE_DAYS, getSubscriptionUsability, getPaidGraceEndDate } from '@/lib/subscription/effective-plan';
+import { sendPendingNotifications } from '@/lib/subscription/notifications';
+import { GET as currentGet } from '@/app/api/subscriptions/current/route';
+import { GET as modulesCurrentGet } from '@/app/api/subscriptions/modules/current/route';
+import { runRecurringInvoices } from '@/lib/invoices/recurring';
+import { getPool } from '@/lib/db';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BillingCycle } from '@/lib/subscription/apply-plan-change';
@@ -776,6 +801,283 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       const src = readFileSync(join(process.cwd(), 'lib/subscription/upgrade-credit.ts'), 'utf8');
       expect(src).not.toMatch(/new Date\(/);
       expect(src).not.toMatch(/Date\.now\(/);
+    });
+  });
+
+  // ---- Task 3: grace starts at expiry, not at the nightly job ----
+
+  describe('grace period counts from the end date', () => {
+    async function operational(b: string): Promise<boolean> {
+      clearModuleSubscriptionCache(b);
+      return (await getOperationalModuleSubscriptions(b, true)).some((r) => r.module_key === 'billing');
+    }
+    async function graceRow(b: string) {
+      return queryOne<{ plan_id: string; grace_period_end: string | null; end_date: string | null }>(
+        `SELECT plan_id, grace_period_end::text, end_date::text FROM business_module_subscriptions
+          WHERE business_id = $1 AND module_key = 'billing'`,
+        [b],
+      );
+    }
+    async function eventTypes(b: string): Promise<string[]> {
+      const r = await query(`SELECT event_type FROM subscription_events WHERE business_id = $1 ORDER BY created_at`, [b]);
+      return r.rows.map((e: any) => e.event_type);
+    }
+
+    it('GRACE_DAYS is 7', () => {
+      expect(GRACE_DAYS).toBe(7);
+    });
+
+    it('the day after the end date, with no stamp, the customer keeps the paid plan', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      expect(await operational(biz)).toBe(true);
+      const sub = (await getModuleSubscription(biz, 'billing', true))!;
+      expect(getEntitlementPlanIdForModuleSub(sub)).toBe('billing_growth');
+    });
+
+    it('day 7 after the end date is still grace; day 8 is not (no stamp)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -37, endOffset: -7 });
+      expect(await operational(biz)).toBe(true);
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      expect(await operational(biz)).toBe(false);
+    });
+
+    it('a stamp still decides: today or later is grace, yesterday is not', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -37, endOffset: -7, graceOffset: 0 });
+      expect(await operational(biz)).toBe(true);
+      await setRow(biz, 'billing_growth', { startOffset: -37, endOffset: -7, graceOffset: -1 });
+      expect(await operational(biz)).toBe(false);
+    });
+
+    it('a cancelled-at-period-end row the day after its end is not usable (unchanged)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true WHERE business_id = $1`, [biz]);
+      expect(await operational(biz)).toBe(false);
+    });
+
+    it('a row with a scheduled downgrade the day after its end is not usable (unchanged)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      await query(`UPDATE business_module_subscriptions SET scheduled_plan_id = 'billing_starter' WHERE business_id = $1`, [biz]);
+      expect(await operational(biz)).toBe(false);
+    });
+
+    it('free rows (no end date) and a running trial are unaffected', async () => {
+      await setRow(biz, 'free', { endOffset: null });
+      expect(await operational(biz)).toBe(true);
+      await setRow(biz, 'trial', { status: 'trial', endOffset: null, trialEndOffset: 5 });
+      expect(await operational(biz)).toBe(true);
+    });
+
+    it('a paid row with a past end date and a cancelled or expired status stays unusable', async () => {
+      await setRow(biz, 'billing_growth', { status: 'expired', startOffset: -31, endOffset: -1 });
+      expect(await operational(biz)).toBe(false);
+    });
+
+    it('the nightly job stamps end_date + 7, not run day + 7, so a missed run does not move the window', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      await processExpiredModuleSubscriptions();
+      expect(await graceRow(biz)).toMatchObject({ plan_id: 'billing_growth', grace_period_end: await daysFromToday(4) });
+      expect(await eventTypes(biz)).toContain('grace_started');
+      expect(await operational(biz)).toBe(true);
+    });
+
+    it('day 8 with no stamp: not usable, and one job run moves the row to free', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      expect(await operational(biz)).toBe(false);
+      await processExpiredModuleSubscriptions();
+      expect(await graceRow(biz)).toMatchObject({ plan_id: 'free', end_date: null, grace_period_end: null });
+      expect(await eventTypes(biz)).toContain('grace_expired');
+      expect(await operational(biz)).toBe(true); // the Free plan is usable
+    });
+
+    it('the job moves an unstamped day-8 row even when the stamping step does not run for it', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      const moved = await moveModuleSubscriptionToFree(biz, 'billing', 'billing_growth', 'grace_expired', 'grace_expired');
+      expect(moved).toBe(true);
+      expect((await graceRow(biz))!.plan_id).toBe('free');
+    });
+
+    it('the move to free does nothing for a row still in grace (no stamp, day 3)', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      expect(await moveModuleSubscriptionToFree(biz, 'billing', 'billing_growth', 'grace_expired', 'grace_expired')).toBe(false);
+      expect((await graceRow(biz))!.plan_id).toBe('billing_growth');
+    });
+
+    it('a payment that lands first wins: the day-8 move to free does nothing after a renewal', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      await paidAndActivated(biz, 'billing_growth');
+      expect(await moveModuleSubscriptionToFree(biz, 'billing', 'billing_growth', 'grace_expired', 'grace_expired')).toBe(false);
+      expect(await graceRow(biz)).toMatchObject({ plan_id: 'billing_growth', end_date: await monthsFromToday(1) });
+    });
+
+    it('paying during grace starts a fresh period today and clears the stamp', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      await processExpiredModuleSubscriptions();
+      expect((await graceRow(biz))!.grace_period_end).not.toBeNull();
+      const tx = await paidAndActivated(biz, 'billing_growth');
+      expect(await moduleRow(biz)).toMatchObject({ start_date: await daysFromToday(0), end_date: await monthsFromToday(1) });
+      expect((await graceRow(biz))!.grace_period_end).toBeNull();
+      expect(await txRow(tx)).toMatchObject({ period_start: await daysFromToday(0), period_end: await monthsFromToday(1) });
+    });
+
+    it('the recurring-invoice job generates for a business the day after its paid period ended', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      const customerId = randomUUID();
+      await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Recurring cust', $3)`, [
+        customerId, biz, `8${Math.floor(Math.random() * 1e9).toString().padStart(9, '0')}`,
+      ]);
+      const sched = randomUUID();
+      await query(
+        `INSERT INTO recurring_invoices
+           (id, business_id, customer_id, frequency, interval_value, start_date, next_run_date, items, created_by, auto_finalize)
+         VALUES ($1, $2, $3, 'monthly', 1, '2026-06-01', '2026-06-01', $4::jsonb, $5, false)`,
+        [sched, biz, customerId,
+         JSON.stringify([{ item_name: 'Monthly service', quantity: 1, unit_price: 1000, tax_rate: 18 }]),
+         adminOf.get(biz)],
+      );
+      const out = await runRecurringInvoices(getPool(), { today: '2026-06-15', businessId: biz });
+      const s = out.find((x) => x.recurring_invoice_id === sched)!;
+      expect(s.skippedSubscriptionInactive).toBeUndefined();
+      expect(s.error).toBeUndefined();
+      expect(s.created).toHaveLength(1);
+    });
+
+    it('one function answers it: the lifecycle job and routes do not keep their own grace maths', () => {
+      const route = readFileSync(join(process.cwd(), 'app/api/subscriptions/current/route.ts'), 'utf8');
+      expect(route).toMatch(/getSubscriptionUsability/);
+      const src = readFileSync(join(process.cwd(), 'lib/subscription/effective-plan.ts'), 'utf8');
+      expect(src).not.toMatch(/Date\.now\(/);
+    });
+  });
+
+  // ---- Task 3 fix round 1 ----
+
+  describe('grace: one usability answer, DB clock, routes and notices', () => {
+    async function getJson(handler: (r: NextRequest) => Promise<Response>, path: string, businessId: string) {
+      const res = await handler(
+        new NextRequest(`http://localhost${path}`, {
+          headers: { 'x-authenticated-business-id': businessId, 'x-authenticated-user-id': adminOf.get(businessId)! },
+        }),
+      );
+      expect(res.status).toBe(200);
+      return res.json();
+    }
+    const billingModule = (j: any) => j.modules.find((m: any) => m.module_key === 'billing').subscription;
+
+    it('the loaders select the database date with the row', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -31, endOffset: -1 });
+      const sub = (await getModuleSubscription(biz, 'billing', true))!;
+      expect(sub.db_today).toBe(await daysFromToday(0));
+    });
+
+    it('the usability function gives the boundary results for an explicit today, whatever the process clock says', () => {
+      const row = { plan_id: 'billing_growth', status: 'active', end_date: '2026-03-10' };
+      const checks = () => {
+        expect(getSubscriptionUsability(row, '2026-03-10')).toMatchObject({ operational: true, graceActive: false });
+        expect(getSubscriptionUsability(row, '2026-03-11')).toMatchObject({ operational: true, graceActive: true, graceDaysRemaining: 6 });
+        expect(getSubscriptionUsability(row, '2026-03-17')).toMatchObject({ operational: true, graceActive: true, graceDaysRemaining: 0 });
+        expect(getSubscriptionUsability(row, '2026-03-18')).toMatchObject({ operational: false, graceActive: false });
+        expect(getSubscriptionUsability({ ...row, db_today: '2026-03-17' })).toMatchObject({ operational: true });
+        expect(getSubscriptionUsability({ ...row, db_today: '2026-03-18' })).toMatchObject({ operational: false });
+      };
+      checks();
+      jest.useFakeTimers().setSystemTime(new Date('2031-07-04T12:00:00Z'));
+      try { checks(); } finally { jest.useRealTimers(); }
+    });
+
+    it('a cancelled-at-period-end row with a stamp is denied and reports no grace', () => {
+      const r = getSubscriptionUsability(
+        { plan_id: 'billing_growth', status: 'active', end_date: '2026-03-10', grace_period_end: '2026-03-17', cancel_at_period_end: true },
+        '2026-03-12',
+      );
+      expect(r).toMatchObject({ operational: false, graceActive: false, graceEnd: null });
+    });
+
+    it('/subscriptions/current: 8 days past end is not operational', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      const j = (await getJson(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(j.is_operational).toBe(false);
+      expect(j.is_grace_period_active).toBe(false);
+    });
+
+    it('/subscriptions/current: 3 days past end is operational, in grace, with the right grace end', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      const j = (await getJson(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(j.is_operational).toBe(true);
+      expect(j.is_grace_period_active).toBe(true);
+      expect(j.grace_days_remaining).toBe(4);
+      expect(await daysFromToday(4)).toBe(
+        (await queryOne<{ d: string }>(`SELECT ((SELECT end_date FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing') + 7)::text AS d`, [biz]))!.d,
+      );
+    });
+
+    it('/subscriptions/current: cancel-at-period-end past its end is not operational, even with a stamp', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3, graceOffset: 4 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true WHERE business_id = $1`, [biz]);
+      const j = (await getJson(currentGet, '/api/subscriptions/current', biz)).subscription;
+      expect(j.is_operational).toBe(false);
+      expect(j.is_grace_period_active).toBe(false);
+    });
+
+    it('/subscriptions/modules/current follows the same rule', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      expect(billingModule(await getJson(modulesCurrentGet, '/api/subscriptions/modules/current', biz))).toMatchObject({ is_operational: false, is_grace_period_active: false });
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      expect(billingModule(await getJson(modulesCurrentGet, '/api/subscriptions/modules/current', biz))).toMatchObject({
+        is_operational: true, is_grace_period_active: true, grace_period_end: await daysFromToday(4), grace_days_remaining: 4,
+      });
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true WHERE business_id = $1`, [biz]);
+      expect(billingModule(await getJson(modulesCurrentGet, '/api/subscriptions/modules/current', biz))).toMatchObject({ is_operational: false, is_grace_period_active: false });
+    });
+
+    it('a NULL cancel_at_period_end flag counts as not cancelled: stamped in grace, moved to Free past grace', async () => {
+      await setRow(biz, 'billing_growth', { startOffset: -33, endOffset: -3 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = NULL WHERE business_id = $1`, [biz]);
+      await processExpiredModuleSubscriptions();
+      expect((await queryOne<any>(`SELECT grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!.g).toBe(await daysFromToday(4));
+
+      const other = await newBusiness('nullflag');
+      await setRow(other, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = NULL WHERE business_id = $1`, [other]);
+      expect(await moveModuleSubscriptionToFree(other, 'billing', 'billing_growth', 'grace_expired', 'grace_expired')).toBe(true);
+      const third = await newBusiness('nullflag2');
+      await setRow(third, 'billing_growth', { startOffset: -38, endOffset: -8 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = NULL WHERE business_id = $1`, [third]);
+      await processExpiredModuleSubscriptions();
+      expect((await queryOne<any>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1`, [third]))!.plan_id).toBe('free');
+    });
+
+    it('a trial plan id on an active row past its end gets no grace under the job or the function', async () => {
+      await setRow(biz, 'trial', { startOffset: -33, endOffset: -3 });
+      expect(getPaidGraceEndDate({ plan_id: 'trial', status: 'active', end_date: await daysFromToday(-3) })).toBeNull();
+      await processExpiredModuleSubscriptions();
+      const r = (await queryOne<any>(`SELECT plan_id, grace_period_end::text AS g FROM business_module_subscriptions WHERE business_id = $1`, [biz]))!;
+      expect(r).toMatchObject({ plan_id: 'trial', g: null });
+      clearModuleSubscriptionCache(biz);
+      expect((await getOperationalModuleSubscriptions(biz, true)).some((x) => x.module_key === 'billing')).toBe(false);
+    });
+
+    it('the 3-days-left notice fires from end_date + 7 even when the job has not stamped, once only', async () => {
+      await query(`UPDATE businesses SET email = $2 WHERE id = $1`, [biz, `grace-${biz.slice(0, 8)}@example.test`]);
+      await setRow(biz, 'billing_growth', { startOffset: -34, endOffset: -4 });
+      const sentFor = async () => Number((await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM subscription_notifications WHERE business_id = $1 AND notification_type = 'grace_expiring_3'`, [biz]))!.n);
+      expect(await sentFor()).toBe(0);
+      await sendPendingNotifications();
+      expect(await sentFor()).toBe(1);
+      await sendPendingNotifications();
+      expect(await sentFor()).toBe(1);
+    });
+
+    it('no notice for a cancelled-at-period-end row or on another day', async () => {
+      await query(`UPDATE businesses SET email = $2 WHERE id = $1`, [biz, `grace-${biz.slice(0, 8)}@example.test`]);
+      await setRow(biz, 'billing_growth', { startOffset: -34, endOffset: -4 });
+      await query(`UPDATE business_module_subscriptions SET cancel_at_period_end = true WHERE business_id = $1`, [biz]);
+      await sendPendingNotifications();
+      await setRow(biz, 'billing_growth', { startOffset: -35, endOffset: -5 });
+      await sendPendingNotifications();
+      expect(Number((await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM subscription_notifications WHERE business_id = $1 AND notification_type = 'grace_expiring_3'`, [biz]))!.n)).toBe(0);
     });
   });
 });

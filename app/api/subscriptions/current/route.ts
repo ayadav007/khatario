@@ -5,7 +5,7 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import {
   getDisplayPlanId,
   getEntitlementPlanId,
-  isPaidGracePeriodActive,
+  getSubscriptionUsability,
   shouldShowTrialBadge,
 } from '@/lib/subscription/effective-plan';
 import { moveSubscriptionToFree } from '@/lib/subscription/lifecycle';
@@ -33,6 +33,7 @@ async function loadPrimarySubscriptionRow(businessId: string) {
       bs.cancel_at_period_end,
       bs.cancelled_at,
       bs.grace_period_end,
+      CURRENT_DATE::text AS db_today,
       bs.downgraded_from,
       bs.scheduled_plan_id,
       bs.billing_cycle,
@@ -86,6 +87,9 @@ export async function GET(request: NextRequest) {
       trial_end_date: subscription.trial_end_date,
       end_date: subscription.end_date,
       grace_period_end: subscription.grace_period_end,
+      cancel_at_period_end: subscription.cancel_at_period_end,
+      scheduled_plan_id: subscription.scheduled_plan_id,
+      db_today: subscription.db_today,
     };
 
     const trialExtensionSub = {
@@ -111,6 +115,9 @@ export async function GET(request: NextRequest) {
           trial_end_date: refreshed.trial_end_date,
           end_date: refreshed.end_date,
           grace_period_end: refreshed.grace_period_end,
+          cancel_at_period_end: refreshed.cancel_at_period_end,
+          scheduled_plan_id: refreshed.scheduled_plan_id,
+          db_today: refreshed.db_today,
         });
         Object.assign(trialExtensionSub, {
           plan_id: refreshed.plan_id,
@@ -126,22 +133,12 @@ export async function GET(request: NextRequest) {
     const limitsPlanId = displayPlanId;
     const showTrialExtensionModal = shouldOfferTrialExtension(trialExtensionSub);
 
-    const now = new Date();
-    const isOperational =
-      subscription.status === 'active' ||
-      subscription.status === 'trial' ||
-      entitlementPlanId !== 'free';
-    let gracePeriodEnd: Date | null = null;
-    let isGracePeriodActive = false;
-    let graceDaysRemaining: number | null = null;
-
-    if (isPaidGracePeriodActive(subForEffective) && subscription.grace_period_end) {
-      gracePeriodEnd = new Date(subscription.grace_period_end);
-      isGracePeriodActive = true;
-      graceDaysRemaining = Math.ceil(
-        (gracePeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-      );
-    }
+    // The same answer entitlement gives; grace fields come from the same result.
+    const usability = getSubscriptionUsability(subForEffective);
+    const isOperational = usability.operational;
+    const isGracePeriodActive = usability.graceActive;
+    const gracePeriodEnd = usability.graceEnd;
+    const graceDaysRemaining = usability.graceDaysRemaining;
 
     let planRow = subscription;
     if (limitsPlanId !== subscription.plan_id) {

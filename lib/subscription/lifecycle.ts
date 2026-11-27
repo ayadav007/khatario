@@ -16,6 +16,7 @@ import {
 import { HR_TRIAL_PLAN_ID, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { type PlatformModule } from '@/lib/platform-modules';
 import { FREE_TIER_PLAN_IDS } from '@/lib/subscription/plan-tier';
+import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
 import {
   isLocalCalendarOnOrBeforeToday,
   parseLocalDateOnly,
@@ -301,15 +302,16 @@ export interface ModuleExpiredSubscriptionCounts {
  * 1. Extended trials expired — one-time extension used and `trial_end_date` passed → free
  * 2. Scheduled cancellations — `cancel_at_period_end` and `end_date` passed → free
  * 3. Scheduled downgrades — `scheduled_plan_id` and `end_date` passed → switch plan
- * 4. Lapsed renewals — active past `end_date` → start a 7-day grace period
- * 5. Grace period expired → free
+ * 4. Lapsed renewals — active past `end_date` → stamp `grace_period_end = end_date + 7` (for notices and
+ *    reporting; access already continues until then without the stamp, see getPaidGraceEndDate)
+ * 5. Grace over (stamp passed, or no stamp and `end_date + 7` passed) → free
  * 6. Paid add-ons (Khatario AI) whose `end_date` passed → expired
  * 7. Gateway checkouts still pending after 48 hours → failed (no notification)
  *
  * Every UPDATE repeats the condition that selected its row, so a payment that lands in between wins.
  */
 export async function processExpiredModuleSubscriptions(): Promise<ModuleExpiredSubscriptionCounts> {
-  const { moveModuleSubscriptionToFree } = await import(
+  const { moveModuleSubscriptionToFree, GRACE_EXPIRED_CONDITION, NOT_TRIAL_PLAN_SQL } = await import(
     '@/lib/subscription/module-plan-lifecycle'
   );
   const { clearModuleSubscriptionCache } = await import(
@@ -448,7 +450,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
        SET plan_id = $3,
            scheduled_plan_id = NULL,
            downgraded_from = $4,
-           grace_period_end = (end_date + INTERVAL '7 days')::date,
+           grace_period_end = (end_date + ${GRACE_DAYS})::date,
            updated_at = CURRENT_TIMESTAMP
        WHERE business_id = $1 AND module_key = $2
          AND status IN ('active', 'trial')
@@ -480,24 +482,28 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
     `SELECT business_id, module_key, plan_id, end_date::text AS end_date
      FROM business_module_subscriptions
      WHERE status = 'active'
-       AND cancel_at_period_end = false
+       AND COALESCE(cancel_at_period_end, false) = false
        AND scheduled_plan_id IS NULL
+       AND ${NOT_TRIAL_PLAN_SQL}
        AND end_date IS NOT NULL
        AND end_date < CURRENT_DATE
+       AND end_date + ${GRACE_DAYS} >= CURRENT_DATE
        AND grace_period_end IS NULL`,
   );
 
   for (const row of lapsedSubs) {
     const started = await query(
       `UPDATE business_module_subscriptions
-       SET grace_period_end = (end_date + INTERVAL '7 days')::date,
+       SET grace_period_end = (end_date + ${GRACE_DAYS})::date,
            updated_at = CURRENT_TIMESTAMP
        WHERE business_id = $1 AND module_key = $2
          AND status = 'active'
-         AND cancel_at_period_end = false
+         AND COALESCE(cancel_at_period_end, false) = false
          AND scheduled_plan_id IS NULL
+         AND ${NOT_TRIAL_PLAN_SQL}
          AND end_date IS NOT NULL
          AND end_date < CURRENT_DATE
+         AND end_date + ${GRACE_DAYS} >= CURRENT_DATE
          AND grace_period_end IS NULL`,
       [row.business_id, row.module_key],
     );
@@ -517,9 +523,7 @@ export async function processExpiredModuleSubscriptions(): Promise<ModuleExpired
   }>(
     `SELECT business_id, module_key, plan_id
      FROM business_module_subscriptions
-     WHERE status = 'active'
-       AND grace_period_end IS NOT NULL
-       AND grace_period_end < CURRENT_DATE`,
+     WHERE ${GRACE_EXPIRED_CONDITION}`,
   );
 
   for (const row of graceExpired) {

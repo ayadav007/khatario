@@ -67,6 +67,62 @@ describe('requireOperationalSubscription', () => {
     });
   });
 
+  describe('paid grace counts from end_date (no nightly stamp needed)', () => {
+    const dayOffset = (n: number) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + n);
+      const p = (x: number) => String(x).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+    const paidRow = (extra: Record<string, unknown>) => ({
+      subscription_id: 'sub-1',
+      business_id: BUSINESS_A,
+      plan_id: 'pro',
+      status: 'active',
+      start_date: '2023-01-01',
+      trial_end_date: null,
+      plan_name: 'pro',
+      plan_display_name: 'Pro',
+      features: { limits: {}, features: {} },
+      scheduled_plan_id: null,
+      billing_cycle: 'monthly',
+      grace_period_end: null,
+      cancel_at_period_end: false,
+      ...extra,
+    });
+    const apply = (row: Record<string, unknown>, expectedGateStatus: 200 | 403) =>
+      applySubscriptionScenario({
+        id: 'grace',
+        label: 'grace',
+        expectedGateStatus,
+        expectedCode: 'SUBSCRIPTION_EXPIRED',
+        subscription: row as any,
+      });
+
+    it('allows the day after end_date with no grace stamp', async () => {
+      apply(paidRow({ end_date: dayOffset(-1) }), 200);
+      await expect(requireOperationalSubscription(BUSINESS_A)).resolves.toBeDefined();
+    });
+
+    it('allows on day 7 after end_date and denies on day 8', async () => {
+      apply(paidRow({ end_date: dayOffset(-7) }), 200);
+      await expect(requireOperationalSubscription(BUSINESS_A)).resolves.toBeDefined();
+      apply(paidRow({ end_date: dayOffset(-8) }), 403);
+      await expect(requireOperationalSubscription(BUSINESS_A)).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXPIRED' });
+    });
+
+    it('denies a cancelled-at-period-end row the day after end_date (unchanged)', async () => {
+      apply(paidRow({ end_date: dayOffset(-1), cancel_at_period_end: true }), 403);
+      await expect(requireOperationalSubscription(BUSINESS_A)).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXPIRED' });
+    });
+
+    it('denies a row with a scheduled downgrade the day after end_date (unchanged)', async () => {
+      apply(paidRow({ end_date: dayOffset(-1), scheduled_plan_id: 'starter' }), 403);
+      await expect(requireOperationalSubscription(BUSINESS_A)).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXPIRED' });
+    });
+  });
+
   describe('protection regression', () => {
     it('fails closed when subscription lookup returns null (expired tenant)', async () => {
       applySubscriptionScenario({
