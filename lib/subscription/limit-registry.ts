@@ -38,7 +38,8 @@ export type LimitCheckType =
   | 'shifts'
   | 'designations'
   | 'performance_reviews'
-  | 'eway_bills';
+  | 'eway_bills'
+  | 'einvoices';
 
 export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   invoices: 'max_invoices_per_month',
@@ -70,6 +71,7 @@ export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   designations: 'max_designations',
   performance_reviews: 'max_performance_reviews_per_month',
   eway_bills: 'max_eway_bills_per_month',
+  einvoices: 'max_einvoices_per_month',
 };
 
 /** JSONB fallback: registry limit_key → same key in features.limits. */
@@ -226,6 +228,12 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       return {
         sql: `SELECT COUNT(*)::int AS count FROM eway_bills
               WHERE business_id = $1 AND generated_via <> 'manual' AND generated_at >= ${monthStart}`,
+        params: p,
+      };
+    case 'einvoices':
+      return {
+        sql: `SELECT COUNT(*)::int AS count FROM invoices
+              WHERE business_id = $1 AND irn IS NOT NULL AND irn_ack_date >= ${monthStart}`,
         params: p,
       };
     default: {
