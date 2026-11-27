@@ -92,6 +92,34 @@ export type ReceiptData = {
   };
 };
 
+/** The same row shape as the live query, read from the archive copy (no live business, so no address). */
+async function loadArchivedReceiptRow(paymentId: string): Promise<ReceiptRow | null> {
+  return queryOne<ReceiptRow>(
+    `SELECT bt.id::text AS id, bt.business_id::text AS business_id, bt.type, bt.status,
+            bt.amount::text AS amount, bt.discount_amount::text AS discount_amount, bt.total_amount::text AS total_amount,
+            bt.tax_amount::text AS tax_amount, bt.taxable_amount::text AS taxable_amount,
+            bt.cgst_amount::text AS cgst_amount, bt.sgst_amount::text AS sgst_amount, bt.igst_amount::text AS igst_amount,
+            bt.gst_rate::text AS gst_rate, bt.gst_mode, bt.invoice_number, bt.description, bt.billing_cycle,
+            bt.payment_method, bt.payment_reference, bt.metadata,
+            bt.period_start::text AS period_start, bt.period_end::text AS period_end,
+            to_char(CASE WHEN bt.type = 'refund' THEN bt.updated_at
+                         ELSE COALESCE((bt.metadata->>'paid_at')::timestamptz, bt.created_at) END
+                    AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY') AS issued_on,
+            sp.display_name AS plan_name,
+            bt.business_name AS business_name, bt.business_gstin AS business_gstin, NULL::text AS business_state,
+            NULL::text AS address_line1, NULL::text AS address_line2, NULL::text AS city, NULL::text AS pincode,
+            orig.invoice_number AS original_invoice_number,
+            to_char(COALESCE((orig.metadata->>'paid_at')::timestamptz, orig.created_at) AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY') AS original_date
+     FROM billing_transactions_archive bt
+     LEFT JOIN subscription_plans sp ON sp.id = bt.plan_id
+     LEFT JOIN billing_transactions_archive orig
+       ON bt.type = 'refund' AND orig.id::text = bt.metadata->>'refund_of' AND orig.business_id = bt.business_id
+     WHERE bt.id = $1::uuid
+       AND ((bt.type = 'payment' AND bt.status IN ('completed', 'refunded')) OR (bt.type = 'refund' AND bt.status = 'completed'))`,
+    [paymentId],
+  );
+}
+
 const n = (v: string | number | null | undefined) => Number(v ?? 0) || 0;
 
 /**
@@ -99,10 +127,14 @@ const n = (v: string | number | null | undefined) => Number(v ?? 0) || 0;
  * `businessId` restricts it to that business (the customer's own); null is for a platform admin.
  * Anything else, including another business's id, is null (the route answers 404).
  */
-export async function loadReceipt(paymentId: string, businessId: string | null): Promise<ReceiptData | null> {
+export async function loadReceipt(
+  paymentId: string,
+  businessId: string | null,
+  opts: { includeArchived?: boolean } = {},
+): Promise<ReceiptData | null> {
   if (!UUID.test(paymentId)) return null;
   if (businessId !== null && !UUID.test(businessId)) return null;
-  const r = await queryOne<ReceiptRow>(
+  let r = await queryOne<ReceiptRow>(
     `SELECT bt.id::text AS id, bt.business_id::text AS business_id, bt.type, bt.status,
             bt.amount::text AS amount, bt.discount_amount::text AS discount_amount, bt.total_amount::text AS total_amount,
             bt.tax_amount::text AS tax_amount, bt.taxable_amount::text AS taxable_amount,
@@ -128,6 +160,11 @@ export async function loadReceipt(paymentId: string, businessId: string | null):
        AND ((bt.type = 'payment' AND bt.status IN ('completed', 'refunded')) OR (bt.type = 'refund' AND bt.status = 'completed'))`,
     [paymentId, businessId],
   );
+  // Payments of a deleted business live in billing_transactions_archive. Only a platform admin
+  // (businessId null) may ask for them; a customer lookup never reaches the archive.
+  if (!r && opts.includeArchived === true && businessId === null) {
+    r = await loadArchivedReceiptRow(paymentId);
+  }
   if (!r) return null;
 
   const isRefund = r.type === 'refund';

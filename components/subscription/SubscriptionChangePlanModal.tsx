@@ -119,7 +119,6 @@ export function SubscriptionChangePlanModal({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          business_id: businessId,
           plan_id: confirmPlan.id,
           code: couponCode.trim(),
           billing_cycle: billingCycle,
@@ -174,7 +173,6 @@ export function SubscriptionChangePlanModal({
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            business_id: businessId,
             target_plan_id: plan.id,
             module_key: moduleKey,
             confirmed: false,
@@ -217,12 +215,11 @@ export function SubscriptionChangePlanModal({
       const body =
         action === 'downgrade'
           ? {
-              business_id: businessId,
               target_plan_id: confirmPlan.id,
               module_key: moduleKey,
               confirmed: true,
             }
-          : { business_id: businessId, plan_id: confirmPlan.id, module_key: moduleKey };
+          : { plan_id: confirmPlan.id, module_key: moduleKey };
 
       if (action === 'upgrade' || action === 'renew') {
         const amountInr = listPrice(confirmPlan);

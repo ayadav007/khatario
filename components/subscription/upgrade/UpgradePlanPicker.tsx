@@ -185,7 +185,6 @@ export function UpgradePlanPicker({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          business_id: business.id,
           plan_id: selectedPlanId,
           code: couponCode.trim(),
           billing_cycle: billingCycle,

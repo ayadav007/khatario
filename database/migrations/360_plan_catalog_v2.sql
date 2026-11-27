@@ -246,6 +246,8 @@ WHERE addon_type IN ('whatsapp_bot', 'whatsapp_send_message', 'khatario_ai')
   AND business_id IN (SELECT business_id FROM connect_from_addons);
 
 -- Connect rows from the old free Connect plan that did not pay for anything.
+-- Safe to run twice: a Connect subscription that has a completed payment, or a paid period still
+-- running, is never moved to the free plan (a second run must not downgrade a paying customer).
 UPDATE business_module_subscriptions
 SET plan_id = 'connect_free',
     status = 'active',
@@ -257,7 +259,13 @@ SET plan_id = 'connect_free',
     updated_at = CURRENT_TIMESTAMP
 WHERE module_key = 'connect'
   AND plan_id = 'connect'
-  AND business_id NOT IN (SELECT business_id FROM connect_from_addons);
+  AND business_id NOT IN (SELECT business_id FROM connect_from_addons)
+  AND (end_date IS NULL OR end_date < CURRENT_DATE)
+  AND NOT EXISTS (
+    SELECT 1 FROM billing_transactions bt
+    WHERE bt.business_id = business_module_subscriptions.business_id
+      AND bt.module_key = 'connect' AND bt.type = 'payment' AND bt.status IN ('completed', 'refunded')
+  );
 
 COMMENT ON COLUMN subscription_plans.price_3year IS 'Price for a 3-year prepaid term (0 = not offered).';
 COMMENT ON COLUMN whatsapp_addons.status IS 'active, expired, cancelled, or migrated (converted to a Connect subscription in 360)';

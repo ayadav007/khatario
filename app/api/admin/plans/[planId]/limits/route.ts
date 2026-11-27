@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { scheduleKbReindex } from '@/lib/rag/queue';
+import { applyPlanLimitEdit, confirmationRequired, countBusinessesOnPlan } from '@/lib/admin-plan-edit';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +74,7 @@ export async function GET(
 
     return NextResponse.json({
       planId,
+      affected_businesses: await countBusinessesOnPlan(planId),
       limits: grouped,
       categories: Object.keys(grouped)
     });
@@ -89,7 +91,9 @@ export async function GET(
  * POST /api/admin/plans/[planId]/limits
  * 
  * Updates limit values for a specific plan.
- * Body: { limits: { [limitKey]: limitValue } }
+ * Body: { limits: { [limitKey]: limitValue }, confirm_affected_count: number }
+ * confirm_affected_count must equal the number of businesses currently on the plan (returned by GET as
+ * affected_businesses); otherwise 409 with the current count. The change is written to the admin audit log.
  */
 export async function POST(
   request: NextRequest,
@@ -100,7 +104,7 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const { planId } = params;
-    const { limits } = await request.json(); // { limit_key: limit_value }
+    const { limits, confirm_affected_count } = await request.json(); // { limit_key: limit_value }
 
     if (!limits || typeof limits !== 'object') {
       return NextResponse.json(
@@ -122,43 +126,23 @@ export async function POST(
       );
     }
 
-    // Start transaction
-    await db.query('BEGIN');
+    const result = await applyPlanLimitEdit({
+      planId,
+      adminId: auth.admin.id,
+      limits,
+      confirmAffectedCount: confirm_affected_count,
+    });
+    if (!result.ok) return confirmationRequired(result.affected);
 
-    try {
-      // Upsert only keys sent — do not delete other plan limits (partial form saves).
-      for (const [limitKey, limitValue] of Object.entries(limits)) {
-        const value = typeof limitValue === 'number' ? limitValue : parseInt(String(limitValue));
+    // Clear subscription cache so changes take effect immediately
+    clearAllSubscriptionCaches();
+    scheduleKbReindex({ target: 'plans', reason: 'plan_limits_saved' });
 
-        const limitExists = await db.queryOne(
-          `SELECT limit_key FROM platform_limits WHERE limit_key = $1 AND is_active = true`,
-          [limitKey]
-        );
-
-        if (limitExists && !isNaN(value)) {
-          await db.query(
-            `INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = $3`,
-            [planId, limitKey, value]
-          );
-        }
-      }
-
-      await db.query('COMMIT');
-
-      // Clear subscription cache so changes take effect immediately
-      clearAllSubscriptionCaches();
-      scheduleKbReindex({ target: 'plans', reason: 'plan_limits_saved' });
-
-      return NextResponse.json({ 
-        success: true,
-        message: 'Plan limits updated successfully'
-      });
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+    return NextResponse.json({
+      success: true,
+      affected_businesses: result.affected,
+      message: 'Plan limits updated successfully',
+    });
   } catch (error: any) {
     console.error('Error updating plan limits:', error);
     return NextResponse.json(

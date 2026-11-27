@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { scheduleKbReindex } from '@/lib/rag/queue';
+import { applyPlanFeatureEdit, confirmationRequired, countBusinessesOnPlan } from '@/lib/admin-plan-edit';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,7 @@ export async function GET(
 
     return NextResponse.json({
       planId,
+      affected_businesses: await countBusinessesOnPlan(planId),
       features: grouped,
       categories: Object.keys(grouped)
     });
@@ -91,7 +93,9 @@ export async function GET(
  * POST /api/admin/plans/[planId]/features
  * 
  * Updates feature toggles for a specific plan.
- * Body: { features: { [featureId]: boolean } }
+ * Body: { features: { [featureId]: boolean }, confirm_affected_count: number }
+ * confirm_affected_count must equal the number of businesses currently on the plan (returned by GET as
+ * affected_businesses); otherwise 409 with the current count. The change is written to the admin audit log.
  */
 export async function POST(
   request: NextRequest,
@@ -102,7 +106,7 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const { planId } = params;
-    const { features } = await request.json(); // { feature_id: enabled }
+    const { features, confirm_affected_count } = await request.json(); // { feature_id: enabled }
 
     if (!features || typeof features !== 'object') {
       return NextResponse.json(
@@ -124,50 +128,23 @@ export async function POST(
       );
     }
 
-    // Start transaction
-    await db.query('BEGIN');
+    const result = await applyPlanFeatureEdit({
+      planId,
+      adminId: auth.admin.id,
+      features,
+      confirmAffectedCount: confirm_affected_count,
+    });
+    if (!result.ok) return confirmationRequired(result.affected);
 
-    try {
-      // Clear existing mappings for this plan
-      await db.query(
-        'DELETE FROM subscription_plan_features WHERE plan_id = $1',
-        [planId]
-      );
+    // Clear subscription cache so changes take effect immediately
+    clearAllSubscriptionCaches();
+    scheduleKbReindex({ target: 'plans', reason: 'plan_features_saved' });
 
-      // Insert new mappings
-      for (const [featureId, enabled] of Object.entries(features)) {
-        if (enabled === true) {
-          // Verify feature exists
-          const featureExists = await db.queryOne(
-            `SELECT id FROM platform_features WHERE id = $1 AND is_active = true`,
-            [featureId]
-          );
-
-          if (featureExists) {
-            await db.query(
-              `INSERT INTO subscription_plan_features (plan_id, feature_id, enabled)
-               VALUES ($1, $2, true)
-               ON CONFLICT (plan_id, feature_id) DO UPDATE SET enabled = true`,
-              [planId, featureId]
-            );
-          }
-        }
-      }
-
-      await db.query('COMMIT');
-
-      // Clear subscription cache so changes take effect immediately
-      clearAllSubscriptionCaches();
-      scheduleKbReindex({ target: 'plans', reason: 'plan_features_saved' });
-
-      return NextResponse.json({ 
-        success: true,
-        message: 'Plan features updated successfully'
-      });
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+    return NextResponse.json({
+      success: true,
+      affected_businesses: result.affected,
+      message: 'Plan features updated successfully',
+    });
   } catch (error: any) {
     console.error('Error updating plan features:', error);
     return NextResponse.json(

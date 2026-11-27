@@ -31,16 +31,3 @@ export function isBillingCycleOffered(plan: PlanPrices, billingCycle: BillingCyc
 export function billingCycleMonths(billingCycle: BillingCycle): number {
   return billingCycle === 'three_year' ? 36 : billingCycle === 'yearly' ? 12 : 1;
 }
-
-export function computeSubscriptionPeriodEnd(billingCycle: BillingCycle, bonusDays = 0): string {
-  const start = new Date();
-  if (billingCycle === 'three_year') {
-    start.setFullYear(start.getFullYear() + 3);
-  } else if (billingCycle === 'yearly') {
-    start.setFullYear(start.getFullYear() + 1);
-  } else {
-    start.setMonth(start.getMonth() + 1);
-  }
-  if (bonusDays > 0) start.setDate(start.getDate() + bonusDays);
-  return start.toISOString().split('T')[0];
-}

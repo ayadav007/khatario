@@ -30,7 +30,6 @@ export async function startPlanUpgrade(
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
-        business_id: params.businessId,
         plan_id: params.planId,
         module_key: params.moduleKey,
         billing_cycle: billingCycle,
@@ -48,7 +47,6 @@ export async function startPlanUpgrade(
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({
-      business_id: params.businessId,
       plan_id: params.planId,
       module_key: params.moduleKey,
       billing_cycle: billingCycle,

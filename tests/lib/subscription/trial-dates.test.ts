@@ -11,7 +11,6 @@ jest.mock('@/lib/subscription', () => ({
 
 import { getBusinessSubscription } from '@/lib/subscription';
 import { checkTrialExpiry } from '@/lib/subscription/lifecycle';
-import { computeSubscriptionPeriodEnd } from '@/lib/subscription/apply-plan-change';
 
 const mockGetSub = getBusinessSubscription as jest.Mock;
 
@@ -52,13 +51,5 @@ describe('checkTrialExpiry', () => {
     const info = await checkTrialExpiry('biz');
     expect(info.isExpired).toBe(false);
     expect(info.daysRemaining).toBe(21);
-  });
-});
-
-describe('computeSubscriptionPeriodEnd', () => {
-  it('adds bonus days on top of the billing period', () => {
-    const base = new Date(computeSubscriptionPeriodEnd('monthly'));
-    const withBonus = new Date(computeSubscriptionPeriodEnd('monthly', 5));
-    expect(Math.round((withBonus.getTime() - base.getTime()) / 86_400_000)).toBe(5);
   });
 });

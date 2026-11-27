@@ -11,8 +11,8 @@ import { isPeriodLocked } from '@/lib/period-lock-utils';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError, resolveRegistryFeatureId } from '@/lib/subscription/feature-access';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
-import { getEntitlementPlanIdForModuleSub, getOperationalModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
-import { isTrialEntitlementActive } from '@/lib/subscription/effective-plan';
+import { getEntitlementPlanIdForModuleSub, getModuleSubscription, getOperationalModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
+import { getSubscriptionUsability, isTrialEntitlementActive } from '@/lib/subscription/effective-plan';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
 
@@ -107,8 +107,17 @@ export async function runRecurringInvoices(
     let decision = planDecision.get(rec.business_id);
     if (decision === undefined) {
       try {
-        await assertFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
-        decision = 'allowed';
+        // "Is the plan usable today" is decided here with the shared rule and the database's date, so the
+        // answer does not depend on whether the nightly subscription job has already marked the row expired.
+        // A row past its end date and grace is not usable: nothing is generated and the schedule is left as it is.
+        const billingSub = await getModuleSubscription(rec.business_id, 'billing', true);
+        if (billingSub && !getSubscriptionUsability(billingSub).operational) {
+          planDecision.set(rec.business_id, 'inactive');
+          decision = 'inactive';
+        } else {
+          await assertFeatureAccess(rec.business_id, FeatureKeys.RECURRING_INVOICES);
+          decision = 'allowed';
+        }
       } catch (e) {
         if (e instanceof FeatureAccessDeniedError) {
           // Only "the plan does not include the feature" is a real no. An expired/inactive row may just be

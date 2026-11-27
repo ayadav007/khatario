@@ -254,7 +254,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ business_id: businessId, module_key: moduleKey }),
+        body: JSON.stringify({ module_key: moduleKey }),
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -278,7 +278,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ business_id: businessId, module_key: moduleKey }),
+        body: JSON.stringify({ module_key: moduleKey }),
       });
       const data = await response.json();
       if (response.ok) {
@@ -474,7 +474,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       const response = await fetch('/api/subscriptions/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId }),
+        body: JSON.stringify({}),
       });
       if (response.ok) {
         toast.success('Subscription cancelled successfully');
@@ -497,7 +497,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       const response = await fetch('/api/subscriptions/cancel-downgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId }),
+        body: JSON.stringify({}),
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -536,7 +536,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
           credentials: 'include',
           body: JSON.stringify({
             code: couponCode.trim(),
-            business_id: businessId,
             plan_id: plan.id,
             billing_cycle: billingCycle,
           }),

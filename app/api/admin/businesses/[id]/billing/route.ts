@@ -80,6 +80,8 @@ export async function GET(
           ...rest,
           refund_of: (metadata?.refund_of as string | undefined) ?? null,
           can_cancel_refund: r.status === 'pending' && !gatewayAsked,
+          needs_review: metadata?.needs_review === true || metadata?.needs_review === 'true',
+          reviewed_at: (metadata?.reviewed_at as string | undefined) ?? null,
         };
       }
       if (r.type !== 'payment') return rest;

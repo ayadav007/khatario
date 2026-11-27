@@ -23,7 +23,7 @@ import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { archiveBusinessBillingTransactions, ARCHIVE_MISSING_MESSAGE } from '@/lib/platform-billing-archive';
 import {
   computePlanAmount,
-  computeSubscriptionPeriodEnd,
+  billingCycleMonths,
   normalizeBillingCycle,
 } from '@/lib/subscription/apply-plan-change';
 
@@ -267,6 +267,25 @@ export async function getBusinessSubscription(
   );
 }
 
+/**
+ * What the admin editor wants written. Dates that depend on "today" are described, not computed,
+ * here: the INSERT below turns them into dates with the database clock (make_interval), so the
+ * server's timezone and clock never decide when a customer's access ends.
+ */
+type AdminSubscriptionFields = {
+  status: string;
+  /** Explicit trial end (or the existing one) used as the base of an extension. */
+  trialBase: string | null;
+  trialExtendDays: number | null;
+  /** Days from today when a trial plan has no trial end yet. */
+  trialDefaultDays: number | null;
+  /** Explicit or existing end date. */
+  endDate: string | null;
+  /** When set, a missing or past end date becomes today + this many months (database date). */
+  endDefaultMonths: number | null;
+  billingCycle: 'monthly' | 'yearly' | 'three_year';
+};
+
 function normalizeAdminSubscriptionFields(
   planId: string,
   existing: BusinessSubscriptionRow | null,
@@ -277,53 +296,28 @@ function normalizeAdminSubscriptionFields(
     endDate?: string | null;
     billingCycle?: 'monthly' | 'yearly' | 'three_year';
   },
-): {
-  status: string;
-  trialEnd: string | null;
-  endDate: string | null;
-  billingCycle: 'monthly' | 'yearly' | 'three_year';
-} {
+): AdminSubscriptionFields {
   const rawCycle = params.billingCycle ?? existing?.billing_cycle ?? 'monthly';
   const billingCycle = normalizeBillingCycle(rawCycle);
+  const extend =
+    params.extendTrialDays != null && params.extendTrialDays > 0 ? Math.floor(params.extendTrialDays) : null;
+  const none = { trialBase: null, trialExtendDays: null, trialDefaultDays: null, endDate: null, endDefaultMonths: null };
 
   if (isTrialPlanId(planId)) {
-    let trialEnd = params.trialEndDate ?? existing?.trial_end_date ?? null;
-    if (params.extendTrialDays != null && params.extendTrialDays > 0) {
-      const base = trialEnd ? new Date(trialEnd) : new Date();
-      if (base < new Date()) base.setTime(Date.now());
-      base.setDate(base.getDate() + params.extendTrialDays);
-      trialEnd = base.toISOString().split('T')[0];
-    }
-    if (!trialEnd) {
-      const end = new Date();
-      end.setDate(end.getDate() + SIGNUP_TRIAL_DAYS);
-      trialEnd = end.toISOString().split('T')[0];
-    }
+    const base = params.trialEndDate ?? existing?.trial_end_date ?? null;
     return {
+      ...none,
       status: 'trial',
-      trialEnd,
-      endDate: null,
+      trialBase: base,
+      trialExtendDays: extend,
+      trialDefaultDays: base || extend ? null : SIGNUP_TRIAL_DAYS,
       billingCycle,
     };
   }
 
   const allowed = allowedAdminStatusesForPlan(planId);
   if (allowed.length === 1 && allowed[0] === 'active') {
-    return {
-      status: 'active',
-      trialEnd: null,
-      endDate: null,
-      billingCycle,
-    };
-  }
-
-  let trialEnd: string | null = null;
-  if (params.trialEndDate) trialEnd = params.trialEndDate;
-  else if (params.extendTrialDays != null && params.extendTrialDays > 0) {
-    const base = existing?.trial_end_date ? new Date(existing.trial_end_date) : new Date();
-    if (base < new Date()) base.setTime(Date.now());
-    base.setDate(base.getDate() + params.extendTrialDays);
-    trialEnd = base.toISOString().split('T')[0];
+    return { ...none, status: 'active', billingCycle };
   }
 
   const keptStatus =
@@ -334,17 +328,18 @@ function normalizeAdminSubscriptionFields(
       `Status "${status}" is not allowed for plan ${planId}. Allowed: ${allowedAdminStatusesForPlan(planId).join(', ')}`,
     );
   }
-  const today = new Date().toISOString().split('T')[0];
-  let endDate =
-    params.endDate !== undefined ? params.endDate : existing?.end_date ?? null;
-  if (params.endDate === undefined && endDate !== null && endDate < today && status === 'active') {
-    endDate = null;
-  }
-  if (params.endDate === undefined && endDate === null && status === 'active') {
-    endDate = computeSubscriptionPeriodEnd(billingCycle);
-  }
-
-  return { status, trialEnd, endDate, billingCycle };
+  const explicitTrial = params.trialEndDate ?? null;
+  const endDate = params.endDate !== undefined ? params.endDate : existing?.end_date ?? null;
+  return {
+    ...none,
+    status,
+    trialBase: explicitTrial ? explicitTrial : extend ? existing?.trial_end_date ?? null : null,
+    trialExtendDays: explicitTrial ? null : extend,
+    endDate,
+    endDefaultMonths:
+      params.endDate === undefined && status === 'active' ? billingCycleMonths(billingCycle) : null,
+    billingCycle,
+  };
 }
 
 export async function adminUpdateSubscription(params: {
@@ -386,14 +381,22 @@ export async function adminUpdateSubscription(params: {
   const planId = params.planId ?? existing?.plan_id;
   if (!planId) throw new Error(`No ${moduleKey} subscription yet; choose a plan`);
   const normalized = normalizeAdminSubscriptionFields(planId, existing, params);
-  const { status, trialEnd, endDate, billingCycle } = normalized;
+  const { status, billingCycle } = normalized;
 
   const row = await queryOne<BusinessSubscriptionRow>(
     `INSERT INTO business_module_subscriptions AS bms (
        business_id, module_key, plan_id, status, start_date, end_date, trial_end_date,
        billing_cycle, cancelled_at, updated_at
      ) VALUES (
-       $1, $2, $3, $4::varchar, COALESCE($5::date, CURRENT_DATE), $6::date, $7::date, $8,
+       $1, $2, $3, $4::varchar, COALESCE($5::date, CURRENT_DATE),
+       CASE WHEN $9::int IS NOT NULL AND ($6::date IS NULL OR $6::date < CURRENT_DATE)
+            THEN CURRENT_DATE + make_interval(months => $9::int)
+            ELSE $6::date END,
+       CASE WHEN $10::int IS NOT NULL THEN GREATEST(COALESCE($7::date, CURRENT_DATE), CURRENT_DATE) + $10::int
+            WHEN $7::date IS NOT NULL THEN $7::date
+            WHEN $11::int IS NOT NULL THEN CURRENT_DATE + $11::int
+            ELSE NULL END,
+       $8,
        CASE WHEN $4::varchar = 'cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END, NOW()
      )
      ON CONFLICT (business_id, module_key) DO UPDATE SET
@@ -422,9 +425,12 @@ export async function adminUpdateSubscription(params: {
       planId,
       status,
       existing?.start_date ?? null,
-      endDate,
-      trialEnd,
+      normalized.endDate,
+      normalized.trialBase,
       billingCycle,
+      normalized.endDefaultMonths,
+      normalized.trialExtendDays,
+      normalized.trialDefaultDays,
     ],
   );
 
@@ -439,14 +445,15 @@ export async function adminUpdateSubscription(params: {
     module_key: moduleKey,
     admin_id: params.adminId,
     status,
-    trial_end_date: trialEnd,
+    trial_end_date: row.trial_end_date,
   });
 
   await logAdminAction(params.adminId, 'update_subscription', 'business', params.businessId, {
     module_key: moduleKey,
     plan_id: planId,
     status,
-    trial_end_date: trialEnd,
+    trial_end_date: row.trial_end_date,
+    end_date: row.end_date,
   });
 
   const planMeta =

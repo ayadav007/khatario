@@ -1,232 +1,71 @@
-# How to Modify Subscription Plans for Testing
+# How to change subscription plans
 
-## Overview
-Subscription plans are stored in the `subscription_plans` table in PostgreSQL. You can modify plan features and limits directly in the database for testing purposes.
+A plan is a row in `subscription_plans` plus its features and limits in separate tables. A customer's plan is a row per product in `business_module_subscriptions`. The old `business_subscriptions` table and the JSON `features` column on `subscription_plans` are not used to decide access any more.
 
-## Method 1: Update via SQL (Recommended for Quick Testing)
+## The tables
 
-### Connect to PostgreSQL Database
-```bash
-# Using psql
-psql -U your_username -d your_database_name
+| Table | What it holds |
+|---|---|
+| `subscription_plans` | One row per plan: `id`, `display_name`, prices (`price_monthly`, `price_yearly`, `price_3year`), `product_line` (billing, hr, connect, crm), `is_active`, `is_public`, `bundled_hr_plan_id`, `description`. |
+| `platform_features` | Every feature that can be switched on for a plan (`id` such as `web_access`, `hr_payroll`). |
+| `subscription_plan_features` | `(plan_id, feature_id, enabled)`: which features a plan has. A missing row means the plan does not have the feature. |
+| `platform_limits` | Every limit with its `default_value` (`-1` is unlimited, `0` is not allowed). |
+| `subscription_plan_limits` | `(plan_id, limit_key, limit_value)`: a plan's own value. Without a row the plan uses the platform default. |
+| `business_module_subscriptions` | One row per business and product: `plan_id`, `status` (active, trial, expired, cancelled), `start_date`, `end_date`, `billing_cycle`. |
+| `platform_admin_logs` | The admin audit log. Plan edits made in the admin screen are recorded here. |
 
-# Or using pgAdmin / DBeaver / any SQL client
-```
+The current Billing plans are Free, Starter, Growth and Business (ids `free`, `billing_starter`, `billing_growth`, `billing_business`), plus the signup `trial`. The older `growth` and `business` plans stay active for businesses already on them. HR plans: `hr_staff_lite` (HR Lite), `hr_starter`, `hr_pro`. A Billing plan bundles an HR plan through `bundled_hr_plan_id`: Starter includes HR Lite, Growth includes HR Starter, Business includes HR Pro, Free includes none.
 
-### Example: Enable WhatsApp Manual for Free Plan
+## Normal way: Admin, then Plans
 
-```sql
--- View current free plan configuration
-SELECT id, name, features FROM subscription_plans WHERE id = 'free';
+Use the feature and limit screens in the platform admin (Plans). Before it saves, the screen tells you how many businesses are on the plan and asks you to confirm: "This changes the plan for N businesses right away." There is no plan versioning: every business on the plan gets the new features and limits immediately, and nothing is grandfathered. Every save is written to `platform_admin_logs` with your admin id and the values before and after.
 
--- Update free plan to enable whatsapp_manual and increase WhatsApp limit
-UPDATE subscription_plans
-SET features = jsonb_set(
-  jsonb_set(
-    features,
-    '{features,whatsapp_manual}',
-    'true'
-  ),
-  '{limits,max_whatsapp_per_day}',
-  '10'
-)
-WHERE id = 'free';
+If the number of businesses changes while you are on the screen, the save is refused with the new number; look at it and save again.
 
--- Verify the change
-SELECT id, name, features->'features'->'whatsapp_manual' as whatsapp_manual,
-       features->'limits'->'max_whatsapp_per_day' as whatsapp_limit
-FROM subscription_plans WHERE id = 'free';
-```
+## Direct SQL (local or test database only)
 
-### Example: Disable a Feature
+Do not run these on staging or production: they skip the confirmation and the audit log.
 
 ```sql
--- Disable whatsapp_manual for free plan
-UPDATE subscription_plans
-SET features = jsonb_set(
-  features,
-  '{features,whatsapp_manual}',
-  'false'
-)
-WHERE id = 'free';
+-- Turn a feature on for a plan
+INSERT INTO subscription_plan_features (plan_id, feature_id, enabled)
+VALUES ('free', 'hr_payroll', true)
+ON CONFLICT (plan_id, feature_id) DO UPDATE SET enabled = true;
+
+-- Turn it off
+DELETE FROM subscription_plan_features WHERE plan_id = 'free' AND feature_id = 'hr_payroll';
+
+-- Change a limit (-1 unlimited, 0 not allowed)
+INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value)
+VALUES ('free', 'max_whatsapp_per_day', 10)
+ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = 10;
+
+-- See a plan's features and limits
+SELECT feature_id FROM subscription_plan_features WHERE plan_id = 'free' AND enabled ORDER BY 1;
+SELECT limit_key, limit_value FROM subscription_plan_limits WHERE plan_id = 'free' ORDER BY 1;
 ```
 
-### Example: Change WhatsApp Daily Limit
+## Put one test business on a plan
+
+Use the admin screen (Businesses, then the business, then Subscription). In SQL, on the local database:
 
 ```sql
--- Set free plan to allow 5 WhatsApp messages per day
-UPDATE subscription_plans
-SET features = jsonb_set(
-  features,
-  '{limits,max_whatsapp_per_day}',
-  '5'
-)
-WHERE id = 'free';
+SELECT bms.module_key, bms.plan_id, bms.status, bms.end_date, sp.display_name
+FROM business_module_subscriptions bms
+JOIN subscription_plans sp ON sp.id = bms.plan_id
+WHERE bms.business_id = '<business id>';
 
--- Set to unlimited (use -1)
-UPDATE subscription_plans
-SET features = jsonb_set(
-  features,
-  '{limits,max_whatsapp_per_day}',
-  '-1'
-)
-WHERE id = 'free';
+UPDATE business_module_subscriptions
+SET plan_id = 'billing_growth', status = 'active', end_date = CURRENT_DATE + 30
+WHERE business_id = '<business id>' AND module_key = 'billing';
 ```
 
-### Common Feature Flags to Test
+## Seed values and migrations
 
-```sql
--- Enable/disable whatsapp_manual
-'{features,whatsapp_manual}' → 'true' or 'false'
+Plan seeds live in the numbered files under `database/migrations/` (for example 360, 386, 387). They are applied once by the migration runner. Do not re-run an old migration to "reset" plans: it overwrites changes made in the admin screen. Change a plan for good by editing it in the admin screen; to change what a new database starts with, add a new migration.
 
--- Enable/disable whatsapp_auto_reminders
-'{features,whatsapp_auto_reminders}' → 'true' or 'false'
+## After a change
 
--- Change WhatsApp daily limit
-'{limits,max_whatsapp_per_day}' → '0', '10', '100', or '-1' (unlimited)
-
--- Change invoice limit
-'{limits,max_invoices_per_month}' → '20', '500', or '-1' (unlimited)
-
--- Change customer limit
-'{limits,max_customers}' → '10', '100', or '-1' (unlimited)
-```
-
-## Method 2: Re-run Seed Script (Resets All Plans)
-
-If you want to reset plans to default values:
-
-```bash
-# Run the seed script
-psql -U your_username -d your_database_name -f database/seed_subscriptions.sql
-```
-
-**⚠️ Warning:** This will reset ALL subscription plans to their default values.
-
-## Method 3: Update Business Subscription Directly
-
-To test with a specific business account:
-
-```sql
--- Check current business subscription
-SELECT bs.*, sp.name as plan_name, sp.features
-FROM business_subscriptions bs
-JOIN subscription_plans sp ON bs.plan_id = sp.id
-WHERE bs.business_id = 'your-business-id-here';
-
--- Change a business to a different plan
-UPDATE business_subscriptions
-SET plan_id = 'professional'  -- or 'free', 'business', 'enterprise'
-WHERE business_id = 'your-business-id-here';
-```
-
-## Method 4: Modify Seed File and Re-apply
-
-1. Edit `database/seed_subscriptions.sql`
-2. Change the values in the JSON for the plan you want to test
-3. Run the seed script (see Method 2)
-
-Example modification in seed file:
-```sql
--- FREE PLAN
-('free', 'free', 'Free / Starter', ..., 
-'{
-  "limits": {
-    "max_whatsapp_per_day": 10  -- Changed from 0 to 10
-  },
-  "features": {
-    "whatsapp_manual": true,  -- Changed from false to true
-    ...
-  }
-}'::jsonb, true, 1),
-```
-
-## Quick Test Scenarios
-
-### Test 1: Free Plan with WhatsApp Enabled
-```sql
-UPDATE subscription_plans
-SET features = jsonb_set(
-  jsonb_set(
-    features,
-    '{features,whatsapp_manual}',
-    'true'
-  ),
-  '{limits,max_whatsapp_per_day}',
-  '5'
-)
-WHERE id = 'free';
-```
-
-### Test 2: Free Plan with Unlimited WhatsApp (for testing only)
-```sql
-UPDATE subscription_plans
-SET features = jsonb_set(
-  jsonb_set(
-    features,
-    '{features,whatsapp_manual}',
-    'true'
-  ),
-  '{limits,max_whatsapp_per_day}',
-  '-1'
-)
-WHERE id = 'free';
-```
-
-### Test 3: Disable WhatsApp for All Plans
-```sql
-UPDATE subscription_plans
-SET features = jsonb_set(
-  features,
-  '{features,whatsapp_manual}',
-  'false'
-);
-```
-
-## Important Notes
-
-1. **Cache**: Subscription data might be cached. After updating the database, you may need to:
-   - Restart your application server
-   - Clear any application cache
-   - Wait a few minutes for cache expiration
-
-2. **Business Subscriptions**: The `business_subscriptions` table links businesses to plans. Make sure the business you're testing has the correct `plan_id` assigned.
-
-3. **Feature Checks**: The application uses `hasFeature(business_id, 'feature_key')` which reads from the plan assigned to the business, not directly from the plan table.
-
-4. **Limit Checks**: The application uses `checkLimit(business_id, 'whatsapp')` which reads the limit from the plan and checks usage from `subscription_usage` table.
-
-## Verify Changes
-
-After making changes, verify they're working:
-
-```sql
--- Check plan features
-SELECT 
-  id,
-  name,
-  features->'features'->'whatsapp_manual' as whatsapp_manual,
-  features->'features'->'whatsapp_auto_reminders' as auto_reminders,
-  features->'limits'->'max_whatsapp_per_day' as whatsapp_limit
-FROM subscription_plans
-ORDER BY sort_order;
-```
-
-## Troubleshooting
-
-If changes don't seem to take effect:
-
-1. Check business subscription assignment:
-```sql
-SELECT bs.business_id, bs.plan_id, sp.name, sp.features
-FROM business_subscriptions bs
-JOIN subscription_plans sp ON bs.plan_id = sp.id
-WHERE bs.business_id = 'your-business-id';
-```
-
-2. Check subscription cache in application (if any)
-
-3. Restart the application server
-
-4. Check application logs for feature/limit check errors
-
+- The app caches a business's plan for a short time. The admin screens clear the cache on save; after direct SQL, restart the app or wait a few minutes.
+- Access checks read the business's plan from `business_module_subscriptions` and the plan's rows in the tables above (`hasFeature`, `checkLimit`). Whether a plan is usable today (not ended, not past grace) is decided by `getSubscriptionUsability` in `lib/subscription/effective-plan.ts`.
+- Plan tier (which plan is higher than which) comes from `lib/subscription/plan-tier.ts`, not from the price.

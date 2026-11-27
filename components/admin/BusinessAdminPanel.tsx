@@ -65,6 +65,9 @@ type BillingTx = {
   /** Set by the server on refund rows. */
   refund_of?: string | null;
   can_cancel_refund?: boolean;
+  /** Flagged for a person to look at, and when one did. */
+  needs_review?: boolean;
+  reviewed_at?: string | null;
 };
 
 export interface BusinessAdminPanelProps {
@@ -154,6 +157,26 @@ export function BusinessAdminPanel({
     } finally {
       setCancellingRefund(null);
       setConfirmCancelRefund(null);
+    }
+  }
+
+  const [reviewingRefund, setReviewingRefund] = useState<string | null>(null);
+  async function markRefundReviewed(tx: BillingTx) {
+    if (!tx.refund_of) return;
+    setReviewingRefund(tx.id);
+    try {
+      const res = await fetch(`/api/admin/businesses/${businessId}/billing/${tx.refund_of}/refund/review`, {
+        ...platformAdminFetchInit,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refund_id: tx.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) toast.success('Marked as reviewed. Your name and the time are recorded; the refund itself is unchanged.');
+      else toast.error(data.error || 'The refund could not be marked as reviewed.');
+      await loadBilling();
+    } finally {
+      setReviewingRefund(null);
     }
   }
 
@@ -662,6 +685,19 @@ export function BusinessAdminPanel({
                         />
                       ) : tx.type === 'payment' && (tx.pending_refund_amount ?? 0) > 0 ? (
                         <span className="text-xs text-gray-500">Refund pending</span>
+                      ) : null}
+                      {tx.type === 'refund' && tx.needs_review && !tx.reviewed_at ? (
+                        <button
+                          type="button"
+                          disabled={reviewingRefund === tx.id}
+                          onClick={() => void markRefundReviewed(tx)}
+                          className="mr-3 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                        >
+                          Mark reviewed
+                        </button>
+                      ) : null}
+                      {tx.type === 'refund' && tx.needs_review && tx.reviewed_at ? (
+                        <span className="mr-3 text-xs text-gray-500">Reviewed</span>
                       ) : null}
                       {tx.type === 'refund' && tx.status === 'pending' ? (
                         tx.can_cancel_refund ? (

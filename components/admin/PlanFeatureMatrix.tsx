@@ -48,6 +48,9 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
   const [featuresByCategory, setFeaturesByCategory] = useState<FeaturesByCategory>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /** Businesses on this plan right now, from the server; the save must send it back as the confirmation. */
+  const [affected, setAffected] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [modified, setModified] = useState(false);
   const [featureStates, setFeatureStates] = useState<Record<string, boolean>>({});
 
@@ -68,6 +71,7 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
       }
 
       const data = await response.json();
+      setAffected(typeof data.affected_businesses === 'number' ? data.affected_businesses : null);
       setFeaturesByCategory(data.features || {});
 
       // Initialize feature states
@@ -101,16 +105,22 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ features: featureStates }),
+        body: JSON.stringify({ features: featureStates, confirm_affected_count: affected }),
       });
 
       if (!response.ok) {
         const error = await response.json();
+        if (response.status === 409 && typeof error.affected_businesses === 'number') {
+          setAffected(error.affected_businesses);
+          setConfirming(false);
+          throw new Error('The number of businesses on this plan changed. Check the new number and save again.');
+        }
         throw new Error(error.error || 'Failed to save features');
       }
 
       toast.success('Plan features updated successfully!');
       setModified(false);
+      setConfirming(false);
       await fetchPlanFeatures(); // Refresh
       
       // Dispatch global event to refresh all Feature Registry instances
@@ -226,6 +236,15 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
           })}
         </div>
 
+        {confirming && affected !== null ? (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" role="alert">
+            <p className="font-semibold">
+              This changes the plan for {affected} {affected === 1 ? 'business' : 'businesses'} right away.
+            </p>
+            <p className="mt-1">There is no undo for customers: their access and limits follow the new settings as soon as you confirm. The change is recorded with your name.</p>
+          </div>
+        ) : null}
+
         {/* Actions */}
         <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
           <button
@@ -236,8 +255,8 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={saving || !modified}
+            onClick={() => (confirming ? void handleSave() : setConfirming(true))}
+            disabled={saving || !modified || affected === null}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50 flex items-center space-x-2"
           >
             {saving ? (
@@ -248,7 +267,7 @@ export function PlanFeatureMatrix({ planId, planName, onClose }: PlanFeatureMatr
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>Save Changes</span>
+                <span>{confirming ? 'Confirm and save' : 'Save Changes'}</span>
               </>
             )}
           </button>
