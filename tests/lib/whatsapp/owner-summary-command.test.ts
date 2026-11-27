@@ -31,6 +31,10 @@ jest.mock('@/lib/whatsapp/business-transport', () => ({
   sendBusinessText: (...a: unknown[]) => mockSendText(...a),
   sendBusinessTemplate: (...a: unknown[]) => mockSendTemplate(...a),
 }));
+jest.mock('@/lib/whatsapp/automation-guard', () => ({
+  checkAutomationAllowed: jest.fn(async () => ({ allowed: true })),
+  recordSkippedAutomation: jest.fn(async () => undefined),
+}));
 jest.mock('@/lib/insights/turn', () => ({ canSeeBusinessData: (...a: unknown[]) => mockCanSee(...a) }));
 jest.mock('@/lib/insights/tools', () => ({ runInsightTool: (...a: unknown[]) => mockRunTool(...a) }));
 jest.mock('@/lib/rag/answer', () => ({ answerTurn: (...a: unknown[]) => mockAnswerTurn(...a) }));

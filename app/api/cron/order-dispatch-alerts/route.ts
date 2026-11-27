@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
   let sent = 0;
   for (const biz of businesses) {
     try {
+      // Before the 20-hour claim below, so a skipped business is checked again on the next run.
+      const { checkAutomationAllowed } = await import('@/lib/whatsapp/automation-guard');
+      if (!(await checkAutomationAllowed(biz.business_id, 'no_feature')).allowed) continue;
       const settings = sanitizeOrderUpdateSettings(biz.s);
       const counts = await orderHubNeedsCounts({ businessId: biz.business_id, branchIds: null }, settings.dispatchSlaHours);
       if (!counts.stale) continue;

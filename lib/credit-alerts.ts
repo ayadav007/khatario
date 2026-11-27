@@ -7,9 +7,8 @@
 
 import * as db from '@/lib/db';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
-import { hasFeature } from '@/lib/subscription';
+import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
 import { calculateCreditMetrics, calculateProjectedCreditMetrics, CreditMetrics } from '@/lib/credit-utils';
-import { FeatureKeys } from '@/lib/featureKeys';
 
 /**
  * Check if alert should be sent for a threshold crossing
@@ -111,9 +110,13 @@ async function sendCreditAlert(
 ): Promise<void> {
   try {
     // PHASE 5.5: Feature gating
-    const hasFeatureAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_CREDIT_ALERTS);
-    if (!hasFeatureAccess) {
-      return; // Skip silently if feature not enabled
+    // Usable plan, the credit-alerts feature and the daily WhatsApp cap (the alerts go to the business's own
+    // owner/staff, which still count against the cap). A skipped alert is not logged as sent, so the same
+    // threshold alerts again once the plan allows.
+    const plan = await checkAutomationAllowed(businessId, 'credit_alerts');
+    if (!plan.allowed) {
+      console.warn(`[Credit Alerts] skipped for business ${businessId}: ${plan.reason}`);
+      return;
     }
 
     // Get recipients

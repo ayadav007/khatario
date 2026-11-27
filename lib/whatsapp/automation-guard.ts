@@ -10,19 +10,58 @@
 import { checkLimit, hasFeature, hasWhatsAppBotAddon } from '@/lib/subscription';
 import { FeatureKeys } from '@/lib/featureKeys';
 
-export type AutomationKind =
-  /** Bot rules, flows, AI and shop replies, owner-facing WhatsApp reminders: the Connect plan. */
-  | 'connect_automation'
-  /** Scheduled payment reminders: the `whatsapp_auto_reminders` plan feature. */
-  | 'auto_reminders';
+/**
+ * What an automatic sender needs from the plan.
+ * - `connect`: the Connect plan grants the bot feature (`integration_whatsapp_bot`).
+ * - `feature`: a plan feature id of the catalogue (`subscription_plan_features`), checked with `hasFeature`.
+ * - With neither, the sender has no plan feature of its own and only needs a usable subscription.
+ * - `cap`: count against the plan's daily WhatsApp cap (default true). Every message the business sends
+ *   from its own WhatsApp counts, including messages to its own owner or staff: the catalogue describes
+ *   the cap as "maximum WhatsApp messages that can be sent per day", not messages to customers.
+ */
+export type AutomationSpec = { connect?: boolean; feature?: string; cap?: boolean };
 
-export type AutomationSkipReason = 'plan_does_not_include_feature' | 'daily_whatsapp_limit_reached' | 'plan_check_failed';
+export const AUTOMATION = {
+  /** Bot rules, flows, AI and shop replies, the WhatsApp copy of a todo reminder: the Connect plan. */
+  connect_automation: { connect: true },
+  /** Scheduled payment reminders. */
+  auto_reminders: { feature: FeatureKeys.WHATSAPP_AUTO_REMINDERS },
+  /** "Payment received" messages are switched on in Settings > WhatsApp > Notifications (gated by this feature). */
+  payment_received: { feature: FeatureKeys.WHATSAPP_AUTO_REMINDERS },
+  credit_alerts: { feature: FeatureKeys.WHATSAPP_CREDIT_ALERTS },
+  /** Online-store buyer and merchant notices, abandoned-cart reminders. */
+  online_store: { feature: 'advanced_online_store' },
+  /** Order updates, parcel delays, dispatch alerts, returns, khata statements: no plan feature of their own. */
+  no_feature: {},
+  /** Owner updates and the evening summary: configured under Settings > WhatsApp. */
+  owner_updates: { feature: 'settings_whatsapp' },
+  /** Supplier Hub notices go from Khatario's own number, so they do not use the business's cap. */
+  supplier_hub: { feature: 'purchase_supplier_hub', cap: false },
+} as const satisfies Record<string, AutomationSpec>;
+
+export type AutomationKind = keyof typeof AUTOMATION;
+
+/** Tenant WhatsApp event key to the automation it belongs to (default: no plan feature). */
+export function automationForEvent(eventKey: string): AutomationKind {
+  if (eventKey === 'invoice_payment_received') return 'payment_received';
+  if (eventKey.startsWith('store_') || eventKey === 'merchant_new_order' || eventKey === 'merchant_new_enquiry') {
+    return 'online_store';
+  }
+  return 'no_feature';
+}
+
+export type AutomationSkipReason =
+  | 'plan_not_usable'
+  | 'plan_does_not_include_feature'
+  | 'daily_whatsapp_limit_reached'
+  | 'plan_check_failed';
 
 export type AutomationDecision =
   | { allowed: true }
   | { allowed: false; reason: AutomationSkipReason; message: string };
 
 const MESSAGES: Record<AutomationSkipReason, string> = {
+  plan_not_usable: 'The subscription is not usable right now (lapsed or suspended).',
   plan_does_not_include_feature: 'The current plan does not include this WhatsApp automation (or the plan has lapsed).',
   daily_whatsapp_limit_reached: 'The daily WhatsApp message limit of the plan has been reached.',
   plan_check_failed: 'The plan could not be checked, so the automatic message was not sent.',
@@ -32,16 +71,26 @@ function deny(reason: AutomationSkipReason): AutomationDecision {
   return { allowed: false, reason, message: MESSAGES[reason] };
 }
 
-export async function checkAutomationAllowed(businessId: string, kind: AutomationKind): Promise<AutomationDecision> {
+export async function checkAutomationAllowed(
+  businessId: string,
+  kind: AutomationKind | AutomationSpec,
+): Promise<AutomationDecision> {
+  const spec: AutomationSpec = typeof kind === 'string' ? AUTOMATION[kind] : kind;
   try {
-    // skipCache: a lapse must stop automation now, not after the 5-minute entitlement cache.
-    const featureOk =
-      kind === 'connect_automation'
-        ? await hasWhatsAppBotAddon(businessId, true)
-        : await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
-    if (!featureOk) return deny('plan_does_not_include_feature');
-    const cap = await checkLimit(businessId, 'whatsapp');
-    if (!cap.allowed) return deny('daily_whatsapp_limit_reached');
+    if (spec.connect) {
+      // skipCache: a lapse must stop automation now, not after the 5-minute entitlement cache.
+      if (!(await hasWhatsAppBotAddon(businessId, true))) return deny('plan_does_not_include_feature');
+    } else if (spec.feature) {
+      if (!(await hasFeature(businessId, spec.feature))) return deny('plan_does_not_include_feature');
+    } else {
+      // No plan feature of its own: the subscription must still be usable (not lapsed past grace, not suspended).
+      const { assertOperationalSubscription } = await import('@/lib/security/require-operational-subscription');
+      if (!(await assertOperationalSubscription(businessId)).ok) return deny('plan_not_usable');
+    }
+    if (spec.cap !== false) {
+      const cap = await checkLimit(businessId, 'whatsapp');
+      if (!cap.allowed) return deny('daily_whatsapp_limit_reached');
+    }
     return { allowed: true };
   } catch (err) {
     console.error('[automation-guard] plan check failed:', err instanceof Error ? err.message : err);

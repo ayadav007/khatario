@@ -342,7 +342,16 @@ export async function sendCartReminder(
           `Total ₹${msg.total}. Finish your order here: ${link}`,
       });
       if (wa?.via) channel = 'whatsapp';
-      else error = 'whatsapp_not_delivered';
+      else if (wa?.skipped) {
+        // The plan (or the daily cap) does not allow the message right now. Nothing is lost: an automatic
+        // reminder is released again so a later run sends it once the plan allows.
+        error = `plan_${wa.skipped}`;
+        if (via === 'auto') {
+          await query(`UPDATE store_carts SET reminded_at = NULL WHERE id = $1 AND reminder_via IS NULL`, [due.id]).catch(
+            () => undefined,
+          );
+        }
+      } else error = 'whatsapp_not_delivered';
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);

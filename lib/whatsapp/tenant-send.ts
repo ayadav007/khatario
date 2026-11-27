@@ -8,6 +8,7 @@ import { toE164Digits } from '@/lib/platform-whatsapp-send';
 import { enqueueCustomerPush } from '@/lib/push/customer-push';
 import type { TenantWaEventKey, TenantWaFieldKey } from '@/lib/whatsapp/tenant-events';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
+import { automationForEvent, checkAutomationAllowed, type AutomationSkipReason } from '@/lib/whatsapp/automation-guard';
 
 export type EventValues = Partial<Record<TenantWaFieldKey, string | number | null | undefined>>;
 
@@ -96,7 +97,13 @@ export async function notifyBusinessEvent(input: {
   to: string;
   values: EventValues;
   fallbackText: string;
-}): Promise<{ via: 'cloud' | 'qr' | null }> {
+  /**
+   * Automatic sends (the default) need a usable plan, the feature the event is sold under and room under the
+   * daily WhatsApp cap. Pass `automatic: false` for a message a person asked for (for example "send statement
+   * now"), or when the caller already ran the same check.
+   */
+  automatic?: boolean;
+}): Promise<{ via: 'cloud' | 'qr' | null; skipped?: AutomationSkipReason }> {
   // Customer-facing events also reach the customer's phone app when they registered a device for
   // this shop (lib/push/customer-push.ts decides which events qualify). Never throws.
   await enqueueCustomerPush({
@@ -105,6 +112,13 @@ export async function notifyBusinessEvent(input: {
     eventKey: input.eventKey,
     body: input.fallbackText,
   });
+  if (input.automatic !== false) {
+    const allowed = await checkAutomationAllowed(input.businessId, automationForEvent(input.eventKey));
+    if (!allowed.allowed) {
+      console.warn(`[wa event] ${input.eventKey} skipped for business ${input.businessId}: ${allowed.reason}`);
+      return { via: null, skipped: allowed.reason };
+    }
+  }
   const res = await sendEventTemplate(input);
   if (res.sent) return { via: 'cloud' };
   const to = toE164Digits(input.to);

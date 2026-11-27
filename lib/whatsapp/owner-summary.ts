@@ -98,7 +98,7 @@ export async function buildOwnerSummary(businessId: string, userId: string, toda
 
 export type SendSummaryResult =
   | { sent: true; delivery: 'text' | 'template' }
-  | { sent: false; reason: 'not_linked' | 'not_owner' | 'no_template' | 'failed'; error?: string };
+  | { sent: false; reason: 'not_linked' | 'not_owner' | 'no_template' | 'failed' | 'plan'; error?: string };
 
 /** Sends today's summary to the linked owner. `force` (Send test now) ignores the time and the once-a-day guard. */
 export async function sendOwnerSummary(businessId: string, opts: { force?: boolean; now?: Date } = {}): Promise<SendSummaryResult> {
@@ -130,6 +130,18 @@ export async function sendOwnerSummary(businessId: string, opts: { force?: boole
         WHERE business_id = $1`,
       [businessId, date, error],
     );
+
+  // "Send test now" is a person's own request; the scheduled summary needs a plan with Settings > WhatsApp, a usable
+  // subscription and room under the daily cap (it goes out from the business's own number). A skipped day is
+  // not marked sent, so the summary resumes the day the plan allows.
+  if (!opts.force) {
+    const { checkAutomationAllowed } = await import('./automation-guard');
+    const plan = await checkAutomationAllowed(businessId, 'owner_updates');
+    if (!plan.allowed) {
+      await mark(`plan:${plan.reason}`);
+      return { sent: false, reason: 'plan' };
+    }
+  }
 
   if (delivery === 'no_template') {
     if (!opts.force) await mark('template_pending');

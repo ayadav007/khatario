@@ -6,7 +6,7 @@
  * Never throws: the payment already succeeded.
  */
 import { queryOne, query, queryRows } from '@/lib/db';
-import { checkLimit } from '@/lib/subscription';
+import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
 import { toE164Digits } from '@/lib/platform-whatsapp-send';
 import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import { invoiceEventValues } from '@/lib/whatsapp/invoice-event-values';
@@ -84,7 +84,10 @@ export async function notifyInvoicePaymentReceived(input: {
     if (!phone) return { sent: false, reason: 'no_phone' };
     if (!(await paymentReceivedMessageEnabled(input.businessId))) return { sent: false, reason: 'disabled' };
     if (!(await whatsAppOutboundReady(input.businessId)).ready) return { sent: false, reason: 'whatsapp_not_connected' };
-    if (!(await checkLimit(input.businessId, 'whatsapp')).allowed) return { sent: false, reason: 'limit_reached' };
+    {
+      const plan = await checkAutomationAllowed(input.businessId, 'payment_received');
+      if (!plan.allowed) return { sent: false, reason: plan.reason === 'daily_whatsapp_limit_reached' ? 'limit_reached' : plan.reason };
+    }
 
     const values = await invoiceEventValues({
       id: row.invoice_id,
@@ -111,6 +114,7 @@ export async function notifyInvoicePaymentReceived(input: {
       to: row.customer_phone!,
       values: { ...values, amount_paid: amountPaid, amount_due: money(amountDue) },
       fallbackText: text,
+      automatic: false, // checked above
     });
     await query(
       `INSERT INTO whatsapp_messages (business_id, to_number, message_type, reference_type, reference_id, message_text, status, error_message)
@@ -184,7 +188,10 @@ export async function notifyBillsPaymentReceived(input: {
     if (!phone) return { sent: false, reason: 'no_phone' };
     if (!(await paymentReceivedMessageEnabled(input.businessId))) return { sent: false, reason: 'disabled' };
     if (!(await whatsAppOutboundReady(input.businessId)).ready) return { sent: false, reason: 'whatsapp_not_connected' };
-    if (!(await checkLimit(input.businessId, 'whatsapp')).allowed) return { sent: false, reason: 'limit_reached' };
+    {
+      const plan = await checkAutomationAllowed(input.businessId, 'payment_received');
+      if (!plan.allowed) return { sent: false, reason: plan.reason === 'daily_whatsapp_limit_reached' ? 'limit_reached' : plan.reason };
+    }
 
     const cleared = await queryRows<{ invoice_id: string; invoice_number: string; amount: string; balance: string }>(
       `SELECT a.invoice_id, i.invoice_number, a.amount::text, COALESCE(i.balance_amount, 0)::text AS balance
@@ -223,6 +230,7 @@ export async function notifyBillsPaymentReceived(input: {
         invoice_link: link,
       },
       fallbackText: text,
+      automatic: false, // checked above
     });
     for (const c of cleared) {
       await query(

@@ -43,7 +43,7 @@ export async function notifyStoreEvent(input: {
   phone: string;
   values: EventValues;
   text: string;
-}): Promise<{ via: 'cloud' | 'qr' | null }> {
+}): Promise<{ via: 'cloud' | 'qr' | null; skipped?: string }> {
   return notifyBusinessEvent({
     businessId: input.businessId,
     eventKey: input.eventKey,

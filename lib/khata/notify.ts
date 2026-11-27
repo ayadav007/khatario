@@ -213,7 +213,9 @@ export async function sendKhataStatementMessage(input: {
   payBy: string;
   statementToken: string;
   kind: 'statement' | 'overdue';
-}): Promise<{ via: 'cloud' | 'qr' | null }> {
+  /** A person pressed "send statement": not automation, so no plan or cap check beyond the existing ones. */
+  manual?: boolean;
+}): Promise<{ via: 'cloud' | 'qr' | null; skipped?: string }> {
   const biz = await loadBusiness(input.businessId);
   const link = khataLink(biz.storeBase, input.statementToken);
   const amount = inr(input.amountDue);
@@ -231,6 +233,7 @@ export async function sendKhataStatementMessage(input: {
       eventKey: 'khata_statement',
       to: input.phone,
       values,
+      automatic: !input.manual,
       fallbackText: `Hi ${input.customerName}, your khata statement from ${biz.name}: ₹${amount} due, please pay by ${date}.${link ? ` See the bills and pay here: ${link}` : ''} Thank you.`,
     });
   }
@@ -239,6 +242,7 @@ export async function sendKhataStatementMessage(input: {
     eventKey: 'khata_overdue',
     to: input.phone,
     values,
+    automatic: !input.manual,
     fallbackText: `Hi ${input.customerName}, ₹${amount} on your khata with ${biz.name} was due on ${date} and is still unpaid.${link ? ` See the bills and pay here: ${link}` : ''} Please ignore if already paid.`,
   });
 }

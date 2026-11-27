@@ -295,6 +295,7 @@ export async function sendKhataStatementNow(
     payBy: statement.due_date,
     statementToken: statement.public_token,
     kind: 'statement',
+    manual: true,
   });
   const sent = Boolean(result.via);
   if (sent) {

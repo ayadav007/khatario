@@ -102,14 +102,24 @@ export async function processOwnerCommand(job: OwnerCommandQueueJob): Promise<vo
   try {
     if (!(await businessActive(job.businessId))) return;
 
+    // Owner replies are messages from the business's own number: they need a plan with Settings > WhatsApp and
+    // room under the daily cap. A skipped reply is logged; the owner's message stays recorded as received.
+    const planAllows = async () => {
+      const { checkAutomationAllowed, recordSkippedAutomation } = await import('./automation-guard');
+      const plan = await checkAutomationAllowed(job.businessId, 'owner_updates');
+      if (!plan.allowed) await recordSkippedAutomation({ businessId: job.businessId, messageId: job.messageId, reason: plan.reason });
+      return plan.allowed;
+    };
+
     if (job.kind === 'link') {
-      if (await completeLink(job)) await sendBusinessText(job.businessId, job.from, LINKED_TEXT);
+      if ((await completeLink(job)) && (await planAllows())) await sendBusinessText(job.businessId, job.from, LINKED_TEXT);
       return;
     }
 
     const link = await getOwnerLink(job.businessId, true);
     if (!link?.linked_phone) return;
     await query(`UPDATE owner_whatsapp_links SET last_owner_message_at = NOW() WHERE business_id = $1`, [job.businessId]);
+    if (!(await planAllows())) return;
 
     if (!(await canSeeBusinessData(link.user_id, job.businessId))) {
       await sendBusinessText(

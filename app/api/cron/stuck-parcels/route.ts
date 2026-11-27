@@ -25,10 +25,19 @@ export async function POST(request: NextRequest) {
 
   let sent = 0;
   let claimed = 0;
+  let skippedByPlan = 0;
   for (const biz of businesses) {
     const days = sanitizeOrderUpdateSettings(biz.s).stuckNoticeDays;
     if (days <= 0) continue;
     try {
+      // Checked before the parcels are claimed, so a skipped business keeps its parcels unclaimed and the
+      // notices go out on a later run once the plan allows.
+      const { checkAutomationAllowed } = await import('@/lib/whatsapp/automation-guard');
+      const allowed = await checkAutomationAllowed(biz.business_id, 'no_feature');
+      if (!allowed.allowed) {
+        skippedByPlan++;
+        continue;
+      }
       const rows = await queryRows<{
         id: string;
         buyer_name: string | null;
@@ -80,7 +89,7 @@ export async function POST(request: NextRequest) {
       console.error('[stuck-parcels]', biz.business_id, err instanceof Error ? err.message : err);
     }
   }
-  return NextResponse.json({ success: true, businesses: businesses.length, parcels: claimed, sent });
+  return NextResponse.json({ success: true, businesses: businesses.length, parcels: claimed, sent, skippedByPlan });
 }
 
 export async function GET(request: NextRequest) {

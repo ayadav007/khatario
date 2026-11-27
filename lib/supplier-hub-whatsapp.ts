@@ -99,6 +99,12 @@ export async function flushHubWhatsApp(limit = 50): Promise<{ sent: number; skip
     let reason: string | null = null;
     if (row.enabled === false) reason = 'TURNED_OFF';
     else if (row.repeated) reason = 'SENT_RECENTLY';
+    if (!reason) {
+      // Usable plan with Supplier Hub. No daily cap: these go from Khatario's own number, not the business's.
+      const { checkAutomationAllowed } = await import('./whatsapp/automation-guard');
+      const plan = await checkAutomationAllowed(row.business_id, 'supplier_hub');
+      if (!plan.allowed) reason = `PLAN_${plan.reason.toUpperCase()}`;
+    }
     const phone = reason ? null : await lookupTenantWhatsAppPhone(row.business_id);
     if (!reason && !phone) reason = 'NO_PHONE';
     if (!reason && phone) {

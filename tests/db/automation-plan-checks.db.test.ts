@@ -17,6 +17,11 @@ jest.mock('next/headers', () => ({
   headers: jest.fn(async () => ({ get: () => null })),
   cookies: jest.fn(async () => ({ get: () => undefined })),
 }));
+jest.mock('@/lib/jwt', () => ({
+  clearSessionCookie: jest.fn(), setSessionCookies: jest.fn(),
+  signAccessToken: jest.fn(async () => 't'), signRefreshToken: jest.fn(async () => 't'),
+}));
+jest.mock('@/lib/supplier-hub-visibility', () => ({ isSupplierHubVisible: jest.fn(async () => true) }));
 jest.mock('@/lib/queue/redis', () => ({ getRedisConnection: () => null }));
 jest.mock('@/lib/whatsapp', () => ({
   sendWhatsAppMessage: jest.fn(async () => 'wa-id'),
@@ -26,6 +31,19 @@ jest.mock('@/lib/whatsapp/business-transport', () => ({
   ...jest.requireActual('@/lib/whatsapp/business-transport'),
   businessTransport: jest.fn(async () => 'baileys'),
   sendBusinessText: jest.fn(async () => ({ messageId: 'bt-1' })),
+  sendBusinessTemplate: jest.fn(async () => ({ messageId: 'bt-2' })),
+}));
+// Tenant event sends fall through to the (mocked) QR sender; no Cloud API, push or outbound-state lookups.
+jest.mock('@/lib/meta-whatsapp', () => ({
+  ...jest.requireActual('@/lib/meta-whatsapp'),
+  isMetaWaConfigured: jest.fn(async () => false),
+}));
+jest.mock('@/lib/push/customer-push', () => ({ enqueueCustomerPush: jest.fn(async () => ({ queued: false, reason: 'no_device' })) }));
+jest.mock('@/lib/whatsapp/outbound-ready', () => ({ whatsAppOutboundReady: jest.fn(async () => ({ ready: true })) }));
+jest.mock('@/lib/platform-whatsapp-send', () => ({
+  ...jest.requireActual('@/lib/platform-whatsapp-send'),
+  lookupTenantWhatsAppPhone: jest.fn(async () => '919800000001'),
+  sendPlatformEventWhatsApp: jest.fn(async () => ({ sent: true, messageId: 'plat-1' })),
 }));
 jest.mock('@/lib/whatsapp-shop/order', () => ({
   placeShopOrder: jest.fn(async () => ({ ok: true })),
@@ -48,6 +66,17 @@ import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { trySendWhatsAppForTodo } from '@/lib/services/todoReminderService';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
+import { notifyBusinessEvent } from '@/lib/whatsapp/tenant-send';
+import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
+import { notifyInvoicePaymentReceived } from '@/lib/invoices/payment-received-notify';
+import { sendKhataStatementMessage } from '@/lib/khata/notify';
+import { flushHubWhatsApp } from '@/lib/supplier-hub-whatsapp';
+import { sendOwnerSummary } from '@/lib/whatsapp/owner-summary';
+import { processOwnerCommand } from '@/lib/whatsapp/owner-command';
+import { sendCartReminder } from '@/lib/store/abandoned-carts';
+import { sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
+import { POST as stuckParcelsPOST } from '@/app/api/cron/stuck-parcels/route';
+import { NextRequest } from 'next/server';
 
 const run = enabled ? describe : describe.skip;
 
@@ -436,6 +465,377 @@ run('automation plan checks (kh_phase2_test)', () => {
       await setPlan(biz, 'connect', 'connect', { end: '-30 days', grace: '-23 days' });
       await trySendWhatsAppForTodo(todo, userId);
       expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+    });
+  });
+
+
+  // ---------------------------------------------------------------------------------------------
+  // Round 2: the other automatic tenant senders.
+  // ---------------------------------------------------------------------------------------------
+  describe('round 2: other automatic senders', () => {
+    const planPrice = async (id: string) =>
+      (await queryOne<{ p: string }>(`SELECT price_monthly::text AS p FROM subscription_plans WHERE id = $1`, [id]))!.p;
+    /** Run `fn` with plan `id` priced at Rs 1, restoring the price after. */
+    async function withRs1Plan(id: string, fn: () => Promise<void>) {
+      const keep = await planPrice(id);
+      await query(`UPDATE subscription_plans SET price_monthly = 1 WHERE id = $1`, [id]);
+      try { await fn(); } finally { await query(`UPDATE subscription_plans SET price_monthly = $1 WHERE id = $2`, [keep, id]); }
+    }
+    const lapse = (biz: string, plan: string, mod = 'billing') =>
+      setPlan(biz, mod, plan, { end: '-30 days', grace: '-23 days' });
+    async function addOwnerUser(biz: string): Promise<string> {
+      const id = randomUUID();
+      await query(
+        `INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Owner', $3, true)`,
+        [id, biz, `9${Math.floor(Math.random() * 1e9).toString().padStart(9, '0')}`],
+      );
+      return id;
+    }
+    const waSent = () => jest.mocked(sendWhatsAppMessage).mock.calls.length;
+    const eventTo = (biz: string, eventKey: string) =>
+      notifyBusinessEvent({
+        businessId: biz, eventKey: eventKey as never, to: `91${phone()}`,
+        values: { customer_name: 'A' }, fallbackText: 'hello',
+      });
+    beforeEach(() => {
+      jest.mocked(sendWhatsAppMessage).mockClear();
+      jest.mocked(sendBusinessText).mockClear();
+      jest.mocked(sendPlatformEventWhatsApp).mockClear();
+    });
+
+    // Fulfilment (order_*), returns (return_*), khata (khata_*, merchant_khata_*), store notices (store_*, merchant_new_*),
+    // parcel-delay and dispatch alerts all go through notifyBusinessEvent; they differ in the plan feature they are sold under.
+    describe.each([
+      ['fulfilment update', 'order_confirmed', null],
+      ['return notice', 'return_approved', null],
+      ['khata notice', 'khata_opened', null],
+      ['parcel-delay notice', 'order_delayed', null],
+      ['merchant dispatch alert', 'merchant_dispatch_overdue', null],
+      ['store order notice', 'store_order_paid', 'advanced_online_store'],
+      ['store cart reminder', 'store_cart_reminder', 'advanced_online_store'],
+      ['merchant new order', 'merchant_new_order', 'advanced_online_store'],
+    ])('%s (%s)', (_label, eventKey, feature) => {
+      const okPlan = feature ? 'billing_business' : 'billing_starter';
+      if (feature) {
+        it('plan without the feature: not sent, reason returned', async () => {
+          const biz = await newBusiness('free', null);
+          const r = await eventTo(biz, eventKey);
+          expect(r).toMatchObject({ via: null, skipped: 'plan_does_not_include_feature' });
+          expect(waSent()).toBe(0);
+        });
+      } else {
+        it('no plan feature of its own: lapsed beyond grace means not sent, reason returned', async () => {
+          const biz = await newBusiness('billing_starter', null);
+          await lapse(biz, 'billing_starter');
+          expect(await eventTo(biz, eventKey)).toMatchObject({ via: null, skipped: 'plan_not_usable' });
+          expect(waSent()).toBe(0);
+        });
+      }
+      it('cap reached: not sent', async () => {
+        const biz = await newBusiness(okPlan, null);
+        await fillQuota(biz);
+        expect(await eventTo(biz, eventKey)).toMatchObject({ via: null, skipped: 'daily_whatsapp_limit_reached' });
+        expect(waSent()).toBe(0);
+      });
+      it('usable plan (Rs 1): sent', async () => {
+        await withRs1Plan(okPlan, async () => {
+          const biz = await newBusiness(okPlan, null);
+          expect(await eventTo(biz, eventKey)).toMatchObject({ via: 'qr' });
+          expect(waSent()).toBe(1);
+        });
+      });
+      if (feature) {
+        it('lapsed beyond grace: not sent', async () => {
+          const biz = await newBusiness(okPlan, null);
+          await lapse(biz, okPlan);
+          expect((await eventTo(biz, eventKey)).via).toBeNull();
+          expect(waSent()).toBe(0);
+        });
+      }
+    });
+
+    it('a statement a person sends by hand (manual) skips the automation check; the nightly one does not', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      await lapse(biz, 'billing_starter');
+      const base = { businessId: biz, phone: `91${phone()}`, customerName: 'A', amountDue: 10, payBy: '2026-12-01', statementToken: 't', kind: 'statement' as const };
+      expect((await sendKhataStatementMessage(base)).via).toBeNull();
+      expect(waSent()).toBe(0);
+      expect((await sendKhataStatementMessage({ ...base, manual: true })).via).toBe('qr');
+    });
+
+    describe('khata statements (nightly)', () => {
+      it('cap reached: no message; usable plan (Rs 1): sent', async () => {
+        const base = { phone: `91${phone()}`, customerName: 'A', amountDue: 10, payBy: '2026-12-01', statementToken: 't', kind: 'overdue' as const };
+        const capped = await newBusiness('billing_starter', null);
+        await fillQuota(capped);
+        expect((await sendKhataStatementMessage({ ...base, businessId: capped })).via).toBeNull();
+        expect(waSent()).toBe(0);
+        await withRs1Plan('billing_starter', async () => {
+          const ok = await newBusiness('billing_starter', null);
+          expect((await sendKhataStatementMessage({ ...base, businessId: ok })).via).toBe('qr');
+        });
+      });
+    });
+
+    describe('credit alerts', () => {
+      async function alertFor(biz: string) {
+        await addOwnerUser(biz);
+        const cust = randomUUID();
+        await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Debtor', $3)`, [cust, biz, phone()]);
+        await checkAndSendCreditAlerts(biz, 'customer', cust, 1000, 1200);
+        return cust;
+      }
+      it('plan without whatsapp_credit_alerts: not sent', async () => {
+        const biz = await newBusiness('free', null);
+        await alertFor(biz);
+        expect(waSent()).toBe(0);
+      });
+      it('cap reached: not sent', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await fillQuota(biz);
+        await alertFor(biz);
+        expect(waSent()).toBe(0);
+      });
+      it('lapsed beyond grace: not sent', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await lapse(biz, 'billing_starter');
+        await alertFor(biz);
+        expect(waSent()).toBe(0);
+      });
+      it('usable plan (Rs 1): sent; a skipped alert is sent once the plan allows (not logged as sent)', async () => {
+        await withRs1Plan('billing_starter', async () => {
+          const biz = await newBusiness('billing_starter', null);
+          await lapse(biz, 'billing_starter');
+          const cust = await alertFor(biz);
+          expect(waSent()).toBe(0);
+          await setPlan(biz, 'billing', 'billing_starter');
+          await checkAndSendCreditAlerts(biz, 'customer', cust, 1000, 1200);
+          expect(waSent()).toBe(1);
+        });
+      });
+    });
+
+    describe('payment-received message', () => {
+      async function receipt(biz: string) {
+        const customerId = randomUUID();
+        const invoiceId = randomUUID();
+        const paymentId = randomUUID();
+        await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Cust', $3)`, [customerId, biz, phone()]);
+        await query(
+          `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, grand_total, balance_amount)
+           VALUES ($1, $2, $3, $4, CURRENT_DATE, 100, 0)`,
+          [invoiceId, biz, customerId, `INV-${invoiceId.slice(0, 6)}`],
+        );
+        await query(
+          `INSERT INTO payments (id, business_id, type, reference_type, reference_id, amount, payment_date)
+           VALUES ($1, $2, 'receivable', 'invoice', $3, 100, CURRENT_DATE)`,
+          [paymentId, biz, invoiceId],
+        );
+        return paymentId;
+      }
+      it('plan without the feature: not sent, reason returned', async () => {
+        const biz = await newBusiness('free', null);
+        const r = await notifyInvoicePaymentReceived({ businessId: biz, paymentId: await receipt(biz), source: 'manual' });
+        expect(r).toEqual({ sent: false, reason: 'plan_does_not_include_feature' });
+        expect(waSent()).toBe(0);
+      });
+      it('cap reached: not sent', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await fillQuota(biz);
+        const r = await notifyInvoicePaymentReceived({ businessId: biz, paymentId: await receipt(biz), source: 'manual' });
+        expect(r).toEqual({ sent: false, reason: 'limit_reached' });
+        expect(waSent()).toBe(0);
+      });
+      it('lapsed beyond grace: not sent; usable plan (Rs 1): sent', async () => {
+        await withRs1Plan('billing_starter', async () => {
+          const biz = await newBusiness('billing_starter', null);
+          const pay = await receipt(biz);
+          await lapse(biz, 'billing_starter');
+          expect((await notifyInvoicePaymentReceived({ businessId: biz, paymentId: pay, source: 'manual' })).sent).toBe(false);
+          expect(waSent()).toBe(0);
+          await setPlan(biz, 'billing', 'billing_starter');
+          expect(await notifyInvoicePaymentReceived({ businessId: biz, paymentId: pay, source: 'manual' })).toEqual({ sent: true });
+          expect(waSent()).toBe(1);
+        });
+      });
+    });
+
+    describe('abandoned-cart reminder', () => {
+      async function cart(biz: string) {
+        const customerId = randomUUID();
+        const cartId = randomUUID();
+        await query(`INSERT INTO store_customers (id, business_id, phone, name) VALUES ($1, $2, $3, 'Shopper')`, [customerId, biz, phone()]);
+        await query(
+          `INSERT INTO store_carts (id, business_id, customer_id, items, subtotal, status, reminded_at)
+           VALUES ($1, $2, $3, $4::jsonb, 10, 'open', now())`,
+          [cartId, biz, customerId, JSON.stringify([{ item_id: randomUUID(), name: 'Tea', quantity: 1, price: 10 }])],
+        );
+        return { id: cartId, businessId: biz, customerId };
+      }
+      const due = (c: { id: string; businessId: string }) => ({
+        id: c.id, businessId: c.businessId, phone: `91${phone()}`, customerName: 'Shopper', storeName: 'Shop',
+        storeSubdomain: 'shop', subtotal: '10',
+        lines: [{ item_id: randomUUID(), name: 'Tea', quantity: 1, price: 10 }],
+      }) as never;
+      it('plan without the online store: not sent, reason recorded, the cart is released to be reminded later', async () => {
+        const biz = await newBusiness('free', null);
+        const c = await cart(biz);
+        const r = await sendCartReminder(due(c), 'auto');
+        expect(r).toMatchObject({ sent: false, error: 'plan_plan_does_not_include_feature' });
+        expect(waSent()).toBe(0);
+        expect((await queryOne<{ reminded_at: string | null }>(`SELECT reminded_at FROM store_carts WHERE id = $1`, [c.id]))!.reminded_at).toBeNull();
+      });
+      it('cap reached: not sent; usable plan (Rs 1): sent', async () => {
+        const capped = await newBusiness('billing_business', null);
+        await fillQuota(capped);
+        expect((await sendCartReminder(due(await cart(capped)), 'auto')).sent).toBe(false);
+        expect(waSent()).toBe(0);
+        await withRs1Plan('billing_business', async () => {
+          const ok = await newBusiness('billing_business', null);
+          expect((await sendCartReminder(due(await cart(ok)), 'auto')).sent).toBe(true);
+          expect(waSent()).toBe(1);
+        });
+      });
+    });
+
+    describe('stuck-parcel notice cron', () => {
+      async function stuckParcel(biz: string) {
+        await query(
+          `INSERT INTO business_settings (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`, [biz]);
+        const id = randomUUID();
+        await query(
+          `INSERT INTO order_fulfilments (id, business_id, status, public_token, buyer_phone, buyer_name, status_changed_at)
+           VALUES ($1, $2, 'shipped', $3, $4, 'Buyer', now() - interval '10 days')`,
+          [id, biz, `tok${id.slice(0, 20)}`, `91${phone()}`],
+        );
+        return id;
+      }
+      const run = () =>
+        stuckParcelsPOST(new NextRequest('http://localhost/api/cron/stuck-parcels', {
+          method: 'POST', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+        }));
+      beforeAll(() => { process.env.CRON_SECRET = process.env.CRON_SECRET || 'round2-secret'; });
+      it('lapsed beyond grace: the parcel stays unclaimed and the notice goes out after the plan returns', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        const id = await stuckParcel(biz);
+        await lapse(biz, 'billing_starter');
+        await run();
+        expect(waSent()).toBe(0);
+        const row = () => queryOne<{ stuck_notified_at: string | null }>(`SELECT stuck_notified_at FROM order_fulfilments WHERE id = $1`, [id]);
+        expect((await row())!.stuck_notified_at).toBeNull();
+        await setPlan(biz, 'billing', 'billing_starter');
+        await run();
+        expect(waSent()).toBeGreaterThanOrEqual(1);
+        expect((await row())!.stuck_notified_at).not.toBeNull();
+      });
+      it('cap reached: parcel stays unclaimed', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        const id = await stuckParcel(biz);
+        await fillQuota(biz);
+        await run();
+        expect((await queryOne<{ stuck_notified_at: string | null }>(`SELECT stuck_notified_at FROM order_fulfilments WHERE id = $1`, [id]))!.stuck_notified_at).toBeNull();
+      });
+    });
+
+    describe('Supplier Hub notices (sent from Khatario, no daily cap)', () => {
+      async function queued(biz: string) {
+        const id = randomUUID();
+        await query(`INSERT INTO supplier_hub_whatsapp_outbox (id, business_id, title, path) VALUES ($1, $2, 'T', $3)`, [id, biz, `/p/${id}`]);
+        return id;
+      }
+      const status = (id: string) =>
+        queryOne<{ status: string; skip_reason: string | null }>(`SELECT status, skip_reason FROM supplier_hub_whatsapp_outbox WHERE id = $1`, [id]);
+      it('plan without Supplier Hub: skipped with the reason recorded, row kept', async () => {
+        const biz = await newBusiness('free', null);
+        const id = await queued(biz);
+        await flushHubWhatsApp();
+        expect(await status(id)).toEqual({ status: 'skipped', skip_reason: 'PLAN_PLAN_DOES_NOT_INCLUDE_FEATURE' });
+        expect(sendPlatformEventWhatsApp).not.toHaveBeenCalledWith(expect.objectContaining({ eventKey: 'supplier_hub_update' }));
+      });
+      it('lapsed beyond grace: skipped; usable plan (Rs 1): sent; the cap does not apply', async () => {
+        const lapsed = await newBusiness('billing_starter', null);
+        await lapse(lapsed, 'billing_starter');
+        const lid = await queued(lapsed);
+        await withRs1Plan('billing_starter', async () => {
+          const capped = await newBusiness('billing_starter', null);
+          await fillQuota(capped);
+          const cid = await queued(capped);
+          await flushHubWhatsApp();
+          expect((await status(lid))!.status).toBe('skipped');
+          expect((await status(cid))!.status).toBe('sent');
+        });
+      });
+    });
+
+    describe('owner updates: evening summary and owner replies (count against the cap)', () => {
+      async function linkedOwner(biz: string) {
+        const owner = await addOwnerUser(biz);
+        await query(
+          `INSERT INTO owner_whatsapp_links (business_id, user_id, linked_phone, daily_summary_enabled, last_owner_message_at)
+           VALUES ($1, $2, '919800000002', true, now())`, [biz, owner]);
+        return owner;
+      }
+      const link = (biz: string) =>
+        queryOne<{ last_summary_sent_on: string | null; last_summary_error: string | null }>(
+          `SELECT last_summary_sent_on::text, last_summary_error FROM owner_whatsapp_links WHERE business_id = $1`, [biz]);
+      const textJob = (biz: string) =>
+        ({ type: 'owner-command', kind: 'owner', provider: 'cloud', businessId: biz, messageId: `m-${randomUUID()}`,
+           conversationId: 'owner_x', timestamp: Date.now(), from: '919800000002', text: 'help', selfChat: false }) as never;
+
+      it('summary: cap reached means not sent, reason recorded, day not marked sent', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await linkedOwner(biz);
+        await fillQuota(biz);
+        expect(await sendOwnerSummary(biz)).toEqual({ sent: false, reason: 'plan' });
+        expect(await link(biz)).toEqual({ last_summary_sent_on: null, last_summary_error: 'plan:daily_whatsapp_limit_reached' });
+        expect(sendBusinessText).not.toHaveBeenCalled();
+      });
+      it('summary: feature off or lapsed means not sent; a person pressing "send test now" is not blocked by the cap; Rs 1 plan sends', async () => {
+        const off = await newBusiness('billing_starter', null);
+        await linkedOwner(off);
+        await query(`UPDATE subscription_plan_features SET enabled = false WHERE plan_id = 'billing_starter' AND feature_id = 'settings_whatsapp'`);
+        try {
+          expect(await sendOwnerSummary(off)).toEqual({ sent: false, reason: 'plan' });
+          expect((await link(off))!.last_summary_error).toBe('plan:plan_does_not_include_feature');
+        } finally {
+          await query(`UPDATE subscription_plan_features SET enabled = true WHERE plan_id = 'billing_starter' AND feature_id = 'settings_whatsapp'`);
+        }
+        const lapsed = await newBusiness('billing_starter', null);
+        await linkedOwner(lapsed);
+        await lapse(lapsed, 'billing_starter');
+        expect((await sendOwnerSummary(lapsed)).sent).toBe(false);
+        const capped = await newBusiness('billing_starter', null);
+        await linkedOwner(capped);
+        await fillQuota(capped);
+        expect((await sendOwnerSummary(capped, { force: true })).sent).toBe(true);
+        await withRs1Plan('billing_starter', async () => {
+          const ok = await newBusiness('billing_starter', null);
+          await linkedOwner(ok);
+          expect((await sendOwnerSummary(ok)).sent).toBe(true);
+          expect((await link(ok))!.last_summary_sent_on).not.toBeNull();
+        });
+      });
+      it('owner reply: cap reached means no reply; usable plan (Rs 1) replies; lapsed means no reply', async () => {
+        const capped = await newBusiness('billing_starter', null);
+        await linkedOwner(capped);
+        await fillQuota(capped);
+        await processOwnerCommand(textJob(capped));
+        expect(sendBusinessText).not.toHaveBeenCalled();
+        expect((await skippedLog(capped))!.reason).toBe('automation_skipped:daily_whatsapp_limit_reached');
+
+        const lapsed = await newBusiness('billing_starter', null);
+        await linkedOwner(lapsed);
+        await lapse(lapsed, 'billing_starter');
+        await processOwnerCommand(textJob(lapsed));
+        expect(sendBusinessText).not.toHaveBeenCalled();
+
+        await withRs1Plan('billing_starter', async () => {
+          const ok = await newBusiness('billing_starter', null);
+          await linkedOwner(ok);
+          await processOwnerCommand(textJob(ok));
+          expect(sendBusinessText).toHaveBeenCalledTimes(1);
+        });
+      });
     });
   });
 
