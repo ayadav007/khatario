@@ -66,6 +66,7 @@ export const LIMIT_NOUNS: Record<string, { noun: string; one: string; period: 'm
   shifts: { noun: 'shifts', one: 'shift', period: null },
   designations: { noun: 'designations', one: 'designation', period: null },
   performance_reviews: { noun: 'performance reviews', one: 'performance review', period: null },
+  eway_bills: { noun: 'e-Way bills', one: 'e-Way bill', period: 'month' },
 };
 
 const SAFE = 'Everything you\'ve made stays as it is.';
