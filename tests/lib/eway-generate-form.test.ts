@@ -1,4 +1,4 @@
-import { validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
+import { hasActiveEwayBill, validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
 
 const base: EwayForm = {
   distance: '120', mode: 'road', vehicle: 'ka01 ab 1234', transporterGstin: '', transporterName: '',
@@ -80,5 +80,18 @@ describe('validateEwayForm', () => {
   it('needs a 6-digit ship-to PIN code', () => {
     const e = errorsOf({ shipToPlace: 'Mysuru', shipToPincode: '5700', shipToStateCode: '29' });
     expect(e.shipToPincode).toBe('Enter a 6-digit PIN code');
+  });
+});
+
+describe('hasActiveEwayBill', () => {
+  const b = (status: string) => ({ status });
+  it('is false for no bills, a cancelled one or an expired one', () => {
+    expect(hasActiveEwayBill([])).toBe(false);
+    expect(hasActiveEwayBill([b('cancelled')])).toBe(false);
+    expect(hasActiveEwayBill([b('expired')])).toBe(false);
+  });
+  it('is true when one is active, even beside a cancelled one', () => {
+    expect(hasActiveEwayBill([b('active')])).toBe(true);
+    expect(hasActiveEwayBill([b('cancelled'), b('active')])).toBe(true);
   });
 });

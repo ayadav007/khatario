@@ -91,3 +91,8 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
   }
   return { ok: true, body };
 }
+
+/** True when any of a document's e-way bills is still active (cancelled, closed and expired ones do not count). */
+export function hasActiveEwayBill(bills: Array<{ status: string }>): boolean {
+  return bills.some((b) => b.status === 'active');
+}

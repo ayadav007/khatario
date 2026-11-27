@@ -13,6 +13,7 @@ import { ChallanReturnPanel } from '@/components/delivery-challans/ChallanReturn
 import { toDateInputValue } from '@/lib/date-input';
 import { EwayBillPanel } from '@/components/eway-bills/EwayBillPanel';
 import { GenerateEwayBillDialog } from '@/components/eway-bills/GenerateEwayBillDialog';
+import { ActiveEwayBillLine, useDocumentEwayBills } from '@/components/eway-bills/useDocumentEwayBills';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
 
 const PURPOSE_LABEL: Record<string, string> = {
@@ -44,8 +45,10 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
   const returnable = challan.challan_kind === 'returnable';
   const goodsOut = returnable && !!challan.stock_posted_at && !challan.closed_at;
   const fromTransfer = !!challan.stock_transfer_id;
-  // A challan is final once generated (sent or delivered). Generate is offered until it has an e-way bill.
-  const canGenerateEway = ewayAllowed && (status === 'sent' || status === 'delivered') && !challan.e_way_bill_number;
+  // A challan is final once generated (sent or delivered). Generate is offered while it has no active e-way bill in the register.
+  const eligible = ewayAllowed && (status === 'sent' || status === 'delivered');
+  const docBills = useDocumentEwayBills('delivery_challan', challan.id, eligible);
+  const canGenerateEway = eligible && docBills.canGenerate;
   const goodsValue = Number(challan.grand_total) || 0;
 
   async function move(next: 'sent' | 'delivered' | 'cancelled') {
@@ -132,6 +135,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           E-way bill JSON
         </Button>
       )}
+      {eligible && docBills.active && <ActiveEwayBillLine bill={docBills.active} />}
       {canGenerateEway && (
         <>
           <Button size="sm" onClick={() => setGenerateOpen(true)} disabled={!!busy}>
@@ -151,7 +155,10 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           sourceId={challan.id}
           goodsValue={goodsValue}
           defaultVehicle={challan.vehicle_number}
-          onDone={reload}
+          onDone={() => {
+            void docBills.refresh();
+            reload();
+          }}
           onClose={() => setGenerateOpen(false)}
         />
       )}

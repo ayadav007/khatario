@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { GenerateEwayBillDialog } from '@/components/eway-bills/GenerateEwayBillDialog';
+import { ActiveEwayBillLine, useDocumentEwayBills } from '@/components/eway-bills/useDocumentEwayBills';
 
 type Props = {
   invoiceId: string;
@@ -27,11 +28,13 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
   const [saved, setSaved] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const docBills = useDocumentEwayBills('invoice', invoiceId, ewayAllowed && isFinal);
   if (!ewayAllowed) return null;
 
   // A final invoice with no e-way bill yet is offered Generate; typing a number in by hand sits behind a link.
-  const canGenerate = isFinal && !initialNumber;
-  const showManual = !canGenerate || manualOpen;
+  const canGenerate = isFinal && docBills.canGenerate;
+  // For a final invoice, wait for the register before showing anything, so the button does not flicker.
+  const showManual = isFinal ? docBills.settled && (!canGenerate || manualOpen) : true;
 
   const save = async () => {
     setSaving(true);
@@ -64,6 +67,7 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-text-muted">E-way bill</p>
+      {isFinal && docBills.active ? <ActiveEwayBillLine bill={docBills.active} /> : null}
       {canGenerate ? (
         <>
           {goodsValue > 50000 ? <p className="text-xs text-amber-700">{EWAY_LIMIT_HINT}</p> : null}
@@ -82,7 +86,10 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
           sourceType="invoice"
           sourceId={invoiceId}
           goodsValue={goodsValue}
-          onDone={() => onSaved?.()}
+          onDone={() => {
+            void docBills.refresh();
+            onSaved?.();
+          }}
           onClose={() => setGenerateOpen(false)}
         />
       ) : null}
