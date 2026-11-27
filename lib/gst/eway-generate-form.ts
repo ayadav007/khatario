@@ -28,15 +28,19 @@ const GSTIN_MSG = "Enter a 15-character GSTIN";
 const SHIP_TO_MSG = "Enter the ship-to city, PIN code and state together";
 const DOC_MSG = "Enter the transport document number and date";
 
+/** A whole number of km, 0 to 4000. */
+export function isValidEwayDistance(text: string): boolean {
+  const t = text.trim();
+  return /^\d+$/.test(t) && Number(t) <= 4000;
+}
+
 const isGstin = (g: string) => g === "URP" || g.length === 15;
 
 export function validateEwayForm(f: EwayForm): EwayFormResult {
   const errors: EwayFormErrors = {};
 
-  const distanceText = f.distance.trim();
-  const distance = /^\d+$/.test(distanceText) ? Number(distanceText) : NaN;
-  if (!Number.isInteger(distance) || distance < 0 || distance > 4000)
-    errors.distance = DISTANCE_MSG;
+  const distance = Number(f.distance.trim());
+  if (!isValidEwayDistance(f.distance)) errors.distance = DISTANCE_MSG;
 
   const vehicle = f.vehicle.toUpperCase().replace(/\s+/g, "");
   const transporterGstin = f.transporterGstin.trim().toUpperCase();
@@ -92,7 +96,11 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
   return { ok: true, body };
 }
 
-/** True when any of a document's e-way bills is still active (cancelled, closed and expired ones do not count). */
-export function hasActiveEwayBill(bills: Array<{ status: string }>): boolean {
-  return bills.some((b) => b.status === 'active');
+/**
+ * True when a bill is still on record for the document, so a new one is blocked. The server blocks on the
+ * stored status, so a bill that has run past its validity but was never cancelled or closed (effective
+ * status expired) still counts. Cancelled, closed and rejected bills do not.
+ */
+export function hasEwayBillOnRecord(bills: Array<{ stored_status: string }>): boolean {
+  return bills.some((b) => b.stored_status === 'active');
 }

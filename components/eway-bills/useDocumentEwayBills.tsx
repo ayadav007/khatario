@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { hasActiveEwayBill } from '@/lib/gst/eway-generate-form';
+import { hasEwayBillOnRecord } from '@/lib/gst/eway-generate-form';
+import Link from 'next/link';
 import type { EwayBillView } from '@/lib/gst/eway-bill-records';
 
 /**
@@ -36,13 +37,15 @@ export function useDocumentEwayBills(sourceType: 'invoice' | 'delivery_challan',
     void refresh();
   }, [refresh]);
 
-  const active = bills.find((b) => b.status === 'active') ?? null;
-  return { ready, settled, active, canGenerate: ready && !hasActiveEwayBill(bills), refresh };
+  // The bill that blocks a new one: stored active, which includes one past its validity.
+  const onRecord = bills.find((b) => b.stored_status === 'active') ?? null;
+  return { ready, settled, onRecord, canGenerate: ready && !hasEwayBillOnRecord(bills), refresh };
 }
 
-/** Shows the active bill's number, validity and Print link where Generate would be. */
+/** Shows the bill on record: number, validity and Print link, where Generate would be. */
 export function ActiveEwayBillLine({ bill }: { bill: EwayBillView }) {
   return (
+    <div className="space-y-1">
     <p className="text-xs text-text-secondary">
       E-way bill {bill.ewb_number}
       {bill.valid_until ? `, valid until ${new Date(bill.valid_until).toLocaleString('en-IN')}` : ''}
@@ -55,5 +58,14 @@ export function ActiveEwayBillLine({ bill }: { bill: EwayBillView }) {
         </>
       ) : null}
     </p>
+    {bill.status === 'expired' ? (
+      <p className="text-xs text-amber-700">
+        This e-way bill has expired. Extend it within 8 hours of expiry from the e-way bills page, or close it there.{' '}
+        <Link href="/eway-bills" className="text-primary-700 underline">
+          Open e-way bills
+        </Link>
+      </p>
+    ) : null}
+    </div>
   );
 }

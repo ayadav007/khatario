@@ -67,7 +67,7 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-text-muted">E-way bill</p>
-      {isFinal && docBills.active ? <ActiveEwayBillLine bill={docBills.active} /> : null}
+      {isFinal && docBills.onRecord ? <ActiveEwayBillLine bill={docBills.onRecord} /> : null}
       {canGenerate ? (
         <>
           {goodsValue > 50000 ? <p className="text-xs text-amber-700">{EWAY_LIMIT_HINT}</p> : null}
@@ -95,34 +95,34 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
       ) : null}
       {showManual ? (
         <>
-      <p className="text-xs text-text-secondary">
-        Paste the 12-digit number from the GST portal. The bill can be saved without it. Print picks it up after you save.
-      </p>
-      <input
-        inputMode="numeric"
-        maxLength={12}
-        value={number}
-        onChange={(e) => {
-          setNumber(e.target.value.replace(/\D/g, '').slice(0, 12));
-          setSaved(false);
-        }}
-        placeholder="12-digit e-way bill number"
-        className="input w-full text-sm"
-      />
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => {
-          setDate(e.target.value);
-          setSaved(false);
-        }}
-        className="input w-full text-sm"
-      />
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
-      {saved ? <p className="text-xs text-green-700">Saved. Print the bill to see the number.</p> : null}
-      <Button type="button" variant="secondary" className="w-full" onClick={save} disabled={saving}>
-        {saving ? 'Saving…' : 'Save e-way bill'}
-      </Button>
+        <p className="text-xs text-text-secondary">
+          Paste the 12-digit number from the GST portal. The bill can be saved without it. Print picks it up after you save.
+        </p>
+        <input
+          inputMode="numeric"
+          maxLength={12}
+          value={number}
+          onChange={(e) => {
+            setNumber(e.target.value.replace(/\D/g, '').slice(0, 12));
+            setSaved(false);
+          }}
+          placeholder="12-digit e-way bill number"
+          className="input w-full text-sm"
+        />
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => {
+            setDate(e.target.value);
+            setSaved(false);
+          }}
+          className="input w-full text-sm"
+        />
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+        {saved ? <p className="text-xs text-green-700">Saved. Print the bill to see the number.</p> : null}
+        <Button type="button" variant="secondary" className="w-full" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save e-way bill'}
+        </Button>
         </>
       ) : null}
     </div>

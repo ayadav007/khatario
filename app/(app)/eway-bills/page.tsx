@@ -202,7 +202,7 @@ export default function EwayBillsPage() {
                           Cancel
                         </button>
                       )}
-                      {(b.status === 'active' || b.status === 'expired') && (
+                      {b.status === 'active' && (
                         <button type="button" className="text-primary-700 underline" onClick={() => setAction({ bill: b, kind: 'vehicle' })}>
                           Change vehicle
                         </button>

@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToastContext } from "@/contexts/ToastContext";
 import { GST_STATE_NAMES } from "@/lib/tax/gstin";
 import {
+  isValidEwayDistance,
   validateEwayForm,
   type EwayForm,
   type EwayFormErrors,
@@ -188,7 +189,7 @@ export function GenerateEwayBillDialog({
     const q = new URLSearchParams({
       source_type: sourceType,
       source_id: sourceId,
-      distance_km: form.distance.trim() || "0",
+      distance_km: form.distance.trim(),
     });
     if (
       form.shipToPlace.trim() &&
@@ -372,13 +373,17 @@ export function GenerateEwayBillDialog({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-          <a
-            className="text-xs text-gray-500 underline"
-            href={`/api/eway-bills/export?${exportQuery()}`}
-            title="Download the details as a file to upload on the e-way bill portal yourself"
-          >
-            Download portal file instead
-          </a>
+          {isValidEwayDistance(form.distance) ? (
+            <a
+              className="text-xs text-gray-500 underline"
+              href={`/api/eway-bills/export?${exportQuery()}`}
+              title="Download the details as a file to upload on the e-way bill portal yourself"
+            >
+              Download portal file instead
+            </a>
+          ) : (
+            <span className="text-xs text-gray-400">Enter the distance to download the portal file instead</span>
+          )}
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose} disabled={saving}>
               Close

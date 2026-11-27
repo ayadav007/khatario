@@ -135,7 +135,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           E-way bill JSON
         </Button>
       )}
-      {eligible && docBills.active && <ActiveEwayBillLine bill={docBills.active} />}
+      {eligible && docBills.onRecord && <ActiveEwayBillLine bill={docBills.onRecord} />}
       {canGenerateEway && (
         <>
           <Button size="sm" onClick={() => setGenerateOpen(true)} disabled={!!busy}>

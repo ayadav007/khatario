@@ -1,4 +1,4 @@
-import { hasActiveEwayBill, validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
+import { hasEwayBillOnRecord, validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
 
 const base: EwayForm = {
   distance: '120', mode: 'road', vehicle: 'ka01 ab 1234', transporterGstin: '', transporterName: '',
@@ -83,15 +83,19 @@ describe('validateEwayForm', () => {
   });
 });
 
-describe('hasActiveEwayBill', () => {
-  const b = (status: string) => ({ status });
-  it('is false for no bills, a cancelled one or an expired one', () => {
-    expect(hasActiveEwayBill([])).toBe(false);
-    expect(hasActiveEwayBill([b('cancelled')])).toBe(false);
-    expect(hasActiveEwayBill([b('expired')])).toBe(false);
+describe('hasEwayBillOnRecord', () => {
+  const b = (stored_status: string, status = stored_status) => ({ stored_status, status });
+  it('is false for no bills, or only cancelled, closed or rejected ones', () => {
+    expect(hasEwayBillOnRecord([])).toBe(false);
+    expect(hasEwayBillOnRecord([b('cancelled')])).toBe(false);
+    expect(hasEwayBillOnRecord([b('closed')])).toBe(false);
+    expect(hasEwayBillOnRecord([b('rejected')])).toBe(false);
   });
-  it('is true when one is active, even beside a cancelled one', () => {
-    expect(hasActiveEwayBill([b('active')])).toBe(true);
-    expect(hasActiveEwayBill([b('cancelled'), b('active')])).toBe(true);
+  it('is true for a stored-active bill, whether it is still valid or has expired', () => {
+    expect(hasEwayBillOnRecord([b('active')])).toBe(true);
+    expect(hasEwayBillOnRecord([b('active', 'expired')])).toBe(true);
+  });
+  it('is true when a cancelled bill sits beside an active one', () => {
+    expect(hasEwayBillOnRecord([b('cancelled'), b('active')])).toBe(true);
   });
 });

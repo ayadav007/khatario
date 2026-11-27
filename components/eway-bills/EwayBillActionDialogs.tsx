@@ -12,6 +12,12 @@ import {
 } from "@/components/eway-bills/GenerateEwayBillDialog";
 import type { EwayBillAction, EwayBillView } from "@/lib/gst/eway-bill-records";
 
+type Act<A extends EwayBillAction['action']> = Extract<EwayBillAction, { action: A }>;
+type CancelReason = NonNullable<Act<'cancel'>['reason_code']>;
+type VehicleReason = NonNullable<Act<'vehicle'>['reason_code']>;
+type ExtendReason = NonNullable<Act<'extend'>['reason_code']>;
+type InTransit = Act<'extend'>['in_transit'];
+
 export type EwayActionKind = "cancel" | "vehicle" | "extend" | "close";
 
 const SELECT_CLASS =
@@ -120,7 +126,7 @@ export function EwayBillActionDialog({
     if (kind === "cancel") {
       return {
         action: "cancel",
-        reason_code: reasonCode as any,
+        reason_code: reasonCode as CancelReason,
         reason: remarks.trim() || undefined,
       };
     }
@@ -138,7 +144,7 @@ export function EwayBillActionDialog({
         action: "vehicle",
         from_place: place.trim(),
         from_state_code: stateCode,
-        reason_code: reasonCode as any,
+        reason_code: reasonCode as VehicleReason,
         reason: remarks.trim() || undefined,
         transport_mode: mode,
         vehicle_number: vehicle.trim() || undefined,
@@ -155,10 +161,10 @@ export function EwayBillActionDialog({
       from_place: place.trim(),
       from_state_code: stateCode,
       from_pincode: pincode.trim(),
-      reason_code: reasonCode as any,
+      reason_code: reasonCode as ExtendReason,
       reason: remarks.trim(),
       remaining_km: Number(remainingKm),
-      in_transit: (inTransit || null) as any,
+      in_transit: (inTransit || null) as InTransit,
       transport_mode: mode,
       vehicle_number: vehicle.trim() || undefined,
     };
