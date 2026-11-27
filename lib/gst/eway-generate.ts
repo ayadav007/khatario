@@ -7,7 +7,7 @@ import { getPool } from '@/lib/db';
 import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { computeValidUntil, EwayBillInputError, type EwayDocType, type EwaySubSupplyType, type ParsedEwayBill } from '@/lib/gst/eway-bills';
-import { createEwayBill, type EwayBillView } from '@/lib/gst/eway-bill-records';
+import { createEwayBill, getEwayBill, type EwayBillView } from '@/lib/gst/eway-bill-records';
 import { buildEwayBill, SUB_SUPPLY_CODE, type NicEwayBill } from '@/lib/gst/eway-json';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
@@ -195,7 +195,31 @@ export async function generateEwayBillViaGsp(
   } finally {
     limitClient.release();
   }
-  if (!check.allowed) throw new EwayBillInputError(check.message || 'Monthly e-way bill limit reached.', 403, 'LIMIT_EXCEEDED');
+  if (!check.allowed) {
+    throw new EwayBillInputError(
+      "You have reached this month's e-way bill limit for your plan. Upgrade your plan to generate more.",
+      403,
+      'LIMIT_EXCEEDED',
+    );
+  }
+
+  /** A bill the portal already held for this document number is recorded only while it is still active. */
+  const assertStillActive = async (ewbNumber: string, onError: (e: unknown) => unknown) => {
+    let status: Awaited<ReturnType<typeof miGetEwayStatus>>;
+    try {
+      status = await getStatus(creds, fromGstin, ewbNumber);
+    } catch (e) {
+      throw onError(e);
+    }
+    if (status !== 'active') {
+      throw new EwayBillInputError(
+        'The e-way bill portal still holds an old e-way bill ' + ewbNumber +
+          ' for this document number. Cancelled bills cannot be regenerated on the same number from here; check the portal.',
+        409,
+        'EWAY_STALE_DUPLICATE',
+      );
+    }
+  };
 
   // 5-6. Generate; no transaction is open here. Look up by document number only when the call went unanswered.
   let result: MiEwayResult;
@@ -210,24 +234,10 @@ export async function generateEwayBillViaGsp(
       found = null;
     }
     if (!found) throw noAnswer();
+    await assertStillActive(found.ewbNumber, (err) => (err instanceof GspError ? noAnswer() : err));
     result = found;
   }
-  if (result.duplicate) {
-    let status: Awaited<ReturnType<typeof miGetEwayStatus>>;
-    try {
-      status = await getStatus(creds, fromGstin, result.ewbNumber);
-    } catch (e) {
-      throw gspFailure(e, fromGstin);
-    }
-    if (status !== 'active') {
-      throw new EwayBillInputError(
-        'The e-way bill portal still holds an old e-way bill ' + result.ewbNumber +
-          ' for this document number. Cancelled bills cannot be regenerated on the same number from here; check the portal.',
-        409,
-        'EWAY_STALE_DUPLICATE',
-      );
-    }
-  }
+  if (result.duplicate) await assertStillActive(result.ewbNumber, (err) => gspFailure(err, fromGstin));
 
   // 7-8. Record in one transaction; on failure the next click reaches the duplicate path and records it.
   let client: PoolClient | null = null;
@@ -245,6 +255,15 @@ export async function generateEwayBillViaGsp(
     return view;
   } catch (e: any) {
     if (client) await client.query('ROLLBACK').catch(() => undefined);
+    // A concurrent request for the same document may have saved this very bill first.
+    const saved = await pool
+      .query(
+        `SELECT id FROM eway_bills WHERE business_id = $1 AND ewb_number = $2 AND source_type = $3 AND source_id = $4 LIMIT 1`,
+        [businessId, result.ewbNumber, input.source_type, input.source_id],
+      )
+      .then((r) => (r.rows[0] ? getEwayBill(pool, businessId, r.rows[0].id) : null))
+      .catch(() => null);
+    if (saved) return saved;
     console.error('[eway-generate] generated e-way bill not saved', { ewbNumber: result.ewbNumber, error: e?.message });
     throw new EwayBillInputError(
       'E-way bill ' + result.ewbNumber + ' was generated but could not be saved here. Click Generate again to record it.',
