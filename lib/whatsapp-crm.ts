@@ -6,6 +6,7 @@
 import * as db from '@/lib/db';
 import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { sendWhatsAppMessage } from './whatsapp';
+import { checkAutomationAllowed, recordSkippedAutomation } from './whatsapp/automation-guard';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { keepInboxMediaCopy } from '@/lib/whatsapp/media-ref-server';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
@@ -2136,6 +2137,19 @@ export async function processIncomingMessage(
       }
     }
 
+
+    // Every automatic reply below (payment notices, flows, keyword rules, shop, AI) needs the Connect plan
+    // and room under the daily WhatsApp cap. When it does not, the message stays stored, nothing is sent or
+    // changed in the conversation (no state, flow session or rule chain moves), the skip is logged with its
+    // reason and the chat goes to a person's queue, as for any message the bot did not answer.
+    {
+      const automation = await checkAutomationAllowed(businessId, 'connect_automation');
+      if (!automation.allowed) {
+        console.warn('[CRM] Automatic reply skipped:', automation.reason, { businessId });
+        await recordSkippedAutomation({ businessId, conversationId, messageId, reason: automation.reason });
+        return { shouldStore: true };
+      }
+    }
 
     // Get current conversation state (individual chats only)
     const currentState = await getConversationState(businessId, normalizedFrom);

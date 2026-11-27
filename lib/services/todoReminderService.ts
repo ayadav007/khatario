@@ -2,7 +2,8 @@ import type { PoolClient } from 'pg';
 import { getPool, query, queryOne } from '@/lib/db';
 import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
 import { getRedisConnection } from '@/lib/queue/redis';
-import { getBusinessSubscription, hasFeature, isSubscriptionOperationalStatus } from '@/lib/subscription';
+import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
+import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
 import { sendWhatsAppMessage, getWhatsAppStatus } from '@/lib/whatsapp';
 
 /** Row shape for reminder delivery; callers pass a `todos` record (e.g. SELECT *). */
@@ -283,7 +284,7 @@ export async function triggerTodoReminder(
   return { status: 'delivered', published };
 }
 
-async function trySendWhatsAppForTodo(
+export async function trySendWhatsAppForTodo(
   todo: TodoForReminder,
   waUserId: string | null
 ): Promise<void> {
@@ -297,8 +298,13 @@ async function trySendWhatsAppForTodo(
   }
 
   try {
-    const hasWhatsAppAccess = await hasFeature(todo.business_id, 'whatsapp_bot');
-    if (!hasWhatsAppAccess) return;
+    // Connect plan and the daily WhatsApp cap. The in-app reminder already went out; a skipped WhatsApp
+    // copy leaves the todo untouched (no status of its own is kept for this send).
+    const automation = await checkAutomationAllowed(todo.business_id, 'connect_automation');
+    if (!automation.allowed) {
+      reminderPipelineLog('service.whatsapp.skipped', { todoId: todo.id, reason: automation.reason });
+      return;
+    }
 
     let whatsappStatus;
     try {

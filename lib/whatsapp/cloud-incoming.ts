@@ -3,6 +3,7 @@ import { processIncomingMessage, storeIncomingMessage, storeOutgoingMessage } fr
 import type { CloudIncomingQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
 import { queueIfUnanswered } from './inbox-ownership';
+import { checkAutomationAllowed, recordSkippedAutomation } from './automation-guard';
 
 /** A cart sent from the business's Meta catalog: stored in the inbox, then ordered and billed. */
 async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullable<CloudIncomingQueueJob['order']> }) {
@@ -32,6 +33,18 @@ async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullabl
     note: job.order.note,
     lines: job.order.items.map((i) => ({ itemId: i.retailerId, quantity: i.quantity })),
   });
+  // The order is recorded (it is the customer's), but the automatic confirmation needs the Connect plan and cap.
+  const automation = await checkAutomationAllowed(job.businessId, 'connect_automation');
+  if (!automation.allowed) {
+    await recordSkippedAutomation({
+      businessId: job.businessId,
+      conversationId: conversationId ?? null,
+      messageId: job.messageId,
+      reason: automation.reason,
+    });
+    await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
+    return;
+  }
   await sendShopOrderReply(job.businessId, job.from, outcome);
 }
 
