@@ -3,7 +3,6 @@
  * Calculates commission for employees based on commission rules
  */
 
-import { LimitRefusedError, limitedQueryOne } from '@/lib/subscription/limit-lock';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionRule, CommissionEarning } from '@/types/database';
 
@@ -209,12 +208,11 @@ export async function processCommissionEarning(
   }
 
   // Create new commission earning
-  // Monthly commission limit (`max_commissions_per_month`): counted under the limit lock where the row is
-  // written. At the limit the commission is not recorded (the invoice is unaffected); it is logged, nothing is deleted.
-  let earning: CommissionEarning | null;
-  try {
-  earning = await limitedQueryOne<CommissionEarning>(
-    businessId, 'commissions',
+  // Commissions earned from invoices are staff earnings: always recorded, never limited and never dropped
+  // because a limit check failed. `max_commissions_per_month` has no hand-made commission record to apply
+  // to (earnings are only ever created here; the commissions screen only approves/pays/cancels them), so
+  // it enforces nothing today.
+  const earning = await queryOne<CommissionEarning>(
     `INSERT INTO commission_earnings (
       employee_id, invoice_id, sale_amount, commission_rate, commission_amount, status
     )
@@ -228,51 +226,25 @@ export async function processCommissionEarning(
       calculation.commissionAmount,
     ]
   );
-  } catch (error) {
-    if (error instanceof LimitRefusedError) {
-      console.warn(
-        `[commission] not recorded for invoice ${invoiceId} (business ${businessId}): ${error.check.unavailable ? 'plan limit could not be checked' : 'monthly commission limit reached'}`
-      );
-      return null;
-    }
-    throw error;
-  }
 
   // Update performance metrics (daily aggregation)
-  await updatePerformanceMetrics(invoice.created_by, invoice.grand_total || 0, 1, businessId);
+  await updatePerformanceMetrics(invoice.created_by, invoice.grand_total || 0, 1);
 
   return earning;
 }
 
 /**
- * Add one performance record (a daily or monthly row) under the monthly performance-review limit
- * (`max_performance_reviews_per_month`). Updating an existing row never reaches this. At the limit the
- * row is simply not added (the sale and the commission are unaffected).
- */
-async function insertPerformanceRow(businessId: string | undefined, sql: string, params: unknown[]): Promise<void> {
-  if (!businessId) return;
-  try {
-    await limitedQueryOne(businessId, 'performance_reviews', sql, params);
-  } catch (error) {
-    if (error instanceof LimitRefusedError) return;
-    throw error;
-  }
-}
-
-/**
  * Update employee performance metrics
+ * These daily/monthly rows are system-generated sales history, not reviews written by a person, so
+ * `max_performance_reviews_per_month` does not limit them (no person-created review exists to limit).
  * Aggregates daily performance data
  */
 export async function updatePerformanceMetrics(
   employeeId: string,
   saleAmount: number,
-  invoiceCount: number = 1,
-  businessIdHint?: string
+  invoiceCount: number = 1
 ): Promise<void> {
   const today = new Date().toISOString().split('T')[0];
-  const businessId =
-    businessIdHint ??
-    (await queryOne<{ business_id: string }>('SELECT business_id FROM employees WHERE id = $1', [employeeId]))?.business_id;
 
   // Get or create today's performance record
   let performance = await queryOne(
@@ -293,8 +265,7 @@ export async function updatePerformanceMetrics(
     );
   } else {
     // Create new
-    await insertPerformanceRow(
-      businessId,
+    await query(
       `INSERT INTO employee_performance (
         employee_id, period_type, period_date, total_sales, total_invoices, average_invoice_value
       )
@@ -324,8 +295,7 @@ export async function updatePerformanceMetrics(
       [saleAmount, invoiceCount, monthlyPerformance.id]
     );
   } else {
-    await insertPerformanceRow(
-      businessId,
+    await query(
       `INSERT INTO employee_performance (
         employee_id, period_type, period_date, total_sales, total_invoices, average_invoice_value
       )

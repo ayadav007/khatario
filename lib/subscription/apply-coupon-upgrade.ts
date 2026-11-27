@@ -1,9 +1,11 @@
-import { query } from '@/lib/db';
+import { getPool, query } from '@/lib/db';
+import { clearSubscriptionCache } from '@/lib/subscription';
 import { markCheckoutFailedIfPending, recordBillingTransaction, updateBillingTransactionStatus } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange, getBusinessPlatformRecipient } from '@/lib/platform-email';
 import { redeemCoupon, releaseCouponClaim } from '@/lib/subscription/coupons';
 import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
 import {
+  afterPlanChangeCommitted,
   applyModuleSubscriptionPlanChange,
   extendModuleSubscriptionForFreeMonths,
 } from '@/lib/subscription/apply-module-plan-change';
@@ -87,21 +89,39 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
     }
   }
 
+  // The plan switch and the free months are one transaction: either both are applied or neither is, so a
+  // failure here always means the plan was NOT applied, and releasing the claim is then correct. Nothing
+  // that can fail after the COMMIT releases the claim or marks the payment failed.
   let moduleSub: Awaited<ReturnType<typeof applyModuleSubscriptionPlanChange>>;
   try {
-    moduleSub = await applyModuleSubscriptionPlanChange({
-      businessId: params.businessId,
-      moduleKey,
-      planId: params.planId,
-      billingCycle: params.billingCycle,
-      paymentMethod: params.paymentMethod ?? 'coupon',
-    });
-    if (params.pricing.freeMonths && params.pricing.freeMonths > 0) {
-      await extendModuleSubscriptionForFreeMonths(
-        params.businessId,
-        moduleKey,
-        params.pricing.freeMonths,
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      moduleSub = await applyModuleSubscriptionPlanChange(
+        {
+          businessId: params.businessId,
+          moduleKey,
+          planId: params.planId,
+          billingCycle: params.billingCycle,
+          paymentMethod: params.paymentMethod ?? 'coupon',
+        },
+        client,
       );
+      if (params.pricing.freeMonths && params.pricing.freeMonths > 0) {
+        await extendModuleSubscriptionForFreeMonths(
+          params.businessId,
+          moduleKey,
+          params.pricing.freeMonths,
+          client,
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      clearSubscriptionCache(params.businessId);
+      throw err;
+    } finally {
+      client.release();
     }
   } catch (err) {
     if (couponTxId && params.pricing.couponId) {
@@ -111,6 +131,19 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       await markCheckoutFailedIfPending(couponTxId, params.businessId, { reason: 'plan_change_failed' }, false).catch(() => undefined);
     }
     throw err;
+  }
+  // Committed. Cache clearing and the event log are best effort from here on.
+  try {
+    await afterPlanChangeCommitted(moduleSub, {
+      fromPlanId: moduleSub.from_plan_id,
+      paymentMethod: params.paymentMethod ?? 'coupon',
+      paymentReference: null,
+      trialDaysCarried: moduleSub.trial_days_carried ?? 0,
+      periodKind: moduleSub.period_kind,
+    });
+  } catch (err) {
+    console.error('[apply-coupon-upgrade] plan applied; after-commit step failed', err);
+    clearSubscriptionCache(params.businessId);
   }
   const sub = { module_key: moduleSub.module_key };
 

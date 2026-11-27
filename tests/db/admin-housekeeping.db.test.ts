@@ -8,6 +8,8 @@
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { assertFeatureAccess } from '@/lib/subscription/feature-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 
 const enabled = !!process.env.PHASE2_TEST_DATABASE_URL;
 if (enabled) process.env.DATABASE_URL = process.env.PHASE2_TEST_DATABASE_URL;
@@ -268,10 +270,27 @@ run('admin and housekeeping (kh_phase2_test)', () => {
       expect(await queryOne(`SELECT (trial_end_date - CURRENT_DATE)::int AS days FROM business_module_subscriptions WHERE business_id = $1`, [biz])).toMatchObject({ days: 5 });
     });
 
-    it('the source no longer computes period dates in JavaScript', () => {
-      const src = readFileSync(join(process.cwd(), 'lib/admin-business-ops.ts'), 'utf8');
-      expect(src).not.toMatch(/computeSubscriptionPeriodEnd/);
-      expect(src).toMatch(/make_interval\(months/);
+    it('dates follow the database clock, not the server\'s JavaScript clock (month end included)', async () => {
+      // If the editor still computed period dates in JavaScript, a server clock sitting on a month end would
+      // give 31 Jan + 1 month = 3 Mar. With the dates computed in SQL the result is the database's.
+      jest.useFakeTimers({
+        now: new Date('2031-01-31T10:00:00Z'),
+        doNotFake: ['setTimeout', 'setInterval', 'setImmediate', 'clearTimeout', 'clearInterval', 'clearImmediate', 'nextTick', 'queueMicrotask', 'performance', 'hrtime'],
+      });
+      let biz: string;
+      try {
+        biz = await newBusiness();
+        await adminUpdateSubscription({ businessId: biz, adminId, moduleKey: 'billing', planId: 'growth', status: 'active', billingCycle: 'monthly' });
+      } finally {
+        jest.useRealTimers();
+      }
+      const r = await queryOne<{ end_date: string; db_plus_month: string; start_date: string; db_today: string }>(
+        `SELECT end_date::text, (CURRENT_DATE + make_interval(months => 1))::date::text AS db_plus_month,
+                start_date::text, CURRENT_DATE::text AS db_today
+           FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz!]);
+      expect(r!.end_date).toBe(r!.db_plus_month);
+      expect(r!.start_date).toBe(r!.db_today);
+      expect(r!.end_date).not.toBe('2031-03-03');
     });
   });
 
@@ -394,11 +413,40 @@ run('admin and housekeeping (kh_phase2_test)', () => {
       expect({ p: after.p, is_active: after.is_active, product_line: after.product_line, features: after.features }).toEqual(before);
     });
 
-    it('migration 360 no longer downgrades a paying Connect subscription on a second run', () => {
-      const sql = readFileSync(join(process.cwd(), 'database/migrations/360_plan_catalog_v2.sql'), 'utf8');
-      const tail = sql.slice(sql.indexOf('old free Connect plan'));
-      expect(tail).toMatch(/NOT EXISTS[\s\S]*billing_transactions[\s\S]*module_key = 'connect'/);
-      expect(tail).toMatch(/end_date IS NULL OR end_date < CURRENT_DATE/);
+    it('migration 360 run twice does not downgrade a paying Connect business, and still frees an unpaid one', async () => {
+      // The statement under test is the last UPDATE of migration 360 (the old-free-Connect clean-up), taken from the
+      // file as it is. The rest of 360 re-seeds shared plan rows, so it is not run on the shared test DB; the
+      // statement runs in a transaction that is rolled back, so no other test sees its effect.
+      const full = readFileSync(join(process.cwd(), 'database/migrations/360_plan_catalog_v2.sql'), 'utf8');
+      const start = full.indexOf('-- Connect rows from the old free Connect plan');
+      const end = full.indexOf('COMMENT ON COLUMN subscription_plans.price_3year');
+      expect(start).toBeGreaterThan(0);
+      const cleanup = full.slice(start, end);
+      const paying = await newBusiness('Paying Connect');
+      const unpaid = await newBusiness('Unpaid Connect');
+      for (const biz of [paying, unpaid]) {
+        await query(
+          `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+           VALUES ($1, 'connect', 'connect', 'active', CURRENT_DATE - 60, NULL, 'monthly')`, [biz]);
+      }
+      await query(
+        `INSERT INTO billing_transactions (business_id, type, status, amount, total_amount, plan_id, module_key, payment_method)
+         VALUES ($1, 'payment', 'completed', 1499, 1499, 'connect', 'connect', 'razorpay')`, [paying]);
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('CREATE TEMP TABLE connect_from_addons (business_id uuid, addon_end date) ON COMMIT DROP');
+        for (let i = 0; i < 2; i++) await client.query(cleanup);
+        const rows = await client.query(
+          `SELECT business_id::text AS b, plan_id FROM business_module_subscriptions WHERE module_key = 'connect' AND business_id = ANY($1::uuid[])`,
+          [[paying, unpaid]]);
+        const by = Object.fromEntries(rows.rows.map((r: any) => [r.b, r.plan_id]));
+        expect(by[paying]).toBe('connect');
+        expect(by[unpaid]).toBe('connect_free');
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
     });
   });
 
@@ -435,6 +483,17 @@ run('admin and housekeeping (kh_phase2_test)', () => {
       const out = (await runRecurringInvoices(getPool(), { today: RUN_DAY, businessId: biz })).find((r) => r.recurring_invoice_id === sched)!;
       expect(out.skippedSubscriptionInactive).toBe(true);
       expect(out.created).toHaveLength(0);
+      expect(await invoices(biz)).toBe(0);
+      expect(await queryOne(`SELECT next_run_date::text AS d FROM recurring_invoices WHERE id = $1`, [sched])).toMatchObject({ d: '2026-06-01' });
+    });
+
+    it('a plan that ran out since the entitlement was last cached: the shared rule on a fresh read wins, no invoice', async () => {
+      // The nightly job has not run, and this process still holds the entitlement it read while the plan was valid.
+      const { biz, sched } = await businessWithSchedule(-30); // ends in 30 days
+      await assertFeatureAccess(biz, FeatureKeys.RECURRING_INVOICES); // warms the caches
+      await query(`UPDATE business_module_subscriptions SET end_date = CURRENT_DATE - 8 WHERE business_id = $1 AND module_key = 'billing'`, [biz]);
+      const out = (await runRecurringInvoices(getPool(), { today: RUN_DAY, businessId: biz })).find((r) => r.recurring_invoice_id === sched)!;
+      expect(out.skippedSubscriptionInactive).toBe(true);
       expect(await invoices(biz)).toBe(0);
       expect(await queryOne(`SELECT next_run_date::text AS d FROM recurring_invoices WHERE id = $1`, [sched])).toMatchObject({ d: '2026-06-01' });
     });

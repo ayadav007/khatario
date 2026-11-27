@@ -402,7 +402,7 @@ export function calculateDiscount(
       return {
         amount: 0,
         type: 'free_months',
-        freeMonths: coupon.value,
+        freeMonths: Number(coupon.value),
         discountPerMonth: planPrice,
       };
     }

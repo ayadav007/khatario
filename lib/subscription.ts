@@ -16,7 +16,7 @@ import {
   ALL_LIMIT_CHECK_TYPES,
   buildLimitCountQuery,
 } from './subscription/limit-registry';
-import { resolveBusinessLimit } from './subscription/resolve-limit';
+import { resolveBusinessLimit, type ResolvedLimit } from './subscription/resolve-limit';
 import {
   clearModuleSubscriptionCache,
   getEntitlementPlanIdForModuleSub,
@@ -314,19 +314,22 @@ export async function evaluateLimit(
   businessId: string,
   limitType: LimitCheckType,
   queryOneFn: LimitQueryOne,
-  opts: { adding?: number; legacyLimits?: Record<string, unknown> | null } = {}
+  opts: {
+    adding?: number;
+    legacyLimits?: Record<string, unknown> | null;
+    /** The cap resolved earlier (before a lock was taken), or the error that resolving it hit. */
+    resolved?: ResolvedLimit | Error;
+  } = {}
 ): Promise<LimitCheckResult> {
   const adding = opts.adding ?? 1;
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
 
   let maxLimit = 0;
   try {
-    const resolved = await resolveBusinessLimit(
-      businessId,
-      limitType,
-      limitKey,
-      queryOneFn as typeof db.queryOne
-    );
+    if (opts.resolved instanceof Error) throw opts.resolved;
+    const resolved =
+      opts.resolved ??
+      (await resolveBusinessLimit(businessId, limitType, limitKey, queryOneFn as typeof db.queryOne));
     maxLimit = resolved.maxLimit;
 
     if (maxLimit === 0 && resolved.blockedReason) {

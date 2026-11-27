@@ -58,10 +58,10 @@ jest.mock('@/lib/subscription/limit-registry', () => {
 });
 
 import { NextRequest } from 'next/server';
-import { query, queryOne, closePool } from '@/lib/db';
+import { query, queryOne, closePool, getPool } from '@/lib/db';
 import { checkLimit, clearSubscriptionCache, evaluateLimit, LIMIT_CHECK_RETRY_MESSAGE } from '@/lib/subscription';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
-import { LimitRefusedError, limitedQueryOne, withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { LimitRefusedError, limitedQueryOne, withLimitedCreate, limitLockTimeout, limitLockKey, prepareLimitChecks } from '@/lib/subscription/limit-lock';
 import { POST as postEmployeeRoute } from '@/app/api/employees/route';
 import { POST as postBranchRoute } from '@/app/api/branches/route';
 import { POST as postTaskRoute } from '@/app/api/tasks/route';
@@ -476,54 +476,75 @@ run('limits are counted and written as one step (kh_phase2_test)', () => {
       expect((await patch({ departments: ['b', 'A'] })).status).toBe(200); // nothing new
     });
 
-    it('max_commissions_per_month and max_performance_reviews_per_month', async () => {
+    it('commissions from invoices are always recorded: over max_commissions_per_month, and when the limit check fails', async () => {
+      // I4: staff earnings are never dropped. The limit has no hand-made commission record to apply to
+      // (earnings are only created by invoices), so it enforces nothing.
       const hr = await makePlan('hr_starter', { max_commissions_per_month: 1, max_performance_reviews_per_month: 1 });
-      const { biz } = await newBusiness(await makePlan('billing_growth', {}), hr);
-      const emp = await addEmployee(biz);
-      await query(`INSERT INTO commission_rules (business_id, employee_id, commission_type, commission_value, is_active) VALUES ($1, $2, 'percentage', 5, true)`, [biz, emp]);
-      const makeInvoice = async () => {
-        const customerId = randomUUID();
-        const invoiceId = randomUUID();
-        await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'C', $3)`, [customerId, biz, phone()]);
-        await query(`INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date) VALUES ($1, $2, $3, $4, CURRENT_DATE)`, [invoiceId, biz, customerId, `INV-${invoiceId.slice(0, 6)}`]);
-        return invoiceId;
-      };
-      const earn = async () => {
-        const id = await makeInvoice();
-        return processCommissionEarning(biz, id, { id, grand_total: 1000, created_by: emp, items: [] });
-      };
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-      expect(await earn()).not.toBeNull();
-      expect(await earn()).toBeNull(); // second commission this month: not recorded, invoice unaffected
-      warn.mockRestore();
-      expect(await count(`commission_earnings ce JOIN employees e ON e.id = ce.employee_id WHERE e.business_id = $1`, [biz])).toBe(1);
-      // One performance record was allowed; the daily and monthly rows are separate records, so only one was added.
-      expect(await count(`employee_performance WHERE employee_id = $1`, [emp])).toBe(1);
-    });
-
-    it('two commissions at limit - 1 at once: exactly one is recorded', async () => {
-      const hr = await makePlan('hr_starter', { max_commissions_per_month: 3, max_performance_reviews_per_month: -1 });
       const { biz } = await newBusiness(await makePlan('billing_growth', {}), hr);
       const emp = await addEmployee(biz);
       await query(`INSERT INTO commission_rules (business_id, employee_id, commission_type, commission_value, is_active) VALUES ($1, $2, 'percentage', 5, true)`, [biz, emp]);
       const customerId = randomUUID();
       await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'C', $3)`, [customerId, biz, phone()]);
-      const invoiceIds: string[] = [];
-      for (let i = 0; i < 4; i++) {
-        const invoiceId = randomUUID();
-        invoiceIds.push(invoiceId);
-        await query(`INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date) VALUES ($1, $2, $3, $4, CURRENT_DATE)`, [invoiceId, biz, customerId, `INV-${invoiceId.slice(0, 6)}`]);
-      }
-      for (const id of invoiceIds.slice(0, 2)) {
-        await query(`INSERT INTO commission_earnings (employee_id, invoice_id, sale_amount, commission_rate, commission_amount, status) VALUES ($1, $2, 100, 5, 5, 'pending')`, [emp, id]);
-      }
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-      const results = await Promise.all(
-        invoiceIds.slice(2).map((id) => processCommissionEarning(biz, id, { id, grand_total: 1000, created_by: emp, items: [] })),
-      );
-      warn.mockRestore();
-      expect(results.filter((r) => r !== null)).toHaveLength(1);
+      const earn = async () => {
+        const id = randomUUID();
+        await query(`INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date) VALUES ($1, $2, $3, $4, CURRENT_DATE)`, [id, biz, customerId, `INV-${id.slice(0, 6)}`]);
+        return processCommissionEarning(biz, id, { id, grand_total: 1000, created_by: emp, items: [] });
+      };
+      expect(await earn()).not.toBeNull();
+      expect(await earn()).not.toBeNull(); // over the limit of 1: still recorded
+      countFailure.on = true; // every limit count now throws
+      expect(await earn()).not.toBeNull(); // a failing check cannot drop it
+      countFailure.on = false;
       expect(await count(`commission_earnings ce JOIN employees e ON e.id = ce.employee_id WHERE e.business_id = $1`, [biz])).toBe(3);
+    });
+
+    it('max_performance_reviews_per_month limits nothing: the daily and monthly sales rows are system history, not reviews', async () => {
+      const hr = await makePlan('hr_starter', { max_performance_reviews_per_month: 0 });
+      const { biz } = await newBusiness(await makePlan('billing_growth', {}), hr);
+      const emp = await addEmployee(biz);
+      await query(`INSERT INTO commission_rules (business_id, employee_id, commission_type, commission_value, is_active) VALUES ($1, $2, 'percentage', 5, true)`, [biz, emp]);
+      const customerId = randomUUID();
+      await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'C', $3)`, [customerId, biz, phone()]);
+      const id = randomUUID();
+      await query(`INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date) VALUES ($1, $2, $3, $4, CURRENT_DATE)`, [id, biz, customerId, `INV-${id.slice(0, 6)}`]);
+      await processCommissionEarning(biz, id, { id, grand_total: 1000, created_by: emp, items: [] });
+      // A daily and a monthly row, although the plan's review limit is 0.
+      expect(await count(`employee_performance WHERE employee_id = $1`, [emp])).toBe(2);
+    });
+  });
+
+  describe('M1: a lock that is not free in time refuses with "try again"', () => {
+    it('times out, runs nothing, and works again once the lock is free', async () => {
+      const { biz } = await newBusiness(await makePlan('billing_growth', { max_suppliers: 50 }));
+      const holder = await getPool().connect();
+      const saved = limitLockTimeout.ms;
+      limitLockTimeout.ms = 300;
+      const errLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await holder.query('SELECT pg_advisory_lock(hashtext($1))', [limitLockKey(biz, 'suppliers')]);
+        let ran = false;
+        const started = Date.now();
+        await expect(withLimitedCreate(biz, 'suppliers', async () => { ran = true; })).rejects.toMatchObject({
+          name: 'LimitRefusedError',
+          check: { unavailable: true, message: LIMIT_CHECK_RETRY_MESSAGE },
+        });
+        expect(ran).toBe(false);
+        expect(Date.now() - started).toBeLessThan(3000);
+        await holder.query('SELECT pg_advisory_unlock(hashtext($1))', [limitLockKey(biz, 'suppliers')]);
+        await expect(withLimitedCreate(biz, 'suppliers', async () => 'ok')).resolves.toBe('ok');
+      } finally {
+        limitLockTimeout.ms = saved;
+        errLog.mockRestore();
+        holder.release();
+      }
+    });
+
+    it('the plan context is read before the lock: a held lock does not need a pool connection to be waited on', async () => {
+      const { biz } = await newBusiness(await makePlan('billing_growth', { max_suppliers: 50 }));
+      const prepared = await prepareLimitChecks(biz, [{ limitType: 'suppliers' }]);
+      const p = prepared.get('suppliers')!;
+      expect(p.resolved).not.toBeInstanceOf(Error);
+      expect((p.resolved as { maxLimit: number }).maxLimit).toBe(50);
     });
   });
 

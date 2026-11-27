@@ -37,6 +37,23 @@ jest.mock('next/headers', () => ({
   cookies: jest.fn(async () => ({ get: () => undefined })),
 }));
 
+// Forces a failure at a chosen step of the zero-rupee path (M10); the real functions run otherwise.
+const mockPlanFault = { extend: false, after: false };
+jest.mock('@/lib/subscription/apply-module-plan-change', () => {
+  const actual = jest.requireActual('@/lib/subscription/apply-module-plan-change');
+  return {
+    ...actual,
+    extendModuleSubscriptionForFreeMonths: (...a: unknown[]) => {
+      if (mockPlanFault.extend) throw new Error('forced: free months step failed');
+      return actual.extendModuleSubscriptionForFreeMonths(...a);
+    },
+    afterPlanChangeCommitted: (...a: unknown[]) => {
+      if (mockPlanFault.after) throw new Error('forced: after-commit step failed');
+      return actual.afterPlanChangeCommitted(...a);
+    },
+  };
+});
+
 import { NextRequest } from 'next/server';
 import { query, queryOne, closePool } from '@/lib/db';
 import { processPlatformRazorpayWebhook, recordBillingTransaction } from '@/lib/platform-billing';
@@ -234,6 +251,41 @@ run('coupons (kh_phase2_test)', () => {
       const tx2 = await pendingCheckout(biz2, 'billing_growth', 'three_year', full.id, p2.discountAmount);
       expect(await pay(biz2, tx2.id, 'billing_growth', 'three_year', tx2.total)).toMatchObject({ ok: true });
       expect(Number((await redemptions(full.id, biz2))[0].d)).toBe(await price('billing_growth', 'monthly'));
+    });
+  });
+
+  describe('M10: a later step failing on the zero-rupee path', () => {
+    const upgrade = (biz: string, p: Awaited<ReturnType<typeof resolveCheckoutPricing>>) =>
+      applyInstantPlanUpgradeWithCoupon({ businessId: biz, planId: 'billing_growth', planDisplayName: 'Growth', billingCycle: 'monthly', pricing: p, paymentMethod: 'coupon' });
+    afterEach(() => { mockPlanFault.extend = false; mockPlanFault.after = false; });
+
+    it('free months failing rolls the plan change back with it, releases the claim and fails the row', async () => {
+      const biz = await newBusiness();
+      const c = await makeCoupon({ type: 'free_months', value: 2 });
+      const p = await resolveCheckoutPricing({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly', couponCode: c.code });
+      expect(p.freeMonths).toBeGreaterThan(0);
+      mockPlanFault.extend = true;
+      await expect(upgrade(biz, p)).rejects.toThrow(/forced/);
+      // The plan was NOT applied (one transaction), so the coupon is rightly reusable and the row is failed.
+      expect(await queryOne(`SELECT 1 FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing' AND plan_id = 'billing_growth'`, [biz])).toBeNull();
+      expect(await redemptions(c.id, biz)).toHaveLength(0);
+      expect((await queryOne<any>(`SELECT status FROM billing_transactions WHERE business_id = $1 AND coupon_id = $2`, [biz, c.id]))!.status).toBe('failed');
+    });
+
+    it('a step after the commit failing keeps the claim, and the row is not marked failed for a plan that was applied', async () => {
+      const biz = await newBusiness();
+      const c = await makeCoupon({ type: 'free_months', value: 2 });
+      const p = await resolveCheckoutPricing({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly', couponCode: c.code });
+      mockPlanFault.after = true;
+      const errLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      await upgrade(biz, p);
+      errLog.mockRestore();
+      expect((await queryOne<any>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.plan_id).toBe('billing_growth');
+      expect(await redemptions(c.id, biz)).toHaveLength(1);
+      expect((await queryOne<any>(`SELECT status FROM billing_transactions WHERE business_id = $1 AND coupon_id = $2`, [biz, c.id]))!.status).toBe('completed');
+      // The free months were part of the same commit.
+      const sub = await queryOne<any>(`SELECT (end_date > CURRENT_DATE + 55)::boolean AS long FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]);
+      expect(sub!.long).toBe(true);
     });
   });
 

@@ -22,8 +22,11 @@ import {
   ensureFreePlanForLimit,
   evaluateLimit,
   getBusinessSubscription,
+  LIMIT_CHECK_RETRY_MESSAGE,
   type LimitCheckResult,
 } from '@/lib/subscription';
+import { resolveBusinessLimit, type ResolvedLimit } from '@/lib/subscription/resolve-limit';
+import { LIMIT_KEY_BY_TYPE } from '@/lib/subscription/limit-registry';
 import type { LimitCheckType } from '@/lib/subscription/limit-registry';
 
 export class LimitRefusedError extends Error {
@@ -50,30 +53,84 @@ export function limitLockKey(businessId: string, limitType: LimitCheckType): str
   return `limit:${businessId}:${limitType}`;
 }
 
+/** How long a create waits for another create's lock before it is refused with "try again". Tests lower it. */
+export const limitLockTimeout = { ms: 5000 };
+
+type PreparedLimit = { resolved: ResolvedLimit | Error; legacyLimits: Record<string, unknown> | null };
+
+/**
+ * Everything a limit check reads from the plan (free-plan safety net, the resolved cap, the legacy plan JSON),
+ * read BEFORE any lock is taken: none of it is what the lock protects, and it must not need a pool connection
+ * while the lock is held. A failure is kept and refuses that limit later (fails closed).
+ */
+export async function prepareLimitChecks(
+  businessId: string,
+  specs: LimitSpec[],
+): Promise<Map<LimitCheckType, PreparedLimit>> {
+  const prepared = new Map<LimitCheckType, PreparedLimit>();
+  for (const spec of specs) {
+    if (prepared.has(spec.limitType)) continue;
+    await ensureFreePlanForLimit(businessId, spec.limitType).catch((e) =>
+      console.error('[limit-lock] free plan safety net failed:', e),
+    );
+    let resolved: ResolvedLimit | Error;
+    try {
+      resolved = await resolveBusinessLimit(businessId, spec.limitType, LIMIT_KEY_BY_TYPE[spec.limitType]);
+    } catch (e) {
+      resolved = e instanceof Error ? e : new Error(String(e));
+    }
+    let legacyLimits: Record<string, unknown> | null = null;
+    try {
+      const sub = await getBusinessSubscription(businessId);
+      legacyLimits = (sub?.features?.limits as Record<string, unknown> | undefined) ?? null;
+    } catch {
+      legacyLimits = null;
+    }
+    prepared.set(spec.limitType, { resolved, legacyLimits });
+  }
+  return prepared;
+}
+
 /**
  * Take the (business, limit) locks on `client`'s open transaction and check each limit.
- * Throws LimitRefusedError for the first limit that does not pass.
+ * Throws LimitRefusedError for the first limit that does not pass, or (unavailable, "try again") when a lock
+ * is not free within `limitLockTimeout`. Pass `prepared` (from prepareLimitChecks, called before the
+ * transaction) so no pool connection is needed while a lock is held.
  */
 export async function lockAndCheckLimits(
   client: PoolClient,
   businessId: string,
   specs: LimitSpec[],
+  prepared?: Map<LimitCheckType, PreparedLimit>,
 ): Promise<void> {
-  // The free-plan safety net of checkLimit (an enabled product with no row) runs on its own connection first.
-  for (const spec of specs) {
-    await ensureFreePlanForLimit(businessId, spec.limitType).catch((e) =>
-      console.error('[limit-lock] free plan safety net failed:', e),
-    );
-  }
-
+  const prep = prepared ?? (await prepareLimitChecks(businessId, specs));
   const ordered = [...specs].sort((a, b) => a.limitType.localeCompare(b.limitType));
+
+  // Waiting for another create's lock is bounded; the setting is put back once the locks are held.
+  const previous = (await client.query(`SELECT current_setting('lock_timeout') AS v`)).rows[0]?.v as string;
+  await client.query(`SELECT set_config('lock_timeout', $1, true)`, [`${limitLockTimeout.ms}ms`]);
 
   // Take every lock before counting anything, in a fixed order.
   const locked: LimitSpec[] = [];
   for (const spec of ordered) {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [limitLockKey(businessId, spec.limitType)]);
+    try {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [limitLockKey(businessId, spec.limitType)]);
+    } catch (error) {
+      if ((error as { code?: string })?.code === '55P03') {
+        console.error(`[limit-lock] timed out waiting for the ${spec.limitType} lock of business ${businessId}`);
+        throw new LimitRefusedError(spec.limitType, {
+          allowed: false,
+          current: 0,
+          limit: 0,
+          message: LIMIT_CHECK_RETRY_MESSAGE,
+          unavailable: true,
+        });
+      }
+      throw error;
+    }
     locked.push(spec);
   }
+  await client.query(`SELECT set_config('lock_timeout', $1, true)`, [previous ?? '0']);
 
   const txQueryOne = async (sql: string, params?: unknown[]) => {
     const result = await client.query(sql, (params ?? []) as unknown[]);
@@ -85,16 +142,12 @@ export async function lockAndCheckLimits(
       typeof spec.adding === 'function' ? await spec.adding(client) : spec.adding ?? 1;
     if (adding <= 0) continue;
 
-    // Same plan row JSON the advisory check reads, for limit keys that have no registry entry.
-    let legacyLimits: Record<string, unknown> | null = null;
-    try {
-      const sub = await getBusinessSubscription(businessId);
-      legacyLimits = (sub?.features?.limits as Record<string, unknown> | undefined) ?? null;
-    } catch {
-      legacyLimits = null;
-    }
-
-    const check = await evaluateLimit(businessId, spec.limitType, txQueryOne, { adding, legacyLimits });
+    const p = prep.get(spec.limitType)!;
+    const check = await evaluateLimit(businessId, spec.limitType, txQueryOne, {
+      adding,
+      legacyLimits: p.legacyLimits,
+      resolved: p.resolved,
+    });
     if (!check.allowed) throw new LimitRefusedError(spec.limitType, check);
   }
 }
@@ -117,11 +170,13 @@ export async function withLimitedCreate<T>(
     return fn(opts.client);
   }
 
+  // Plan context first, on pool connections that are released before the transaction starts.
+  const prepared = await prepareLimitChecks(businessId, specs);
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
     try {
-      await lockAndCheckLimits(client, businessId, specs);
+      await lockAndCheckLimits(client, businessId, specs, prepared);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;

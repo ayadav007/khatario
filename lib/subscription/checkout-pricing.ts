@@ -87,7 +87,7 @@ export async function resolveCheckoutPricing(params: {
     couponCode = validation.coupon.code;
 
     if (validation.coupon.type === 'free_months') {
-      freeMonths = validation.coupon.value;
+      freeMonths = Number(validation.coupon.value);
       discountAmount = 0;
     } else if (validation.discount) {
       discountAmount = Math.round(validation.discount.amount * 100) / 100;
