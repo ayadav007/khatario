@@ -18,8 +18,13 @@ export async function GET(request: NextRequest) {
   if ((type !== 'delivery_challan' && type !== 'invoice') || !id) {
     return NextResponse.json({ error: 'source_type (delivery_challan or invoice) and source_id are required' }, { status: 400 });
   }
+  // The ship-to place is used only when all three parts are present.
+  const place = sp.get('ship_to_place')?.trim();
+  const pincode = sp.get('ship_to_pincode')?.trim();
+  const stateCode = sp.get('ship_to_state_code')?.trim();
+  const shipTo = place && pincode && stateCode ? { place, pincode, stateCode } : undefined;
   try {
-    const json = await ewayBulkJson(getPool(), auth.businessId, type, id, { distanceKm: Number(sp.get('distance_km') ?? NaN) });
+    const json = await ewayBulkJson(getPool(), auth.businessId, type, id, { distanceKm: Number(sp.get('distance_km') ?? NaN), shipTo });
     const doc = json.billLists[0]?.docNo || 'document';
     return new NextResponse(JSON.stringify(json, null, 2), {
       headers: {

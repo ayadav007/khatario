@@ -227,6 +227,8 @@ export default function PublicInvoiceViewPage() {
                 ewayNumber={invoice.eway_bill_number}
                 ewayDate={invoice.eway_bill_date}
                 onSaved={() => void load()}
+                goodsValue={grand}
+                isFinal={invoice.status === 'final'}
               />
             </div>
           ) : null}
@@ -295,6 +297,8 @@ export default function PublicInvoiceViewPage() {
                 ewayNumber={invoice.eway_bill_number}
                 ewayDate={invoice.eway_bill_date}
                 onSaved={() => void load()}
+                goodsValue={grand}
+                isFinal={invoice.status === 'final'}
               />
             </div>
           ) : null}

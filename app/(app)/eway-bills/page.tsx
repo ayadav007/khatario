@@ -8,6 +8,7 @@ import { Upload } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
+import { EwayBillActionDialog, type EwayActionKind } from '@/components/eway-bills/EwayBillActionDialogs';
 
 const STATUS: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -33,6 +34,7 @@ export default function EwayBillsPage() {
   const [csv, setCsv] = useState('');
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<{ bill: any; kind: EwayActionKind } | null>(null);
 
   async function load() {
     const res = await fetch('/api/eway-bills');
@@ -152,12 +154,13 @@ export default function EwayBillsPage() {
               <th className="px-3 py-2">Valid until</th>
               <th className="px-3 py-2 text-right">Value</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {bills.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
                   No e-way bills recorded yet.
                 </td>
               </tr>
@@ -186,11 +189,46 @@ export default function EwayBillsPage() {
                 <td className="px-3 py-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS[b.status] || ''}`}>{b.status}</span>
                 </td>
+                <td className="px-3 py-2">
+                  {b.generated_via !== 'manual' && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      {b.print_url && (
+                        <a className="text-primary-700 underline" href={b.print_url} target="_blank" rel="noopener noreferrer">
+                          Print
+                        </a>
+                      )}
+                      {b.can_cancel && (
+                        <button type="button" className="text-primary-700 underline" onClick={() => setAction({ bill: b, kind: 'cancel' })}>
+                          Cancel
+                        </button>
+                      )}
+                      {(b.status === 'active' || b.status === 'expired') && (
+                        <button type="button" className="text-primary-700 underline" onClick={() => setAction({ bill: b, kind: 'vehicle' })}>
+                          Change vehicle
+                        </button>
+                      )}
+                      {b.can_extend && (
+                        <button type="button" className="text-primary-700 underline" onClick={() => setAction({ bill: b, kind: 'extend' })}>
+                          Extend
+                        </button>
+                      )}
+                      {b.stored_status === 'active' && (
+                        <button type="button" className="text-primary-700 underline" onClick={() => setAction({ bill: b, kind: 'close' })}>
+                          Close
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
+
+      {action && (
+        <EwayBillActionDialog bill={action.bill} kind={action.kind} onDone={() => void load()} onClose={() => setAction(null)} />
+      )}
     </div>
   );
 }

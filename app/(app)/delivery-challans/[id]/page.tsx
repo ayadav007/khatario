@@ -12,6 +12,8 @@ import { canTransition, isChallanEditable } from '@/lib/delivery-challans/challa
 import { ChallanReturnPanel } from '@/components/delivery-challans/ChallanReturnPanel';
 import { toDateInputValue } from '@/lib/date-input';
 import { EwayBillPanel } from '@/components/eway-bills/EwayBillPanel';
+import { GenerateEwayBillDialog } from '@/components/eway-bills/GenerateEwayBillDialog';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 
 const PURPOSE_LABEL: Record<string, string> = {
   repair: 'repair',
@@ -36,10 +38,15 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
   const [busy, setBusy] = useState<string | null>(null);
   const [returnOpen, setReturnOpen] = useState(false);
   const [ewayOpen, setEwayOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const ewayAllowed = usePlanFeature('eway_bill');
   const status: string = challan.status || 'draft';
   const returnable = challan.challan_kind === 'returnable';
   const goodsOut = returnable && !!challan.stock_posted_at && !challan.closed_at;
   const fromTransfer = !!challan.stock_transfer_id;
+  // A challan is final once generated (sent or delivered). Generate is offered until it has an e-way bill.
+  const canGenerateEway = ewayAllowed && (status === 'sent' || status === 'delivered') && !challan.e_way_bill_number;
+  const goodsValue = Number(challan.grand_total) || 0;
 
   async function move(next: 'sent' | 'delivered' | 'cancelled') {
     if (next === 'cancelled' && !window.confirm('Cancel this delivery challan? This cannot be undone.')) return;
@@ -125,10 +132,33 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           E-way bill JSON
         </Button>
       )}
+      {canGenerateEway && (
+        <>
+          <Button size="sm" onClick={() => setGenerateOpen(true)} disabled={!!busy}>
+            <FileText className="w-4 h-4 mr-2" />
+            Generate e-way bill
+          </Button>
+          {goodsValue > 50000 && (
+            <p className="w-full text-xs text-amber-700">
+              Goods are worth more than ₹50,000, so an e-way bill is needed before they move.
+            </p>
+          )}
+        </>
+      )}
+      {generateOpen && (
+        <GenerateEwayBillDialog
+          sourceType="delivery_challan"
+          sourceId={challan.id}
+          goodsValue={goodsValue}
+          defaultVehicle={challan.vehicle_number}
+          onDone={reload}
+          onClose={() => setGenerateOpen(false)}
+        />
+      )}
       {status !== 'cancelled' && (
         <Button variant="secondary" size="sm" onClick={() => setEwayOpen(true)} disabled={!!busy}>
           <FileText className="w-4 h-4 mr-2" />
-          {challan.e_way_bill_number ? 'Add another e-way bill' : 'Record e-way bill'}
+          {challan.e_way_bill_number ? 'Add another e-way bill' : 'Generated it on the portal? Enter the number'}
         </Button>
       )}
       {!returnable && canTransition(status, 'delivered') && (

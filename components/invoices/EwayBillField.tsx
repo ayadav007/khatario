@@ -3,22 +3,35 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
+import { GenerateEwayBillDialog } from '@/components/eway-bills/GenerateEwayBillDialog';
 
 type Props = {
   invoiceId: string;
   initialNumber?: string | null;
   initialDate?: string | null;
   onSaved?: () => void;
+  /** Invoice total, for the generate dialog and the 50,000 rupee hint. */
+  goodsValue?: number;
+  /** Only a final invoice can have an e-way bill generated for it. */
+  isFinal?: boolean;
 };
 
-export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved }: Props) {
+export const EWAY_LIMIT_HINT = 'Goods are worth more than ₹50,000, so an e-way bill is needed before they move.';
+
+export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, goodsValue = 0, isFinal = false }: Props) {
   const ewayAllowed = usePlanFeature('eway_bill');
   const [number, setNumber] = useState(initialNumber || '');
   const [date, setDate] = useState(initialDate ? String(initialDate).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   if (!ewayAllowed) return null;
+
+  // A final invoice with no e-way bill yet is offered Generate; typing a number in by hand sits behind a link.
+  const canGenerate = isFinal && !initialNumber;
+  const showManual = !canGenerate || manualOpen;
 
   const save = async () => {
     setSaving(true);
@@ -51,6 +64,30 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved }
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-text-muted">E-way bill</p>
+      {canGenerate ? (
+        <>
+          {goodsValue > 50000 ? <p className="text-xs text-amber-700">{EWAY_LIMIT_HINT}</p> : null}
+          <Button type="button" variant="primary" className="w-full" onClick={() => setGenerateOpen(true)}>
+            Generate e-way bill
+          </Button>
+          {!manualOpen ? (
+            <button type="button" className="text-xs text-primary-700 underline" onClick={() => setManualOpen(true)}>
+              Generated it on the portal? Enter the number
+            </button>
+          ) : null}
+        </>
+      ) : null}
+      {generateOpen ? (
+        <GenerateEwayBillDialog
+          sourceType="invoice"
+          sourceId={invoiceId}
+          goodsValue={goodsValue}
+          onDone={() => onSaved?.()}
+          onClose={() => setGenerateOpen(false)}
+        />
+      ) : null}
+      {showManual ? (
+        <>
       <p className="text-xs text-text-secondary">
         Paste the 12-digit number from the GST portal. The bill can be saved without it. Print picks it up after you save.
       </p>
@@ -79,6 +116,8 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved }
       <Button type="button" variant="secondary" className="w-full" onClick={save} disabled={saving}>
         {saving ? 'Saving…' : 'Save e-way bill'}
       </Button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -88,11 +127,15 @@ export function InvoicePlanExtras({
   ewayNumber,
   ewayDate,
   onSaved,
+  goodsValue,
+  isFinal,
 }: {
   invoiceId: string;
   ewayNumber?: string | null;
   ewayDate?: string | null;
   onSaved?: () => void;
+  goodsValue?: number;
+  isFinal?: boolean;
 }) {
   const eway = usePlanFeature('eway_bill');
   const einvoice = usePlanFeature('e_invoice');
@@ -105,6 +148,8 @@ export function InvoicePlanExtras({
           initialNumber={ewayNumber}
           initialDate={ewayDate}
           onSaved={onSaved}
+          goodsValue={goodsValue}
+          isFinal={isFinal}
         />
       ) : null}
       <EInvoicePlanNote />
