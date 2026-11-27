@@ -2066,3 +2066,9 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Shipped:** `KHATARIO_COMPANY_FACTS.social.instagram` set, so the landing footer and Organization `sameAs` list Instagram and YouTube; company-facts test updated and passing. Not committed or deployed.
 - **Open:** display name, bio, website link, Business account switch and Facebook Page link to finish in the app (Accounts Center asks for the account password).
 
+
+## 2026-11-27: SEO daily run (Job 1)
+- **Asked:** scheduled task `khatario-daily-seo`: run the Search Console report, health-check the site, optimise at most 2 pages, update `docs/seo/STATE.md` and write the daily report.
+- **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 2 clicks, 43 impressions; the drop from 65 is the 28-day window losing 10-28 (27 `/guides` impressions), offset by 5 new impressions on 11-25 at average position 4.8 (4 on the home page near position 6, 1 on `/solution/inventory` at position 1). Health all green. The owner's two uncommitted 11-27 log entries above this one were left unstaged; only this entry was committed.
+- **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-27.{json,md}` and this entry. Nothing pushed or deployed.
+- **Open:** the writer job has saved no draft in 12 runs since 11-06 (today's Fri run not seen yet); no backlinks yet; owner to decide whether demo storefronts should be `noindex`.
