@@ -779,7 +779,8 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                 <option value="job_work">Job Work</option>
                 <option value="skd_ckd">SKD/CKD (Semi Knocked Down/Completely Knocked Down)</option>
                 <option value="recipient_not_known">Recipient not known</option>
-                <option value="line_sales">For own use</option>
+                <option value="own_use">For own use</option>
+                <option value="line_sales">Line sales</option>
                 <option value="exhibition">Exhibition or fairs</option>
                 <option value="others">Others</option>
               </select>

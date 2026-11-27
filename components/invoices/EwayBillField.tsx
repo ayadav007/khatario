@@ -90,6 +90,7 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, 
             void docBills.refresh();
             onSaved?.();
           }}
+          onNoAnswer={() => void docBills.refresh()}
           onClose={() => setGenerateOpen(false)}
         />
       ) : null}

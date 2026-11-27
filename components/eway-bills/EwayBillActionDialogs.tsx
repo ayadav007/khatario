@@ -136,10 +136,17 @@ export function EwayBillActionDialog({
     }
     if (!place.trim() || !stateCode)
       return "Enter the place and state the goods are in now";
-    if (mode === "road" && !vehicle.trim()) return "Enter the vehicle number";
+    // Goods in transit (extend only) are not on a vehicle; rail, air and ship travel on a transport document.
+    const road = mode === "road";
+    if (road && !vehicle.trim() && !(kind === "extend" && inTransit))
+      return "Enter the vehicle number";
+    if (!road && (!docNumber.trim() || !docDate))
+      return "Enter the transport document number and date";
+    const vehicleNumber = road ? vehicle.trim() || undefined : undefined;
+    const transportDoc = road
+      ? {}
+      : { transport_doc_number: docNumber.trim(), transport_doc_date: docDate };
     if (kind === "vehicle") {
-      if (mode !== "road" && (!docNumber.trim() || !docDate))
-        return "Enter the transport document number and date";
       return {
         action: "vehicle",
         from_place: place.trim(),
@@ -147,9 +154,8 @@ export function EwayBillActionDialog({
         reason_code: reasonCode as VehicleReason,
         reason: remarks.trim() || undefined,
         transport_mode: mode,
-        vehicle_number: vehicle.trim() || undefined,
-        transport_doc_number: docNumber.trim() || undefined,
-        transport_doc_date: docDate || undefined,
+        vehicle_number: vehicleNumber,
+        ...transportDoc,
       };
     }
     if (!/^\d{6}$/.test(pincode.trim())) return "Enter a 6-digit PIN code";
@@ -166,7 +172,8 @@ export function EwayBillActionDialog({
       remaining_km: Number(remainingKm),
       in_transit: (inTransit || null) as InTransit,
       transport_mode: mode,
-      vehicle_number: vehicle.trim() || undefined,
+      vehicle_number: vehicleNumber,
+      ...transportDoc,
     };
   }
 
@@ -320,16 +327,22 @@ export function EwayBillActionDialog({
                 ))}
               </select>
             </label>
-            <Input
-              label="Vehicle number"
-              value={vehicle}
-              placeholder="KA01AB1234"
-              onChange={(e) => setVehicle(e.target.value)}
-            />
+            {mode === "road" ? (
+              <Input
+                label={
+                  kind === "extend" && inTransit
+                    ? "Vehicle number (optional while in transit)"
+                    : "Vehicle number"
+                }
+                value={vehicle}
+                placeholder="KA01AB1234"
+                onChange={(e) => setVehicle(e.target.value)}
+              />
+            ) : null}
           </>
         ) : null}
 
-        {kind === "vehicle" && mode !== "road" ? (
+        {(kind === "vehicle" || kind === "extend") && mode !== "road" ? (
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Transport document number"

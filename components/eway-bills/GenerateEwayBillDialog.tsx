@@ -77,8 +77,13 @@ type Props = {
   defaultTransporterGstin?: string | null;
   defaultTransporterName?: string | null;
   onDone(bill: EwayBillView): void;
+  /** Called when the request got no readable answer, so the caller can reload the document's bills. */
+  onNoAnswer?(): void;
   onClose(): void;
 };
+
+const NO_ANSWER =
+  "No answer yet. Check the e-way bills page in a minute before trying again.";
 
 /** Generates an e-way bill through the connected provider and records it in the register. */
 export function GenerateEwayBillDialog({
@@ -89,6 +94,7 @@ export function GenerateEwayBillDialog({
   defaultTransporterGstin,
   defaultTransporterName,
   onDone,
+  onNoAnswer,
   onClose,
 }: Props) {
   const { business } = useAuth();
@@ -164,8 +170,14 @@ export function GenerateEwayBillDialog({
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (!res.ok && !data.error) {
+        // A gateway timeout or similar: the bill may still have been generated.
+        setServerError(NO_ANSWER);
+        onNoAnswer?.();
+        return;
+      }
       if (!res.ok) {
-        setServerError(data.error || "Could not generate the e-way bill");
+        setServerError(data.error);
         setServerCode(data.code || "");
         if (data.code === "SHIP_TO_NEEDED") setShowShipTo(true);
         return;
@@ -175,9 +187,9 @@ export function GenerateEwayBillDialog({
       onDone(bill);
       onClose();
     } catch {
-      setServerError(
-        "Could not reach the server. Check your connection and try again.",
-      );
+      // The request may have reached the server before the connection dropped.
+      setServerError(NO_ANSWER);
+      onNoAnswer?.();
     } finally {
       setSaving(false);
     }

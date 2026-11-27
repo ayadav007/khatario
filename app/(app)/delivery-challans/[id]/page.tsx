@@ -51,6 +51,32 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
   const canGenerateEway = eligible && docBills.canGenerate;
   const goodsValue = Number(challan.grand_total) || 0;
 
+  // Fetch the file so a refusal (for example a ship-to place that is needed) shows as a message, not a raw JSON page.
+  async function downloadEwayJson(km: string) {
+    try {
+      const res = await fetch(
+        `/api/eway-bills/export?source_type=delivery_challan&source_id=${challan.id}&distance_km=${encodeURIComponent(km)}`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Could not make the e-way bill JSON');
+        return;
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'ewaybill.json';
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Could not make the e-way bill JSON');
+    }
+  }
+
   async function move(next: 'sent' | 'delivered' | 'cancelled') {
     if (next === 'cancelled' && !window.confirm('Cancel this delivery challan? This cannot be undone.')) return;
     setBusy(next);
@@ -128,7 +154,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
           onClick={() => {
             const km = window.prompt('Distance to the destination, in km?');
             if (km === null || km.trim() === '') return;
-            window.location.href = `/api/eway-bills/export?source_type=delivery_challan&source_id=${challan.id}&distance_km=${encodeURIComponent(km.trim())}`;
+            void downloadEwayJson(km.trim());
           }}
         >
           <FileText className="w-4 h-4 mr-2" />
@@ -159,6 +185,7 @@ function ChallanStatusActions({ challan, reload }: { challan: any; reload: () =>
             void docBills.refresh();
             reload();
           }}
+          onNoAnswer={() => void docBills.refresh()}
           onClose={() => setGenerateOpen(false)}
         />
       )}
