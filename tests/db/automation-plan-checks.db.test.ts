@@ -77,6 +77,10 @@ import { sendCartReminder } from '@/lib/store/abandoned-carts';
 import { sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import { POST as stuckParcelsPOST } from '@/app/api/cron/stuck-parcels/route';
 import { NextRequest } from 'next/server';
+import { withWhatsAppSlot, WhatsAppSlotRefused } from '@/lib/whatsapp/send-slot';
+import { releaseCustomerBotReply, reserveCustomerBotReply, repliesToday } from '@/lib/whatsapp/customer-bot';
+import { reserveKhatarioReply, reserveTrialReply } from '@/lib/ai-agent/billing';
+import { KHATARIO_AI_TRIAL_REPLIES } from '@/lib/ai-agent/billing-constants';
 
 const run = enabled ? describe : describe.skip;
 
@@ -835,6 +839,162 @@ run('automation plan checks (kh_phase2_test)', () => {
           await processOwnerCommand(textJob(ok));
           expect(sendBusinessText).toHaveBeenCalledTimes(1);
         });
+      });
+    });
+  });
+
+
+  // ---------------------------------------------------------------------------------------------
+  // Round 3: places under the daily cap are reserved atomically, and bot replies count.
+  // ---------------------------------------------------------------------------------------------
+  describe('round 3: atomic reservation under the daily cap', () => {
+    const capOf = async (biz: string) => (await checkLimit(biz, 'whatsapp'));
+    const count = async (sqlAfterFrom: string, params: unknown[]) =>
+      Number((await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM ${sqlAfterFrom}`, params))!.n);
+    /** Leave exactly `left` messages under today's cap. */
+    async function leaveRoom(biz: string, left: number) {
+      const c = await capOf(biz);
+      for (let i = c.current; i < (c.limit as number) - left; i++) {
+        await query(`INSERT INTO whatsapp_messages (business_id, to_number, message_type, status) VALUES ($1, $2, 'text', 'sent')`, [biz, phone()]);
+      }
+      clearSubscriptionCache(biz);
+    }
+    const cloudJob = (biz: string, text = 'hello') => ({
+      businessId: biz, businessPhone: '919999999999', from: `91${phone()}`, messageId: `wamid-${randomUUID()}`,
+      messageType: 'text', text, profileName: 'Cust',
+    }) as never;
+    beforeEach(() => {
+      jest.mocked(sendWhatsAppMessage).mockReset().mockImplementation(async () => 'wa-id' as never);
+      jest.mocked(sendBusinessText).mockReset().mockImplementation(async () => ({ messageId: 'bt-1' }) as never);
+    });
+
+    it('two concurrent automatic notices at cap - 1: exactly one is sent', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      await leaveRoom(biz, 1);
+      jest.mocked(sendWhatsAppMessage).mockImplementation(async () => { await new Promise((r) => setTimeout(r, 150)); return 'x' as never; });
+      const ev = () => notifyBusinessEvent({ businessId: biz, eventKey: 'order_confirmed', to: `91${phone()}`, values: {}, fallbackText: 'hi' });
+      const results = await Promise.all([ev(), ev(), ev()]);
+      expect(results.filter((r) => r.via).length).toBe(1);
+      expect(results.filter((r) => r.skipped === 'daily_whatsapp_limit_reached').length).toBe(2);
+      expect(jest.mocked(sendWhatsAppMessage)).toHaveBeenCalledTimes(1);
+      const c = await capOf(biz);
+      expect(c.current).toBe(c.limit);
+    });
+
+    it('two concurrent bot replies at cap - 1: exactly one is sent', async () => {
+      const biz = await newBusiness('billing_growth', 'connect');
+      await addKeywordRule(biz);
+      await leaveRoom(biz, 1);
+      jest.mocked(sendBusinessText).mockImplementation(async () => { await new Promise((r) => setTimeout(r, 150)); return { messageId: 'b' } as never; });
+      await Promise.all([processCloudIncoming(cloudJob(biz)), processCloudIncoming(cloudJob(biz))]);
+      expect(sendBusinessText).toHaveBeenCalledTimes(1);
+    });
+
+    it('bot replies count toward the cap: the cap reached by bot replies alone stops the next reply', async () => {
+      const biz = await newBusiness('billing_growth', 'connect');
+      await addKeywordRule(biz);
+      await leaveRoom(biz, 3); // three places left; only bot replies use them
+      const before = (await capOf(biz)).current;
+      for (let i = 0; i < 3; i++) await processCloudIncoming(cloudJob(biz));
+      expect(sendBusinessText).toHaveBeenCalledTimes(3);
+      expect((await capOf(biz)).current).toBe(before + 3);
+      await processCloudIncoming(cloudJob(biz));
+      expect(sendBusinessText).toHaveBeenCalledTimes(3); // the fourth is not sent
+      expect((await capOf(biz)).current).toBe(before + 3); // and a reply skipped for the cap is not counted
+      expect((await skippedLog(biz))!.reason).toBe('automation_skipped:daily_whatsapp_limit_reached');
+    });
+
+    it('a Baileys bot reply is counted once (the sender does not write a second row)', async () => {
+      const biz = await newBusiness('billing_growth', 'connect');
+      await withWhatsAppSlot(biz, { to: `91${phone()}@s.whatsapp.net`, messageType: 'bot_reply' }, async () => {
+        // sendWhatsAppMessage is mocked here; the real one fills the slot instead of inserting a row.
+        return 'ok';
+      });
+      expect((await capOf(biz)).current).toBe(1);
+    });
+
+    it('a failed send does not use up the quota, and the failed attempt stays on record', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      jest.mocked(sendWhatsAppMessage).mockRejectedValueOnce(new Error('socket closed'));
+      const r = await notifyBusinessEvent({ businessId: biz, eventKey: 'order_confirmed', to: `91${phone()}`, values: {}, fallbackText: 'hi' });
+      expect(r.via).toBeNull();
+      expect((await capOf(biz)).current).toBe(0);
+      expect(await count(`whatsapp_messages WHERE business_id = $1 AND status = 'failed' AND sent_at IS NULL`, [biz])).toBe(1);
+      expect((await notifyBusinessEvent({ businessId: biz, eventKey: 'order_confirmed', to: `91${phone()}`, values: {}, fallbackText: 'hi' })).via).toBe('qr');
+      expect((await capOf(biz)).current).toBe(1);
+    });
+
+    it('a bot reply whose send throws gives its place back', async () => {
+      const biz = await newBusiness('billing_growth', 'connect');
+      await addKeywordRule(biz);
+      jest.mocked(sendBusinessText).mockRejectedValueOnce(new Error('meta down'));
+      await processCloudIncoming(cloudJob(biz));
+      expect((await capOf(biz)).current).toBe(0);
+    });
+
+    it('a campaign recipient is counted once, and a campaign stops (recipients stay pending) when the reserved place is refused', async () => {
+      const biz = await newBusiness('billing_growth', 'connect');
+      await leaveRoom(biz, 1);
+      const id = randomUUID();
+      await query(
+        `INSERT INTO whatsapp_campaigns (id, business_id, name, message_type, message_text, status, total_recipients, pending_count,
+            delay_between_messages, random_delay_jitter, batch_size, pause_between_batches, started_at)
+         VALUES ($1, $2, 'c', 'text', 'Hello', 'running', 2, 2, 1, 0, 20, 0, CURRENT_TIMESTAMP)`, [id, biz]);
+      for (let i = 0; i < 2; i++) await query(`INSERT INTO whatsapp_campaign_recipients (campaign_id, phone, name) VALUES ($1, $2, 'R')`, [id, phone()]);
+      const { processCampaign } = await import('@/lib/campaign-processor');
+      const r = await processCampaign(id);
+      expect(r.sent).toBe(1);
+      expect(jest.mocked(sendWhatsAppMessage)).toHaveBeenCalledTimes(1);
+      expect((await capOf(biz)).current).toBe((await capOf(biz)).limit);
+      expect(await count(`whatsapp_campaign_recipients WHERE campaign_id = $1 AND status = 'pending'`, [id])).toBe(1);
+    });
+
+    it('the slot refuses with WhatsAppSlotRefused at the cap and sends nothing', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      await fillQuota(biz);
+      const fn = jest.fn(async () => 'x');
+      await expect(withWhatsAppSlot(biz, { to: '9100000000', messageType: 'notice' }, fn)).rejects.toBeInstanceOf(WhatsAppSlotRefused);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    describe('AI replies', () => {
+      it('concurrent replies at the daily limit: exactly one takes the slot; a released slot is free again', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        const caps = { dailyLimit: 1, monthlyQuota: -1 };
+        const results = await Promise.all([1, 2, 3, 4].map(() => reserveCustomerBotReply(biz, phone(), caps)));
+        const ok = results.filter((r) => r.ok);
+        expect(ok).toHaveLength(1);
+        expect(await repliesToday(biz)).toBe(1);
+        await releaseCustomerBotReply(biz, (ok[0] as { messageId: string }).messageId);
+        expect(await repliesToday(biz)).toBe(0);
+        expect((await reserveCustomerBotReply(biz, phone(), caps)).ok).toBe(true);
+      });
+
+      it('concurrent trial replies at the last trial slot: exactly one; releasing gives it back', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await query(
+          `INSERT INTO assistant_settings (scope, settings) VALUES ($1, $2::jsonb)
+           ON CONFLICT (scope) DO UPDATE SET settings = EXCLUDED.settings`,
+          [`business:${biz}`, JSON.stringify({ khatarioAiTrialUsed: KHATARIO_AI_TRIAL_REPLIES - 1 })]);
+        const got = await Promise.all([reserveTrialReply(biz), reserveTrialReply(biz), reserveTrialReply(biz)]);
+        expect(got.filter(Boolean)).toHaveLength(1);
+        const used = async () => Number((await queryOne<{ u: string }>(`SELECT settings->>'khatarioAiTrialUsed' AS u FROM assistant_settings WHERE scope = $1`, [`business:${biz}`]))!.u);
+        expect(await used()).toBe(KHATARIO_AI_TRIAL_REPLIES);
+        const { releaseTrialReply } = await import('@/lib/ai-agent/billing');
+        await releaseTrialReply(biz);
+        expect(await used()).toBe(KHATARIO_AI_TRIAL_REPLIES - 1);
+      });
+
+      it('reserveKhatarioReply on a trial: two racing at the last slot, one wins', async () => {
+        process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || 'test-key';
+        const biz = await newBusiness('billing_starter', null);
+        await query(
+          `INSERT INTO assistant_settings (scope, settings) VALUES ($1, $2::jsonb)
+           ON CONFLICT (scope) DO UPDATE SET settings = EXCLUDED.settings`,
+          [`business:${biz}`, JSON.stringify({ khatarioAiTrialUsed: KHATARIO_AI_TRIAL_REPLIES - 1 })]);
+        const r = await Promise.all([reserveKhatarioReply(biz, phone(), { live: false }), reserveKhatarioReply(biz, phone(), { live: false })]);
+        expect(r.filter((x) => x.ok)).toHaveLength(1);
+        expect(r.filter((x) => !x.ok && x.reason === 'trial_exhausted')).toHaveLength(1);
       });
     });
   });

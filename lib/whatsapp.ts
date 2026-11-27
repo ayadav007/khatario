@@ -7,6 +7,7 @@ import {
 
 export { getTimestamp, getOriginalWaTimestampSecOrNull } from '@/lib/baileys-store-helpers';
 import { addWhatsAppMessageJob } from './queue';
+import { currentSlot } from './whatsapp/send-slot';
 import * as db from '@/lib/db';
 import pino from 'pino';
 // Hybrid Baileys - combines stable connection from standard Baileys with button support from baileys-pro
@@ -3279,13 +3280,21 @@ export async function sendWhatsAppMessage(
       : null;
 
   try {
-    await db.query(
-      `
-      INSERT INTO whatsapp_messages (business_id, to_number, message_type, message_text, media_url, status, baileys_message_id)
-      VALUES ($1, $2, 'manual', $3, $4, 'sent', $5)
-    `,
-      [businessId, to, outText, outMedia || null, baileysMessageId]
-    );
+    const reservedSlot = currentSlot();
+    if (reservedSlot) {
+      // An automatic send reserved its place under the daily cap before sending: that row is the log (one send, one row).
+      reservedSlot.providerId = baileysMessageId;
+      reservedSlot.text = outText;
+      reservedSlot.mediaUrl = outMedia || null;
+    } else {
+      await db.query(
+        `
+        INSERT INTO whatsapp_messages (business_id, to_number, message_type, message_text, media_url, status, baileys_message_id)
+        VALUES ($1, $2, 'manual', $3, $4, 'sent', $5)
+      `,
+        [businessId, to, outText, outMedia || null, baileysMessageId]
+      );
+    }
     
             if (baileysMessageId) {
               const conv = await db.queryOne<{ id: string }>(

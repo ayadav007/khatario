@@ -7,6 +7,7 @@ import { query, queryOne } from './db';
 import { sendWhatsAppMessage } from './whatsapp';
 import { checkLimit, getBusinessSubscription, hasWhatsAppBotAddon, isSubscriptionOperationalStatus } from './subscription';
 import { loadOutboundMedia } from '@/lib/http/outbound-media';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 
 interface Campaign {
   id: string;
@@ -232,14 +233,21 @@ export async function processCampaign(campaignId: string): Promise<{
         }
         
         
-        const messageResult = await sendWhatsAppMessage(
+        // The place under the daily WhatsApp cap is reserved atomically before sending (a second campaign or reply
+        // at cap - 1 cannot also send); a refused reservation leaves this recipient pending for a later run.
+        const messageResult = await withWhatsAppSlot(
           campaign.business_id,
-          recipient.phone,
-          messageText,
-          media, // Pass media here
-          campaign.message_type,
-          buttons?.length ? buttons : undefined,
-          campaign.footer // Pass footer for button messages
+          { to: recipient.phone, messageType: 'campaign', referenceType: 'campaign', referenceId: campaignId, text: messageText },
+          () =>
+            sendWhatsAppMessage(
+              campaign.business_id,
+              recipient.phone,
+              messageText,
+              media, // Pass media here
+              campaign.message_type,
+              buttons?.length ? buttons : undefined,
+              campaign.footer // Pass footer for button messages
+            ),
         );
 
         // Extract message ID - handle both string and object formats
@@ -296,6 +304,12 @@ export async function processCampaign(campaignId: string): Promise<{
         }
 
       } catch (error: any) {
+        if (error instanceof WhatsAppSlotRefused) {
+          // Cap reached while this batch ran: stop, leave this and the rest pending, the campaign stays running.
+          processed--;
+          errors.push(error.message);
+          break;
+        }
         console.error(`[Campaign Processor] Error sending to ${recipient.phone}:`, error);
         failed++;
         errors.push(`${recipient.phone}: ${error.message}`);

@@ -4,6 +4,7 @@ import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
 import { getRedisConnection } from '@/lib/queue/redis';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 import { sendWhatsAppMessage, getWhatsAppStatus } from '@/lib/whatsapp';
 
 /** Row shape for reminder delivery; callers pass a `todos` record (e.g. SELECT *). */
@@ -332,42 +333,22 @@ export async function trySendWhatsAppForTodo(
       })}`;
 
     try {
-      await sendWhatsAppMessage(
+      // Takes its place under the daily WhatsApp cap before sending; the reserved row is the log (failed sends give it back).
+      await withWhatsAppSlot(
         todo.business_id,
-        user.phone,
-        message,
-        undefined,
-        'text'
+        { to: user.phone, messageType: 'reminder', referenceType: 'todo', referenceId: todo.id, text: message },
+        () => sendWhatsAppMessage(todo.business_id, user.phone, message, undefined, 'text'),
       );
     } catch (sendError: any) {
+      if (sendError instanceof WhatsAppSlotRefused) {
+        reminderPipelineLog('service.whatsapp.skipped', { todoId: todo.id, reason: sendError.reason });
+        return;
+      }
       console.error(
         '[todoReminderService] WhatsApp send failed (non-critical):',
         sendError?.message || sendError
       );
       return;
-    }
-
-    try {
-      await query(
-        `INSERT INTO whatsapp_messages (
-          business_id, to_number, message_type, reference_type, 
-          reference_id, message_text, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          todo.business_id,
-          user.phone,
-          'reminder',
-          'todo',
-          todo.id,
-          message,
-          'sent',
-        ]
-      );
-    } catch (logError: any) {
-      console.error(
-        '[todoReminderService] WhatsApp log failed (non-critical):',
-        logError?.message || logError
-      );
     }
   } catch (e: any) {
     console.error(

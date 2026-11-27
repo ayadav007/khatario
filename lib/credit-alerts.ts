@@ -8,6 +8,7 @@
 import * as db from '@/lib/db';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 import { calculateCreditMetrics, calculateProjectedCreditMetrics, CreditMetrics } from '@/lib/credit-utils';
 
 /**
@@ -147,52 +148,34 @@ async function sendCreditAlert(
     
     message += `\n\nPlease review and take necessary action.`;
 
-    // Send to all recipients
+    // Send to all recipients. Each message takes its place under the daily WhatsApp cap before it is sent; the
+    // reserved row is the log (sent, or failed with the error, which gives the place back).
+    let delivered = 0;
     for (const recipient of recipients) {
       try {
-        await sendWhatsAppMessage(
+        await withWhatsAppSlot(
           businessId,
-          recipient.phone,
-          message
+          {
+            to: recipient.phone,
+            messageType: 'credit_alert',
+            referenceType: referenceType || entityType,
+            referenceId: referenceId || entityId,
+            text: message,
+          },
+          () => sendWhatsAppMessage(businessId, recipient.phone, message),
         );
-
-        // Log to whatsapp_messages table
-        await db.query(
-          `INSERT INTO whatsapp_messages (
-            business_id, to_number, message_type, reference_type, reference_id,
-            message_text, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, 'sent')`,
-          [
-            businessId,
-            recipient.phone,
-            'credit_alert',
-            referenceType || entityType,
-            referenceId || entityId,
-            message
-          ]
-        );
+        delivered++;
       } catch (error: any) {
+        if (error instanceof WhatsAppSlotRefused) {
+          console.warn(`[Credit Alerts] daily WhatsApp cap reached for business ${businessId}; remaining recipients skipped`);
+          break;
+        }
         console.error(`[Credit Alerts] Failed to send to ${recipient.phone}:`, error);
-        
-        // Log failure
-        await db.query(
-          `INSERT INTO whatsapp_messages (
-            business_id, to_number, message_type, reference_type, reference_id,
-            message_text, status, error_message
-          ) VALUES ($1, $2, $3, $4, $5, $6, 'failed', $7)`,
-          [
-            businessId,
-            recipient.phone,
-            'credit_alert',
-            referenceType || entityType,
-            referenceId || entityId,
-            message,
-            error.message || 'Unknown error'
-          ]
-        );
       }
     }
 
+    // Log the alert as sent only if someone got it; otherwise it alerts again once the plan or the cap allows.
+    if (delivered === 0) return;
     // Log alert sent
     await logAlertSent(businessId, entityType, entityId, threshold);
   } catch (error) {

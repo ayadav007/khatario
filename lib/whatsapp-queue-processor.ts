@@ -105,12 +105,25 @@ async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<voi
       }
 
       const jid = `${fromNumber}@s.whatsapp.net`;
-      const sent =
-        r.responseType === 'button' && r.buttons && r.buttons.length > 0
-          ? await sendWhatsAppMessage(job.businessId, jid, r.response, undefined, 'button', r.buttons, r.footer)
-          : await sendWhatsAppMessage(job.businessId, jid, r.response);
+      const { withWhatsAppSlot } = await import('./whatsapp/send-slot');
+      const sent = await withWhatsAppSlot(
+        job.businessId,
+        { to: jid, messageType: 'bot_reply', text: r.response },
+        async () =>
+          r.responseType === 'button' && r.buttons && r.buttons.length > 0
+            ? await sendWhatsAppMessage(job.businessId, jid, r.response!, undefined, 'button', r.buttons, r.footer)
+            : await sendWhatsAppMessage(job.businessId, jid, r.response!),
+      );
       if (typeof sent === 'string') await markBotMessage(job.businessId, sent);
     } catch (err) {
+      const { WhatsAppSlotRefused } = await import('./whatsapp/send-slot');
+      if (err instanceof WhatsAppSlotRefused) {
+        // Cap used up between the check and the send: no reply; the chat goes to a person's queue.
+        const { recordSkippedAutomation } = await import('./whatsapp/automation-guard');
+        await recordSkippedAutomation({ businessId: job.businessId, conversationId: out.conversationUuid ?? null, messageId: job.messageId, reason: err.reason });
+        await queueIfUnanswered(job.businessId, out.conversationUuid, { replied: false, handled: false });
+        return;
+      }
       console.error('[BullMQ] bot reply after incoming failed', err);
     }
   }

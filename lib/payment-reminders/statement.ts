@@ -24,6 +24,7 @@ import { businessTransport } from '@/lib/whatsapp/business-transport';
 import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 import { eventTemplateFailureMessage, sendEventTemplate } from '@/lib/whatsapp/tenant-send';
+import { WhatsAppSlotRefused, currentSlot, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 import type { ReminderSource } from '@/lib/reminder-message-processor';
 
 /** Unpaid bills a reminder may chase. Same rule as single-invoice reminders. */
@@ -271,53 +272,87 @@ export async function sendStatementReminder(input: {
   let loggedText = text;
   let error: string | null = null;
   let pdf: Buffer | undefined;
-  try {
-    const transport = await businessTransport(businessId);
-    if (transport === 'cloud') {
-      const resolved = await resolveEventTemplate(businessId, 'payment_statement_reminder');
-      if (!resolved) {
-        throw new Error(eventTemplateFailureMessage({ sent: false, reason: 'no_template' }, 'the combined payment reminder'));
-      }
-      if (resolved.template.header_format === 'document') {
+  // A scheduled message takes its place under the daily WhatsApp cap before it is sent. That reserved row is the log
+  // row of the first chased bill (same columns the duplicate check reads); the other bills get their rows below.
+  const slotBillId = chased[0];
+  let usedSlot = false;
+  const runSend = async () => {
+      const transport = await businessTransport(businessId);
+      if (transport === 'cloud') {
+        const resolved = await resolveEventTemplate(businessId, 'payment_statement_reminder');
+        if (!resolved) {
+          throw new Error(eventTemplateFailureMessage({ sent: false, reason: 'no_template' }, 'the combined payment reminder'));
+        }
+        if (resolved.template.header_format === 'document') {
+          pdf = await generateCustomerStatementPdf({ businessId, customerId, dues, link });
+        }
+        const res = await sendEventTemplate({
+          businessId,
+          eventKey: 'payment_statement_reminder',
+          to,
+          values: {
+            customer_name: customer.name || 'Customer',
+            business_name: customer.business_name,
+            bills_count: String(dues.bills.length),
+            amount_due: money(dues.toPay),
+            overdue_amount: money(dues.overdue),
+            bills_link: link,
+          },
+          document: pdf ? { buffer: pdf, filename } : undefined,
+        });
+        if (!res.sent) throw new Error(eventTemplateFailureMessage(res, 'the combined payment reminder'));
+        providerMessageId = res.messageId;
+        loggedText = `[Meta template ${res.template}] ${text}`;
+      } else {
         pdf = await generateCustomerStatementPdf({ businessId, customerId, dues, link });
+        const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
+        const sent = await sendWhatsAppMessage(businessId, to, text, pdf, 'text', undefined, undefined, {
+          mimeType: 'application/pdf',
+          fileName: filename,
+        });
+        providerMessageId = typeof sent === 'string' ? sent : null;
       }
-      const res = await sendEventTemplate({
+    const slot = currentSlot();
+    if (slot) {
+      slot.text = loggedText;
+      slot.mediaUrl = pdf ? 'blob:pdf' : null;
+      slot.providerId = providerMessageId;
+    }
+  };
+  try {
+    if (input.scheduled) {
+      usedSlot = true;
+      await withWhatsAppSlot(
         businessId,
-        eventKey: 'payment_statement_reminder',
-        to,
-        values: {
-          customer_name: customer.name || 'Customer',
-          business_name: customer.business_name,
-          bills_count: String(dues.bills.length),
-          amount_due: money(dues.toPay),
-          overdue_amount: money(dues.overdue),
-          bills_link: link,
+        {
+          to: customer.phone ?? to,
+          messageType: 'reminder',
+          referenceType: 'invoice',
+          referenceId: slotBillId,
+          text,
+          reminderSource: sourceOf.get(slotBillId) ?? 'auto_overdue',
+          amountDue: dues.bills.find((b) => b.id === slotBillId)?.balance ?? null,
+          batchId,
         },
-        document: pdf ? { buffer: pdf, filename } : undefined,
-      });
-      if (!res.sent) throw new Error(eventTemplateFailureMessage(res, 'the combined payment reminder'));
-      providerMessageId = res.messageId;
-      loggedText = `[Meta template ${res.template}] ${text}`;
+        runSend,
+      );
     } else {
-      pdf = await generateCustomerStatementPdf({ businessId, customerId, dues, link });
-      const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
-      const sent = await sendWhatsAppMessage(businessId, to, text, pdf, 'text', undefined, undefined, {
-        mimeType: 'application/pdf',
-        fileName: filename,
-      });
-      providerMessageId = typeof sent === 'string' ? sent : null;
+      await runSend();
     }
   } catch (err) {
+    if (err instanceof WhatsAppSlotRefused) return { outcome: 'skipped', reason: 'limit_reached' };
     error = err instanceof Error ? err.message : String(err);
     console.error('[statement reminder] send failed:', error);
   }
 
   const amountById = new Map(dues.bills.map((b) => [b.id, b.balance]));
   for (const invoiceId of error ? chased : logIds) {
+    if (usedSlot && invoiceId === slotBillId) continue; // its row is the reserved one
     await query(
       `INSERT INTO whatsapp_messages (business_id, to_number, message_type, reference_type, reference_id, message_text,
-          media_url, status, error_message, baileys_message_id, reminder_source, amount_due, batch_id)
-       VALUES ($1, $2, 'reminder', 'invoice', $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          media_url, status, error_message, baileys_message_id, reminder_source, amount_due, batch_id, sent_at)
+       VALUES ($1, $2, 'reminder', 'invoice', $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               CASE WHEN $12::boolean AND $6 = 'failed' THEN NULL ELSE CURRENT_TIMESTAMP END)`,
       [
         businessId,
         customer.phone,
@@ -331,6 +366,8 @@ export async function sendStatementReminder(input: {
         sourceOf.get(invoiceId) ?? (manual ? 'manual' : 'auto_overdue'),
         amountById.get(invoiceId) ?? null,
         batchId,
+        // A failed automatic send does not use up the daily cap (the counter only counts rows with a send time).
+        usedSlot,
       ],
     );
   }

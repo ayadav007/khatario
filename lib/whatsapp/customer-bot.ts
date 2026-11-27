@@ -209,7 +209,7 @@ export async function customerBotAllowed(businessId: string): Promise<boolean> {
   }
 }
 
-export type ReplyReservation = { ok: true } | { ok: false; reason: 'daily_cap' | 'monthly_quota' | 'unavailable' };
+export type ReplyReservation = { ok: true; messageId: string } | { ok: false; reason: 'daily_cap' | 'monthly_quota' | 'unavailable' };
 
 /**
  * Count and record one customer-bot reply as a single step per business (SUB-25): takes
@@ -242,14 +242,15 @@ export async function reserveCustomerBotReply(
         return { ok: false, reason: 'monthly_quota' };
       }
     }
+    const messageId = `bot:${randomUUID()}`;
     await client.query(
       `INSERT INTO whatsapp_inbound_events (provider, business_id, message_id, sender_phone, direction, handled_as)
        VALUES ($1, $2, $3, $4, 'out', 'customer_bot')
        ON CONFLICT DO NOTHING`,
-      [provider, businessId, `bot:${randomUUID()}`, customerPhone.replace(/\D/g, '')],
+      [provider, businessId, messageId, customerPhone.replace(/\D/g, '')],
     );
     await client.query('COMMIT');
-    return { ok: true };
+    return { ok: true, messageId };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     console.error('[customer-bot] could not reserve a reply slot:', err);
@@ -257,6 +258,18 @@ export async function reserveCustomerBotReply(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Gives a reserved reply slot back when no reply was produced (the model failed or returned nothing). The event row
+ * stays as the record but is relabelled `customer_bot_failed`, which the daily and monthly counts do not include.
+ */
+export async function releaseCustomerBotReply(businessId: string, messageId: string): Promise<void> {
+  await query(
+    `UPDATE whatsapp_inbound_events SET handled_as = 'customer_bot_failed'
+      WHERE business_id = $1 AND message_id = $2 AND handled_as = 'customer_bot'`,
+    [businessId, messageId],
+  ).catch((err) => console.error('[customer-bot] could not release a reply slot:', err instanceof Error ? err.message : err));
 }
 
 export async function recordCustomerBotReply(businessId: string, customerPhone: string): Promise<void> {

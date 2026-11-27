@@ -3,6 +3,7 @@ import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { sendEmailReminder } from '@/lib/email-reminder';
 import { checkLimit, hasFeature } from '@/lib/subscription';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 
 export type PaymentReminderKind = 'payment_due' | 'overdue';
 
@@ -128,7 +129,20 @@ export async function deliverPaymentReminder(job: PaymentReminderJobData): Promi
   const limit = await checkLimit(businessId, 'whatsapp');
   if (!limit.allowed) return { outcome: 'skipped', reason: 'limit_reached' };
 
-  const result = await sendReminderMessage(invoiceId, businessId, messageTemplate, includePdf, source);
+  // The place under the daily cap is reserved atomically before sending (two runs at cap - 1 cannot both send);
+  // the reserved row is the reminder's log row, and a failed send gives the place back.
+  let result: { success: boolean; error?: string };
+  try {
+    result = await withWhatsAppSlot(
+      businessId,
+      { to: 'pending', messageType: 'reminder', referenceType: 'invoice', referenceId: invoiceId, reminderSource: source, text: messageTemplate },
+      () => sendReminderMessage(invoiceId, businessId, messageTemplate, includePdf, source),
+      { delivered: (r) => r.success },
+    );
+  } catch (err) {
+    if (err instanceof WhatsAppSlotRefused) return { outcome: 'skipped', reason: 'limit_reached' };
+    throw err;
+  }
 
   if (result.success) {
     try {

@@ -5,15 +5,17 @@ import { resolveAgentProvider, ChatMessage } from './ai-provider-factory';
 import { ProductDataService } from './product-data-service';
 import {
   customerBotAllowed,
+  dailyLimit,
   orderStatusContext,
-  recordCustomerBotReply,
+  releaseCustomerBotReply,
+  reserveCustomerBotReply,
   shopKnowledgeContext,
 } from '@/lib/whatsapp/customer-bot';
 import { formatMemoryBlock, type AgentMemory } from '@/lib/ai-agent/memory';
 import { buildAgentPrompt, type AgentCompanyInfo } from '@/lib/ai-agent/prompt';
 import { matchFaqs } from '@/lib/ai-agent/knowledge';
 import { loadAgentSettings } from '@/lib/ai-agent/settings';
-import { notifyQuotaExhaustedOnce, recordTrialReply } from '@/lib/ai-agent/billing';
+import { notifyQuotaExhaustedOnce, reserveKhatarioReply } from '@/lib/ai-agent/billing';
 import type { AgentSettings } from '@/lib/ai-agent/types';
 
 export interface SalesAgentRequest {
@@ -97,6 +99,35 @@ export class SalesAgentChatbot {
       return { content: null, failure: resolved.reason, sources: [] };
     }
 
+    // Take this reply's slot atomically before the model is called (the check above is only a cheap early exit):
+    // the daily cap and monthly quota are counted and recorded under one per-business lock, a trial reply takes
+    // one trial slot. `releases` gives every slot back when no reply is produced.
+    const releases: Array<() => Promise<void>> = [];
+    const releaseAll = async () => {
+      for (const r of releases.splice(0)) await r();
+    };
+    const phone = request.customerPhone ?? '';
+    if (resolved.via === 'khatario_addon' || resolved.via === 'khatario_trial') {
+      if (resolved.via === 'khatario_trial' || !request.test) {
+        const r = await reserveKhatarioReply(businessId, phone, { live: !!request.live && !request.test });
+        if (!r.ok) {
+          if (r.reason === 'quota_exhausted') await notifyQuotaExhaustedOnce(businessId);
+          // 'not_configured' from the reservation means the daily cap was used up by a concurrent reply.
+          return { content: null, failure: r.reason === 'not_configured' ? 'daily_limit' : r.reason, sources: [] };
+        }
+        releases.push(r.release);
+      }
+    }
+    if (!request.test && resolved.via !== 'khatario_addon') {
+      // Own key, or a trial reply: the daily cap still applies (the add-on reservation above already took it).
+      const r = await reserveCustomerBotReply(businessId, phone, { dailyLimit: await dailyLimit(businessId), monthlyQuota: -1 });
+      if (!r.ok) {
+        await releaseAll();
+        return { content: null, failure: 'daily_limit', sources: [] };
+      }
+      releases.push(() => releaseCustomerBotReply(businessId, r.messageId));
+    }
+
     try {
       const settings = request.settingsOverride ?? (await loadAgentSettings(businessId));
       const sources: string[] = [];
@@ -159,12 +190,10 @@ export class SalesAgentChatbot {
 
       const response = await resolved.provider.chat(messages);
       const content = response?.content?.trim() ? response.content : null;
-      if (content) {
-        if (resolved.via === 'khatario_trial') await recordTrialReply(businessId);
-        if (!request.test) await recordCustomerBotReply(businessId, request.customerPhone ?? '');
-      }
+      if (!content) await releaseAll();
       return { content, failure: content ? undefined : 'empty', via: resolved.via, sources: [...new Set(sources)] };
     } catch (error) {
+      await releaseAll();
       console.error('[Sales Agent] Sales Agent Chatbot Error:', {
         message: error instanceof Error ? error.message : String(error),
         businessId,

@@ -7,6 +7,7 @@ import { eventTemplateFailureMessage, sendEventTemplate } from '@/lib/whatsapp/t
 import { invoiceEventValues, reminderEventKey } from '@/lib/whatsapp/invoice-event-values';
 import { businessTransport } from '@/lib/whatsapp/business-transport';
 import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
+import { currentSlot } from '@/lib/whatsapp/send-slot';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 
 /** Placeholders that put the bill's view-and-pay link into a reminder. */
@@ -199,42 +200,16 @@ export async function sendReminderMessage(
       providerMessageId = typeof sendResult === 'string' ? sendResult : null;
     }
 
-    // Log to whatsapp_messages table
-    await db.query(
-      `INSERT INTO whatsapp_messages (
-        business_id, 
-        to_number, 
-        message_type, 
-        reference_type, 
-        reference_id, 
-        message_text, 
-        media_url, 
-        status,
-        baileys_message_id,
-        reminder_source,
-        amount_due
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        businessId,
-        invoice.customer_phone,
-        'reminder',
-        'invoice',
-        invoiceId,
-        loggedText,
-        pdfBuffer ? 'blob:pdf' : null,
-        'sent',
-        providerMessageId,
-        reminderSource,
-        amountDue
-      ]
-    );
-
-    return { success: true };
-  } catch (error: any) {
-    console.error('Error sending reminder message:', error);
-    
-    // Log failure
-    try {
+    // Log to whatsapp_messages table. A scheduled reminder already has its reserved row (taken under the daily
+    // cap before sending): fill that in instead of writing a second one.
+    const slot = currentSlot();
+    if (slot) {
+      slot.to = invoice.customer_phone;
+      slot.text = loggedText;
+      slot.mediaUrl = pdfBuffer ? 'blob:pdf' : null;
+      slot.providerId = providerMessageId;
+      slot.amountDue = amountDue;
+    } else {
       await db.query(
         `INSERT INTO whatsapp_messages (
           business_id, 
@@ -243,24 +218,67 @@ export async function sendReminderMessage(
           reference_type, 
           reference_id, 
           message_text, 
-          status, 
-          error_message,
-          reminder_source
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          media_url, 
+          status,
+          baileys_message_id,
+          reminder_source,
+          amount_due
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           businessId,
-          logToNumber,
+          invoice.customer_phone,
           'reminder',
           'invoice',
           invoiceId,
-          processedMessage ?? messageTemplate,
-          'failed',
-          error.message || 'Unknown error',
-          reminderSource
+          loggedText,
+          pdfBuffer ? 'blob:pdf' : null,
+          'sent',
+          providerMessageId,
+          reminderSource,
+          amountDue
         ]
       );
-    } catch (logError) {
-      console.error('Failed to log error:', logError);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error sending reminder message:', error);
+    
+    // Log failure (a scheduled reminder's reserved row is marked failed instead, which releases its place under the cap)
+    const failSlot = currentSlot();
+    if (failSlot) {
+      failSlot.to = logToNumber;
+      failSlot.text = processedMessage ?? messageTemplate;
+      failSlot.error = error.message || 'Unknown error';
+    } else {
+      try {
+        await db.query(
+          `INSERT INTO whatsapp_messages (
+            business_id, 
+            to_number, 
+            message_type, 
+            reference_type, 
+            reference_id, 
+            message_text, 
+            status, 
+            error_message,
+            reminder_source
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            businessId,
+            logToNumber,
+            'reminder',
+            'invoice',
+            invoiceId,
+            processedMessage ?? messageTemplate,
+            'failed',
+            error.message || 'Unknown error',
+            reminderSource
+          ]
+        );
+      } catch (logError) {
+        console.error('Failed to log error:', logError);
+      }
     }
 
     return { success: false, error: error.message || 'Failed to send reminder' };

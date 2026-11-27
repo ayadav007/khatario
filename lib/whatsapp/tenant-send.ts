@@ -8,6 +8,7 @@ import { toE164Digits } from '@/lib/platform-whatsapp-send';
 import { enqueueCustomerPush } from '@/lib/push/customer-push';
 import type { TenantWaEventKey, TenantWaFieldKey } from '@/lib/whatsapp/tenant-events';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from '@/lib/whatsapp/send-slot';
 import { automationForEvent, checkAutomationAllowed, type AutomationSkipReason } from '@/lib/whatsapp/automation-guard';
 
 export type EventValues = Partial<Record<TenantWaFieldKey, string | number | null | undefined>>;
@@ -103,6 +104,8 @@ export async function notifyBusinessEvent(input: {
    * now"), or when the caller already ran the same check.
    */
   automatic?: boolean;
+  /** How the reserved `whatsapp_messages` row is labelled (default: message type 'notice', reference = the event key). */
+  record?: { messageType?: string; referenceType?: string; referenceId?: string | null };
 }): Promise<{ via: 'cloud' | 'qr' | null; skipped?: AutomationSkipReason }> {
   // Customer-facing events also reach the customer's phone app when they registered a device for
   // this shop (lib/push/customer-push.ts decides which events qualify). Never throws.
@@ -112,23 +115,45 @@ export async function notifyBusinessEvent(input: {
     eventKey: input.eventKey,
     body: input.fallbackText,
   });
-  if (input.automatic !== false) {
-    const allowed = await checkAutomationAllowed(input.businessId, automationForEvent(input.eventKey));
-    if (!allowed.allowed) {
-      console.warn(`[wa event] ${input.eventKey} skipped for business ${input.businessId}: ${allowed.reason}`);
-      return { via: null, skipped: allowed.reason };
+  const deliver = async (): Promise<{ via: 'cloud' | 'qr' | null }> => {
+    const res = await sendEventTemplate(input);
+    if (res.sent) return { via: 'cloud' };
+    const to = toE164Digits(input.to);
+    if (!to) return { via: null };
+    try {
+      const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
+      await sendWhatsAppMessage(input.businessId, to, input.fallbackText, undefined, 'text');
+      return { via: 'qr' };
+    } catch (err) {
+      console.error(`[wa event] ${input.eventKey} not delivered for business ${input.businessId}:`, errMessage(err));
+      return { via: null };
     }
+  };
+  if (input.automatic === false) return deliver();
+  const allowed = await checkAutomationAllowed(input.businessId, automationForEvent(input.eventKey));
+  if (!allowed.allowed) {
+    console.warn(`[wa event] ${input.eventKey} skipped for business ${input.businessId}: ${allowed.reason}`);
+    return { via: null, skipped: allowed.reason };
   }
-  const res = await sendEventTemplate(input);
-  if (res.sent) return { via: 'cloud' };
-  const to = toE164Digits(input.to);
-  if (!to) return { via: null };
   try {
-    const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
-    await sendWhatsAppMessage(input.businessId, to, input.fallbackText, undefined, 'text');
-    return { via: 'qr' };
+    // The place under the daily cap is reserved atomically before sending; an undelivered message gives it back.
+    return await withWhatsAppSlot(
+      input.businessId,
+      {
+        to: input.to,
+        messageType: input.record?.messageType ?? 'notice',
+        referenceType: input.record?.referenceType ?? input.eventKey,
+        referenceId: input.record?.referenceId ?? null,
+        text: input.fallbackText,
+      },
+      deliver,
+      { delivered: (r) => !!r.via },
+    );
   } catch (err) {
-    console.error(`[wa event] ${input.eventKey} not delivered for business ${input.businessId}:`, errMessage(err));
-    return { via: null };
+    if (err instanceof WhatsAppSlotRefused) {
+      console.warn(`[wa event] ${input.eventKey} skipped for business ${input.businessId}: ${err.reason}`);
+      return { via: null, skipped: err.reason };
+    }
+    throw err;
   }
 }

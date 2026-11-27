@@ -11,6 +11,7 @@ import {
   type TemplateStatusUpdate,
 } from '@/lib/meta-whatsapp';
 import { businessTransport, sendBusinessTemplate, sendBusinessText, type BusinessTransport } from './business-transport';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from './send-slot';
 
 export const SUMMARY_TEMPLATE_NAME = 'khatario_daily_summary';
 export const SUMMARY_TEMPLATE_LANGUAGE = 'en';
@@ -149,14 +150,27 @@ export async function sendOwnerSummary(businessId: string, opts: { force?: boole
   }
   try {
     const summary = await buildOwnerSummary(businessId, link.user_id, date);
-    if (delivery === 'text') {
-      await sendBusinessText(businessId, link.linked_phone, summary.text);
-    } else {
-      await sendBusinessTemplate(businessId, link.linked_phone, {
-        name: SUMMARY_TEMPLATE_NAME,
-        language: SUMMARY_TEMPLATE_LANGUAGE,
-        components: [{ type: 'body', parameters: summaryTemplateVars(summary.figures).map((text) => ({ type: 'text', text })) }],
-      });
+    const sendIt = async () => {
+      if (delivery === 'text') {
+        await sendBusinessText(businessId, link.linked_phone!, summary.text);
+      } else {
+        await sendBusinessTemplate(businessId, link.linked_phone!, {
+          name: SUMMARY_TEMPLATE_NAME,
+          language: SUMMARY_TEMPLATE_LANGUAGE,
+          components: [{ type: 'body', parameters: summaryTemplateVars(summary.figures).map((text) => ({ type: 'text', text })) }],
+        });
+      }
+    };
+    if (opts.force) await sendIt();
+    else {
+      // The place under the daily WhatsApp cap is taken before sending; a refusal leaves the day unmarked.
+      try {
+        await withWhatsAppSlot(businessId, { to: link.linked_phone, messageType: 'owner_summary', text: summary.text }, sendIt);
+      } catch (err) {
+        if (!(err instanceof WhatsAppSlotRefused)) throw err;
+        await mark(`plan:${err.reason}`);
+        return { sent: false, reason: 'plan' };
+      }
     }
     if (!opts.force) await mark(null);
     return { sent: true, delivery };

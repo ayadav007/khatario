@@ -1,5 +1,5 @@
 import { resolveAgentProvider } from '@/lib/services/ai-provider-factory';
-import { recordTrialReply } from './billing';
+import { releaseTrialReply, reserveTrialReply } from './billing';
 
 export class HelperAiError extends Error {
   constructor(message: string, public status = 400) {
@@ -22,12 +22,21 @@ export async function helperCompletion(businessId: string, system: string, user:
   if (!resolved.provider) {
     throw new HelperAiError(REASON_MESSAGE[resolved.reason] ?? 'AI is not available right now.', 402);
   }
-  const res = await resolved.provider.chat([
-    { role: 'system', content: system },
-    { role: 'user', content: user },
-  ]);
-  if (resolved.via === 'khatario_trial') await recordTrialReply(businessId);
-  return res.content?.trim() ?? '';
+  // A trial call takes its trial slot atomically before the model is called, and gives it back if the call fails.
+  const trial = resolved.via === 'khatario_trial';
+  if (trial && !(await reserveTrialReply(businessId))) {
+    throw new HelperAiError(REASON_MESSAGE.trial_exhausted, 402);
+  }
+  try {
+    const res = await resolved.provider.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ]);
+    return res.content?.trim() ?? '';
+  } catch (err) {
+    if (trial) await releaseTrialReply(businessId);
+    throw err;
+  }
 }
 
 /** Pull the first JSON array out of a model reply. */

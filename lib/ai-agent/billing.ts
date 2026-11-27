@@ -3,6 +3,7 @@ import {
   dailyLimit,
   repliesThisMonth,
   repliesToday,
+  releaseCustomerBotReply,
   reserveCustomerBotReply,
 } from '@/lib/whatsapp/customer-bot';
 import {
@@ -127,22 +128,68 @@ async function repliesThisMonthStrict(businessId: string): Promise<number> {
 }
 
 /**
- * Take one reply slot on Khatario's key and record it, atomically (SUB-25): `khatarioAccess` plus the
- * monthly quota and daily cap counted under one per-business lock (`reserveCustomerBotReply`). Call it
- * before generating the reply, in place of `khatarioAccess` + `recordCustomerBotReply`. Trial replies
- * (Test mode) are not recorded here; they use `recordTrialReply`.
+ * Atomically take one trial reply (Test mode and the test chat): the counter only moves while it is below the
+ * trial size, in one statement, so two replies at the last trial slot cannot both be taken.
+ */
+export async function reserveTrialReply(businessId: string): Promise<boolean> {
+  try {
+    const row = await queryOne<{ used: number }>(
+      `INSERT INTO assistant_settings (scope, settings, updated_at)
+       VALUES ($1, '{"khatarioAiTrialUsed": 1}'::jsonb, NOW())
+       ON CONFLICT (scope) DO UPDATE SET
+         settings = jsonb_set(
+           assistant_settings.settings,
+           '{khatarioAiTrialUsed}',
+           to_jsonb(COALESCE((assistant_settings.settings->>'khatarioAiTrialUsed')::int, 0) + 1)
+         ),
+         updated_at = NOW()
+       WHERE COALESCE((assistant_settings.settings->>'khatarioAiTrialUsed')::int, 0) < $2
+       RETURNING (settings->>'khatarioAiTrialUsed')::int AS used`,
+      [`business:${businessId}`, KHATARIO_AI_TRIAL_REPLIES],
+    );
+    return !!row;
+  } catch (err) {
+    console.error('[ai-agent] could not reserve a trial reply:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/** Gives a reserved trial reply back (no reply was produced). */
+export async function releaseTrialReply(businessId: string): Promise<void> {
+  await query(
+    `UPDATE assistant_settings
+        SET settings = jsonb_set(settings, '{khatarioAiTrialUsed}',
+              to_jsonb(GREATEST(COALESCE((settings->>'khatarioAiTrialUsed')::int, 0) - 1, 0)))
+      WHERE scope = $1`,
+    [`business:${businessId}`],
+  ).catch((err) => console.warn('[ai-agent] trial release failed:', err instanceof Error ? err.message : err));
+}
+
+export type KhatarioReservation =
+  | { ok: true; via: 'addon' | 'trial'; release: () => Promise<void> }
+  | { ok: false; reason: 'not_configured' | 'quota_exhausted' | 'trial_exhausted' | 'live_needs_addon' };
+
+/**
+ * Take one reply slot on Khatario's key, atomically (SUB-25), before generating the reply: an add-on reply takes
+ * its place under the monthly quota and the daily cap (`reserveCustomerBotReply`, one lock per business); a trial
+ * reply takes one trial slot (`reserveTrialReply`). Use it in place of `khatarioAccess` + the record call.
+ * `release()` gives the slot back when no reply was produced.
  */
 export async function reserveKhatarioReply(
   businessId: string,
   customerPhone: string,
   context: { live: boolean },
-): Promise<KhatarioAccess> {
+): Promise<KhatarioReservation> {
   const access = await khatarioAccess(businessId, context);
-  if (!access.ok || access.via !== 'addon') return access;
+  if (!access.ok) return access;
+  if (access.via === 'trial') {
+    if (!(await reserveTrialReply(businessId))) return { ok: false, reason: 'trial_exhausted' };
+    return { ok: true, via: 'trial', release: () => releaseTrialReply(businessId) };
+  }
   const [quota, daily] = await Promise.all([khatarioMonthlyQuota(businessId), dailyLimit(businessId)]);
   const reserved = await reserveCustomerBotReply(businessId, customerPhone, { dailyLimit: daily, monthlyQuota: quota });
-  if (reserved.ok) return access;
-  return { ok: false, reason: reserved.reason === 'monthly_quota' ? 'quota_exhausted' : 'not_configured' };
+  if (!reserved.ok) return { ok: false, reason: reserved.reason === 'monthly_quota' ? 'quota_exhausted' : 'not_configured' };
+  return { ok: true, via: 'addon', release: () => releaseCustomerBotReply(businessId, reserved.messageId) };
 }
 
 /** Configured for the editor's status: add-on active, or trial replies left. */

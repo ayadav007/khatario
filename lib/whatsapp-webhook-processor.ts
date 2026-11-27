@@ -26,7 +26,19 @@ export async function processWhatsAppWebhookBody(body: Record<string, unknown>):
   await queueIfUnanswered(business_id, out.conversationUuid, { replied: !!result.response, handled: result.handled });
 
   if (result.response) {
-    const sendReturn = await sendWhatsAppMessage(business_id, from, result.response);
+    const { withWhatsAppSlot, WhatsAppSlotRefused } = await import('./whatsapp/send-slot');
+    let sendReturn: unknown;
+    try {
+      sendReturn = await withWhatsAppSlot(business_id, { to: from, messageType: 'bot_reply', text: result.response }, () =>
+        sendWhatsAppMessage(business_id, from, result.response!),
+      );
+    } catch (err) {
+      if (!(err instanceof WhatsAppSlotRefused)) throw err;
+      const { recordSkippedAutomation } = await import('./whatsapp/automation-guard');
+      await recordSkippedAutomation({ businessId: business_id, conversationId: out.conversationUuid ?? null, reason: err.reason });
+      await queueIfUnanswered(business_id, out.conversationUuid, { replied: false, handled: false });
+      return { response: null };
+    }
     const messageIdFromSend: string | null = typeof sendReturn === 'string' ? sendReturn : null;
 
     const fromDigits = from.replace(/[^0-9]/g, '');

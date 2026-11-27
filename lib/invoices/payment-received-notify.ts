@@ -6,7 +6,6 @@
  * Never throws: the payment already succeeded.
  */
 import { queryOne, query, queryRows } from '@/lib/db';
-import { checkAutomationAllowed } from '@/lib/whatsapp/automation-guard';
 import { toE164Digits } from '@/lib/platform-whatsapp-send';
 import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import { invoiceEventValues } from '@/lib/whatsapp/invoice-event-values';
@@ -23,6 +22,11 @@ export async function paymentReceivedMessageEnabled(businessId: string): Promise
     [businessId],
   );
   return row ? row.enabled !== false : true;
+}
+
+/** The reason shown for a message skipped by the plan or the daily cap. */
+function skipReason(r: string): string {
+  return r === 'daily_whatsapp_limit_reached' ? 'limit_reached' : r;
 }
 
 function money(v: unknown): string {
@@ -84,10 +88,6 @@ export async function notifyInvoicePaymentReceived(input: {
     if (!phone) return { sent: false, reason: 'no_phone' };
     if (!(await paymentReceivedMessageEnabled(input.businessId))) return { sent: false, reason: 'disabled' };
     if (!(await whatsAppOutboundReady(input.businessId)).ready) return { sent: false, reason: 'whatsapp_not_connected' };
-    {
-      const plan = await checkAutomationAllowed(input.businessId, 'payment_received');
-      if (!plan.allowed) return { sent: false, reason: plan.reason === 'daily_whatsapp_limit_reached' ? 'limit_reached' : plan.reason };
-    }
 
     const values = await invoiceEventValues({
       id: row.invoice_id,
@@ -114,20 +114,9 @@ export async function notifyInvoicePaymentReceived(input: {
       to: row.customer_phone!,
       values: { ...values, amount_paid: amountPaid, amount_due: money(amountDue) },
       fallbackText: text,
-      automatic: false, // checked above
+      record: { messageType: 'payment', referenceType: 'invoice', referenceId: row.invoice_id },
     });
-    await query(
-      `INSERT INTO whatsapp_messages (business_id, to_number, message_type, reference_type, reference_id, message_text, status, error_message)
-       VALUES ($1, $2, 'payment', 'invoice', $3, $4, $5, $6)`,
-      [
-        input.businessId,
-        row.customer_phone,
-        row.invoice_id,
-        text,
-        res.via ? 'sent' : 'failed',
-        res.via ? null : 'Payment received message was not delivered',
-      ],
-    );
+    if (res.skipped) return { sent: false, reason: skipReason(res.skipped) };
     return res.via ? { sent: true } : { sent: false, reason: 'not_delivered' };
   } catch (err) {
     console.error('[payment received] message failed:', err);
@@ -188,10 +177,6 @@ export async function notifyBillsPaymentReceived(input: {
     if (!phone) return { sent: false, reason: 'no_phone' };
     if (!(await paymentReceivedMessageEnabled(input.businessId))) return { sent: false, reason: 'disabled' };
     if (!(await whatsAppOutboundReady(input.businessId)).ready) return { sent: false, reason: 'whatsapp_not_connected' };
-    {
-      const plan = await checkAutomationAllowed(input.businessId, 'payment_received');
-      if (!plan.allowed) return { sent: false, reason: plan.reason === 'daily_whatsapp_limit_reached' ? 'limit_reached' : plan.reason };
-    }
 
     const cleared = await queryRows<{ invoice_id: string; invoice_number: string; amount: string; balance: string }>(
       `SELECT a.invoice_id, i.invoice_number, a.amount::text, COALESCE(i.balance_amount, 0)::text AS balance
@@ -230,22 +215,10 @@ export async function notifyBillsPaymentReceived(input: {
         invoice_link: link,
       },
       fallbackText: text,
-      automatic: false, // checked above
+      // One message covers every bill it cleared: its row points at the first of them.
+      record: { messageType: 'payment', referenceType: 'invoice', referenceId: cleared[0]?.invoice_id ?? null },
     });
-    for (const c of cleared) {
-      await query(
-        `INSERT INTO whatsapp_messages (business_id, to_number, message_type, reference_type, reference_id, message_text, status, error_message)
-         VALUES ($1, $2, 'payment', 'invoice', $3, $4, $5, $6)`,
-        [
-          input.businessId,
-          head.customer_phone,
-          c.invoice_id,
-          text,
-          res.via ? 'sent' : 'failed',
-          res.via ? null : 'Payment received message was not delivered',
-        ],
-      );
-    }
+    if (res.skipped) return { sent: false, reason: skipReason(res.skipped) };
     return res.via ? { sent: true } : { sent: false, reason: 'not_delivered' };
   } catch (err) {
     console.error('[payment received] bills message failed:', err);

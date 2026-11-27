@@ -5,6 +5,7 @@ import { canSeeBusinessData } from '@/lib/insights/turn';
 import { answerTurn } from '@/lib/rag/answer';
 import type { OwnerCommandQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
+import { WhatsAppSlotRefused, withWhatsAppSlot } from './send-slot';
 import { clearOwnerLinkCache, digits, getOwnerLink, linkCodeValid, parseLinkCode } from './inbound-router';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -98,6 +99,17 @@ async function completeLink(job: OwnerCommandQueueJob): Promise<boolean> {
  * Queue job for owner messages. Never throws: a retry would send the reply twice, so failures
  * are logged and dropped.
  */
+/** One owner message from the business's number, taking its place under the daily WhatsApp cap first. */
+async function ownerSend(job: OwnerCommandQueueJob, to: string, text: string): Promise<void> {
+  try {
+    await withWhatsAppSlot(job.businessId, { to, messageType: 'owner_update', text }, () => sendBusinessText(job.businessId, to, text));
+  } catch (err) {
+    if (!(err instanceof WhatsAppSlotRefused)) throw err;
+    const { recordSkippedAutomation } = await import('./automation-guard');
+    await recordSkippedAutomation({ businessId: job.businessId, messageId: job.messageId, reason: err.reason });
+  }
+}
+
 export async function processOwnerCommand(job: OwnerCommandQueueJob): Promise<void> {
   try {
     if (!(await businessActive(job.businessId))) return;
@@ -112,7 +124,7 @@ export async function processOwnerCommand(job: OwnerCommandQueueJob): Promise<vo
     };
 
     if (job.kind === 'link') {
-      if ((await completeLink(job)) && (await planAllows())) await sendBusinessText(job.businessId, job.from, LINKED_TEXT);
+      if ((await completeLink(job)) && (await planAllows())) await ownerSend(job, job.from, LINKED_TEXT);
       return;
     }
 
@@ -132,13 +144,13 @@ export async function processOwnerCommand(job: OwnerCommandQueueJob): Promise<vo
     const lastHour = await ownerMessagesLastHour(job.businessId);
     if (lastHour > OWNER_MESSAGES_PER_HOUR) {
       if (lastHour === OWNER_MESSAGES_PER_HOUR + 1) {
-        await sendBusinessText(job.businessId, link.linked_phone, `That's a lot of questions! Please try again in a little while.`);
+        await ownerSend(job, link.linked_phone, `That's a lot of questions! Please try again in a little while.`);
       }
       return;
     }
 
     const reply = await ownerReply({ businessId: job.businessId, userId: link.user_id, phone: link.linked_phone, text: job.text });
-    await sendBusinessText(job.businessId, link.linked_phone, reply);
+    await ownerSend(job, link.linked_phone, reply);
   } catch (err) {
     console.error('[owner-command] failed:', err instanceof Error ? err.message : err);
   }
