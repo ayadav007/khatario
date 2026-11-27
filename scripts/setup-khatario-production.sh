@@ -108,6 +108,7 @@ else
     platform_features \
     feature_flags \
     subscription_plans \
+    platform_limits \
     subscription_plan_features \
     subscription_plan_limits
   do

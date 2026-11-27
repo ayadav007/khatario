@@ -929,6 +929,194 @@ DROP TRIGGER IF EXISTS update_subscription_plans_updated_at ON subscription_plan
 CREATE TRIGGER update_subscription_plans_updated_at BEFORE UPDATE ON subscription_plans
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Base subscription plans (also in database/seed_subscriptions.sql). Present on a fresh database so later migrations can attach features and limits.
+INSERT INTO subscription_plans (id, name, display_name, description, price_monthly, price_yearly, currency, features, is_active, sort_order) VALUES
+
+-- FREE PLAN
+('free', 'free', 'Free / Starter', 'Perfect for solo freelancers and trying out the platform', 0, 0, 'INR', 
+'{
+  "limits": {
+    "max_invoices_per_month": 20,
+    "max_customers": 10,
+    "max_items": 10,
+    "max_users": 1,
+    "max_whatsapp_per_day": 0
+  },
+  "features": {
+    "customer_management": true,
+    "item_management": true,
+    "invoice_creation": true,
+    "payment_tracking": true,
+    "stock_tracking": true,
+    "template_basic": true,
+    "pdf_generation": true,
+    "dashboard_analytics": false,
+    "template_all": false,
+    "template_thermal": false,
+    "template_customization": false,
+    "purchase_management": false,
+    "expense_tracking": false,
+    "supplier_management": false,
+    "multi_user": false,
+    "reports_basic": false,
+    "reports_gst": false,
+    "alert_low_stock": false,
+    "alert_credit_limit": false,
+    "whatsapp_manual": false,
+    "whatsapp_auto_reminders": false,
+    "email_invoicing": false,
+    "recurring_invoices": false,
+    "estimates_quotations": false,
+    "credit_notes": false,
+    "ledger_accounting": false,
+    "backup_restore": false
+  }
+}'::jsonb, true, 1),
+
+-- PROFESSIONAL PLAN
+('professional', 'professional', 'Professional', 'Growing businesses and retail shops', 299, 2999, 'INR',
+'{
+  "limits": {
+    "max_invoices_per_month": 500,
+    "max_customers": -1,
+    "max_items": -1,
+    "max_users": 3,
+    "max_whatsapp_per_day": 10
+  },
+  "features": {
+    "customer_management": true,
+    "item_management": true,
+    "invoice_creation": true,
+    "payment_tracking": true,
+    "stock_tracking": true,
+    "dashboard_analytics": true,
+    "template_basic": true,
+    "template_all": true,
+    "template_thermal": true,
+    "template_customization": true,
+    "pdf_generation": true,
+    "purchase_management": true,
+    "expense_tracking": true,
+    "supplier_management": true,
+    "multi_user": true,
+    "reports_basic": true,
+    "alert_low_stock": true,
+    "alert_credit_limit": true,
+    "whatsapp_manual": true,
+    "email_invoicing": false,
+    "reports_gst": false,
+    "whatsapp_auto_reminders": false,
+    "recurring_invoices": false,
+    "estimates_quotations": false,
+    "credit_notes": false,
+    "ledger_accounting": false,
+    "backup_restore": false,
+    "multi_branch": false
+  }
+}'::jsonb, true, 2),
+
+-- BUSINESS PLAN
+('business', 'business', 'Business', 'Established businesses with advanced needs', 999, 9999, 'INR',
+'{
+  "limits": {
+    "max_invoices_per_month": -1,
+    "max_customers": -1,
+    "max_items": -1,
+    "max_users": 10,
+    "max_whatsapp_per_day": 100
+  },
+  "features": {
+    "customer_management": true,
+    "item_management": true,
+    "invoice_creation": true,
+    "payment_tracking": true,
+    "stock_tracking": true,
+    "dashboard_analytics": true,
+    "template_basic": true,
+    "template_all": true,
+    "template_thermal": true,
+    "template_customization": true,
+    "pdf_generation": true,
+    "purchase_management": true,
+    "expense_tracking": true,
+    "supplier_management": true,
+    "multi_user": true,
+    "reports_basic": true,
+    "reports_gst": true,
+    "reports_advanced": true,
+    "alert_low_stock": true,
+    "alert_credit_limit": true,
+    "whatsapp_manual": true,
+    "whatsapp_auto_reminders": true,
+    "email_invoicing": true,
+    "recurring_invoices": true,
+    "estimates_quotations": true,
+    "credit_notes": true,
+    "ledger_accounting": true,
+    "backup_restore": true,
+    "multi_branch": true,
+    "reports_analytics": false,
+    "payment_gateway": false,
+    "api_access": false,
+    "online_store": false,
+    "barcode_scanning": false,
+    "multi_currency": false,
+    "custom_branding": false
+  }
+}'::jsonb, true, 3),
+
+-- ENTERPRISE PLAN
+('enterprise', 'enterprise', 'Enterprise', 'Large businesses with custom requirements', 2999, 29999, 'INR',
+'{
+  "limits": {
+    "max_invoices_per_month": -1,
+    "max_customers": -1,
+    "max_items": -1,
+    "max_users": -1,
+    "max_whatsapp_per_day": -1
+  },
+  "features": {
+    "customer_management": true,
+    "item_management": true,
+    "invoice_creation": true,
+    "payment_tracking": true,
+    "stock_tracking": true,
+    "dashboard_analytics": true,
+    "template_basic": true,
+    "template_all": true,
+    "template_thermal": true,
+    "template_customization": true,
+    "pdf_generation": true,
+    "purchase_management": true,
+    "expense_tracking": true,
+    "supplier_management": true,
+    "multi_user": true,
+    "reports_basic": true,
+    "reports_gst": true,
+    "reports_advanced": true,
+    "reports_analytics": true,
+    "alert_low_stock": true,
+    "alert_credit_limit": true,
+    "whatsapp_manual": true,
+    "whatsapp_auto_reminders": true,
+    "email_invoicing": true,
+    "payment_gateway": true,
+    "api_access": true,
+    "recurring_invoices": true,
+    "estimates_quotations": true,
+    "credit_notes": true,
+    "ledger_accounting": true,
+    "backup_restore": true,
+    "multi_branch": true,
+    "online_store": true,
+    "barcode_scanning": true,
+    "multi_currency": true,
+    "custom_branding": true
+  }
+}'::jsonb, true, 4)
+
+ON CONFLICT (id) DO NOTHING;
+
 DROP TRIGGER IF EXISTS update_business_subscriptions_updated_at ON business_subscriptions;
 CREATE TRIGGER update_business_subscriptions_updated_at BEFORE UPDATE ON business_subscriptions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
