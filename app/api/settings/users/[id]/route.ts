@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireStrictSession } from '@/lib/auth-helpers';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { parseBooleanFlag } from '@/lib/utils/boolean-flag';
+import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import { checkLimit, hasWhatsAppBotAddon } from '@/lib/subscription';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import {
@@ -109,11 +111,11 @@ export async function PATCH(
       email,
       phone,
       password,
-      is_active,
       allow_multidevice_sync,
       seat_type,
     } = body;
     let { role_id } = body;
+    const is_active = parseBooleanFlag(body.is_active);
 
     if (seat_type !== undefined && !isSeatType(seat_type)) {
       return NextResponse.json({ error: "seat_type must be 'billing' or 'connect'" }, { status: 400 });
@@ -240,6 +242,19 @@ export async function PATCH(
           },
           { status: 403 },
         );
+      }
+    }
+
+    // Reactivating a user also reactivates the linked employee row, which takes an employee slot.
+    // Checked here, before users.is_active is written, so a refusal leaves both rows untouched.
+    if (is_active === true) {
+      const linkedEmployee = await queryOne<{ is_active: boolean | null }>(
+        'SELECT is_active FROM employees WHERE id = $1 AND business_id = $2',
+        [userId, businessId],
+      );
+      if (linkedEmployee && linkedEmployee.is_active === false) {
+        const employeeLimit = await limitExceededResponse(businessId, 'employees');
+        if (employeeLimit) return employeeLimit;
       }
     }
 

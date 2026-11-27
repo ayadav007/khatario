@@ -4,6 +4,7 @@ import { createSalaryStructure, salaryStructureFromOffer } from '@/lib/hr/salary
 import { getEmployeePrefillFromOnboarding } from '@/lib/hr/recruitment/onboarding/task-service';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { checkLimit } from '@/lib/subscription';
+import { dateColumnToYmd } from '@/lib/utils/local-date';
 
 /** The business is at its employee limit; the route answers with the standard limit reply. */
 export class EmployeeLimitError extends Error {
@@ -102,7 +103,7 @@ export async function convertCandidateToEmployee(
   }
   if (!employeeCode) throw new Error('Failed to generate employee code');
 
-  const joiningDate = String(offer.joining_date).slice(0, 10);
+  const joiningDate = dateColumnToYmd(offer.joining_date);
   const prefill = await getEmployeePrefillFromOnboarding(params.businessId, params.candidateId);
 
   await queryOne(

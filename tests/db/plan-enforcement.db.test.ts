@@ -942,16 +942,68 @@ run('plan enforcement (kh_phase2_test)', () => {
         expect(c!.employee_id).toBeNull();
       });
 
-      it('converting is no longer stopped by the limit once a slot is free', async () => {
+      it('converting succeeds once a slot is free and creates an active employee with the offer joining date', async () => {
         await query(`UPDATE employees SET is_active = false WHERE id = (SELECT id FROM employees WHERE business_id = $1 LIMIT 1)`, [biz]);
         clearSubscriptionCache(biz);
         const res = await callRoute(convertCandidateRoute as unknown as RouteHandler, {
           biz, userId: owner, method: 'POST', path: `/api/hr/recruitment/candidates/${candidateId}/convert`,
           body: { physical_documents_verified: true }, params: { id: candidateId },
         });
-        // Past the limit check. (The conversion itself can still fail further on for other reasons, so
-        // this asserts only that the limit is not what stops it.)
-        expect((await res.json()).code).not.toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        const body = await res.json();
+        expect([res.status, body.error ?? '']).toEqual([200, '']);
+        const e = await queryOne<{ is_active: boolean; jd: string }>(
+          `SELECT is_active, joining_date::text AS jd FROM employees WHERE id = $1`, [body.employee_id],
+        );
+        const offerDay = await queryOne<{ d: string }>(
+          `SELECT joining_date::text AS d FROM recruitment_offer_letters WHERE candidate_id = $1`, [candidateId],
+        );
+        expect(e!.is_active).toBe(true);
+        expect(e!.jd).toBe(offerDay!.d);
+      });
+    });
+
+    describe('reactivation through the settings users route', () => {
+      let biz: string, owner: string, inactiveUser: string, loneUser: string;
+      beforeAll(async () => {
+        ({ biz, owner } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'user-react' }));
+        inactiveUser = await addUser(biz, { accessType: 'attendance_only', isActive: false });
+        await query(`UPDATE employees SET is_active = false WHERE id = $1`, [inactiveUser]);
+        loneUser = await addUser(biz, { isActive: false }); // no employees row
+        await fillEmployees(biz, 30); // 30 active employees: HR Lite limit
+        clearSubscriptionCache(biz);
+      });
+      const flags = async (id: string) => ({
+        user: (await userRow(id))!.is_active,
+        emp: (await queryOne<{ is_active: boolean }>(`SELECT is_active FROM employees WHERE id = $1`, [id]))?.is_active,
+      });
+
+      it('is refused at the employee limit and changes neither row', async () => {
+        const res = await patchUser(biz, owner, inactiveUser, { is_active: true });
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        expect(body.code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(body.limit_type).toBe('employees');
+        expect(await flags(inactiveUser)).toEqual({ user: false, emp: false });
+      });
+
+      it('a string "true" is treated as true (refused too)', async () => {
+        const res = await patchUser(biz, owner, inactiveUser, { is_active: 'true' });
+        expect(res.status).toBe(403);
+        expect(await flags(inactiveUser)).toEqual({ user: false, emp: false });
+      });
+
+      it('a user with no employee row is not touched by the employee limit', async () => {
+        const res = await patchUser(biz, owner, loneUser, { is_active: true });
+        expect(res.status).toBe(200);
+        expect((await userRow(loneUser))!.is_active).toBe(true);
+      });
+
+      it('succeeds below the limit and activates both rows', async () => {
+        await query(`UPDATE employees SET is_active = false WHERE id = (SELECT id FROM employees WHERE business_id = $1 AND is_active AND id <> $2 LIMIT 1)`, [biz, inactiveUser]);
+        clearSubscriptionCache(biz);
+        const res = await patchUser(biz, owner, inactiveUser, { is_active: true });
+        expect(res.status).toBe(200);
+        expect(await flags(inactiveUser)).toEqual({ user: true, emp: true });
       });
     });
 

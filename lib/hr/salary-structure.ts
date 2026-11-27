@@ -1,3 +1,4 @@
+import { dateColumnToYmd } from '@/lib/utils/local-date';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { computeProRataMonthlySalary, type ProRataSalaryResult } from '@/lib/hr/salary-payroll-helpers';
 import {
@@ -198,7 +199,7 @@ export function salaryStructureFromOffer(
   employeeId: string,
   businessId: string,
 ): SalaryStructureInput {
-  const joining = String(offer.joining_date).slice(0, 10);
+  const joining = dateColumnToYmd(offer.joining_date);
   return {
     business_id: businessId,
     employee_id: employeeId,

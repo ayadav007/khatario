@@ -17,6 +17,7 @@ import {
 } from '@/lib/employee-portal/portal-api-guard';
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { checkLimit } from '@/lib/subscription';
+import { parseBooleanFlag } from '@/lib/utils/boolean-flag';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import { seatLimitMessage, seatLimitType } from '@/lib/users/connect-seats';
@@ -234,9 +235,9 @@ export async function PATCH(
       default_shift_id,
       branch_id,
       weekly_off_override,
-      is_active,
       role_id,
     } = body;
+    const is_active = parseBooleanFlag(body.is_active);
 
     let accessTypeToSave = access_type as string | undefined;
     let roleIdToSave: string | null | undefined;
