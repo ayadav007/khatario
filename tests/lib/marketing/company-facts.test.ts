@@ -43,7 +43,18 @@ describe('company facts', () => {
     ]);
     expect(socialLinks(BLANK_COMPANY_FACTS)).toEqual([]);
   });
-  it('ships with every fact blank until the owner fills it', () => {
-    expect(KHATARIO_COMPANY_FACTS).toEqual(BLANK_COMPANY_FACTS);
+  it('ships with only the facts the owner has filled', () => {
+    expect(KHATARIO_COMPANY_FACTS).toEqual({
+      ...BLANK_COMPANY_FACTS,
+      social: {
+        ...BLANK_COMPANY_FACTS.social,
+        instagram: 'https://www.instagram.com/khatario.in/',
+        youtube: 'https://www.youtube.com/@khatario',
+      },
+    });
+    expect(socialLinks()).toEqual([
+      { network: 'instagram', url: 'https://www.instagram.com/khatario.in/' },
+      { network: 'youtube', url: 'https://www.youtube.com/@khatario' },
+    ]);
   });
 });

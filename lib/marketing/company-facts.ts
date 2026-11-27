@@ -39,7 +39,11 @@ export const BLANK_COMPANY_FACTS: CompanyFacts = {
  */
 export const KHATARIO_COMPANY_FACTS: CompanyFacts = {
   ...BLANK_COMPANY_FACTS,
-  social: { ...BLANK_COMPANY_FACTS.social },
+  social: {
+    ...BLANK_COMPANY_FACTS.social,
+    instagram: 'https://www.instagram.com/khatario.in/',
+    youtube: 'https://www.youtube.com/@khatario',
+  },
 };
 
 export function fact(name: CompanyFactName, facts: CompanyFacts = KHATARIO_COMPANY_FACTS): string | null {

@@ -37,6 +37,7 @@
 - Printing makeover: thermal, label and A4 printing on every platform [[docs/plan/PRINTING_MAKEOVER.md]]
 - Staff attendance check-in: face recognition pass
 - Move to Khatario, import by section (was "Tally data import"): an Import button on Accounts, Customers, Suppliers and Items, column matching for any app's Excel or CSV export, opening balances and stock at any cut-over date, unpaid bills as opening bills, invoice numbers continued, trial balance check; designed with the owner, spec approved, plan 1 of 3 (engine with Customers, Suppliers and Items; migration 470) built and reviewed on main, not pushed, nothing checked in a browser; next: staging with migration 470 (owner approval to apply), run the staging checklist [[docs/superpowers/plans/2026-11-10-move-to-khatario-import-plan-1-staging-checklist.md]], then plan 2 (accounts and opening figures) and plan 3 (opening bills and the Move to Khatario page); real export files from Tally, Vyapar and Zoho Books needed from the owner [[docs/superpowers/specs/2026-11-10-move-to-khatario-import-design.md]] [[docs/superpowers/plans/2026-11-10-move-to-khatario-import-plan-1-engine-masters.md]]
+- e-Invoice (IRN) and e-way bills through Masters India (GSP): plan written 27 Nov 2026 from their enterprise API docs (sandbox access now exists, unblocking the old Tally-gap e-invoice card); phases: client and plugin connection (reuses `business_integrations`), e-way bills via API after fixing five bugs in `lib/gst/eway-json.ts`, IRN generate and cancel with invoice lock, then printing and phone; nothing built; decided: one Khatario enterprise account (Khatario pays Masters India, customers pay through plans), customers enter per-GSTIN API credentials made on the government portal (Vyapar pattern); next: ask Masters India the five questions in the plan (credential passing, pricing, go-live), then Phase 1 [[docs/plan/GST_EINVOICE_EWAY_API.md]]
 - Tally gaps, owner said to do these (10 Nov 2026), designed one at a time in this order; none designed yet:
   - Public API with API keys for third-party integrations; today webhooks are inbound only
   - Restaurant tables and KOT (kitchen order tickets) on top of the restaurant business type and POS
@@ -47,7 +48,6 @@
 - QA: purchase and purchase-return browser pass on staging [[docs/qa/phase-3q-browser-functional-results.md]]
 - Global search ranked with `pg_trgm` or `tsvector` [[docs/IMPLEMENTATION-LOG.md]]
 - Golden tests for GSTR-1 and tax report amounts [[docs/IMPLEMENTATION-LOG.md]]
-- Tally gap (10 Nov 2026 check): e-invoice (IRN) generation and cancellation from the invoice; today only an IRN already on the bill is printed. Tally does this from the voucher. Not designed. **Blocked:** no e-invoicing sandbox available (owner, 10 Nov 2026); pick up once sandbox access exists.
 
 ## Parked
 - Demo booking: Meet invite and confirmation [[docs/BACKLOG.md]]

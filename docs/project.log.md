@@ -2040,3 +2040,29 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
 - **Decided:** no page optimised, because no playbook trigger was met (Search Console lists no queries; no page has 100 impressions). Totals 2 clicks, 65 impressions; the drop from 70 is the 28-day window losing 10-27 (7 `/guides` impressions), offset by 2 new impressions on 11-24. `/blog` recrawled 11-26 and its inspection shows no user canonical although the live tag is served; treated as watch-only because the same thing cleared by itself after 11-06. Health all green.
 - **Shipped:** one commit with `docs/seo/STATE.md`, `docs/seo/reports/2026-11-26.{json,md}` and this entry. Nothing pushed or deployed.
 - **Open:** the writer job has saved no draft in 12 runs since 11-06; no backlinks yet; owner to decide whether demo storefronts should be `noindex`.
+
+## 2026-11-27: e-invoice and e-way bill API plan (Masters India)
+- **Asked:** read the Masters India enterprise e-invoice and e-way bill API PDFs, check how they fit Khatario, then "write the plan".
+- **Decided:** plan in four phases (GSP client and plugin connection, e-way bills via API, IRN, printing and phone). Reuse `business_integrations` (migration 476) for credentials and `lib/gst/eway-json.ts` for the payload, after fixing five bugs found there (transactionType always 1 and no `ship_to_gstin`, ship-to state from billing state, empty addr2, cess non-advol and other value hard-coded to 0, docNo silently cut to 16). B2B and export tax invoices of an e-invoicing GSTIN must get their e-way bill through the IRN, per the API rules. `max_eway_bills_per_month` is defined but never enforced; Phase 2 enforces it. The old "Later" Tally-gap e-invoice card (blocked on a sandbox) is replaced by the new card in Next.
+- **Shipped:** `docs/plan/GST_EINVOICE_EWAY_API.md`, roadmap card, this entry. Nothing committed. The PDFs stay out of the repo (the e-invoice one has sandbox credentials in plain text).
+- **Open:** owner decides whose Masters India account (each business vs one Khatario enterprise account) and per-GSTIN credentials; production credentials from Masters India.
+
+## 2026-11-27: e-invoice plan, account and credentials decided
+- **Asked:** owner chose one Khatario Masters India account; asked for the user flow, compared Vyapar's "GSP Login" popup and the e-way bill portal's "Register your GSP" page, and asked who pays Masters India.
+- **Decided:** Khatario holds the enterprise account and pays Masters India; customers pay Khatario through plans. Customers create a free API user for Masters India on the government portal and enter it in Khatario per GSTIN, verified at once (no pending state). "Generate e-invoice" keys off the GSTIN being covered (turnover), not invoice value; e-way bill keys off goods over ₹50,000. Add `max_einvoices_per_month` and a usage log for reconciling the Masters India bill.
+- **Shipped:** `docs/plan/GST_EINVOICE_EWAY_API.md` (Decisions, Questions for Masters India, Billing and limits, Phase 1 connect flow), roadmap card updated. Nothing committed.
+- **Open:** Masters India's answers on passing client credentials, pricing and go-live; plan prices and limits once the per-call cost is known.
+
+## 2026-11-27: Khatario YouTube channel created
+- **Asked:** create a YouTube channel for Khatario.
+- **Decided:** a Brand Account channel under the owner's Google account, separate from their personal channel. Name Khatario, handle `@khatario` (channel ID `UCG8-sIJwot7LZlRmcNjJ0EQ`). Profile picture from `public/icons/icon-512.png`, description from the About page copy plus a line on what the channel will post, link to https://khatario.com.
+- **Shipped:** channel live at https://www.youtube.com/@khatario with the picture, description and link published. No code changes; nothing committed.
+- **Shipped (follow-up):** `KHATARIO_COMPANY_FACTS.social.youtube` set in `lib/marketing/company-facts.ts`, so the landing footer shows the YouTube icon and the Organization JSON-LD gets `sameAs`; `tests/lib/marketing/company-facts.test.ts` updated, both marketing fact suites pass. `tests/lib/marketing-builder/config.test.ts` was already failing (44 Site Builder block-registry tests) and is untouched.
+- **Open:** no banner yet (2048×1152); no videos uploaded (the finished edits under `videos/` are candidates). Not committed or deployed.
+
+## 2026-11-27: Khatario Instagram account
+- **Asked:** create an Instagram account for Khatario, like the YouTube channel.
+- **Decided:** `khatario` was taken; owner created `khatario.in` from the Instagram app (the website cannot create a second account from a logged-in one). It sits in the owner's Meta Accounts Center next to the Khatario Facebook Page. Logo set from `public/icons/icon-512.png` via Accounts Center.
+- **Shipped:** `KHATARIO_COMPANY_FACTS.social.instagram` set, so the landing footer and Organization `sameAs` list Instagram and YouTube; company-facts test updated and passing. Not committed or deployed.
+- **Open:** display name, bio, website link, Business account switch and Facebook Page link to finish in the app (Accounts Center asks for the account password).
+
