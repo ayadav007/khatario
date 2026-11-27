@@ -4,10 +4,13 @@
  *     npx jest tests/db/plan-enforcement.db.test.ts --runInBand --forceExit
  *
  * Helpers (reused by every task in this file): newBusinessWithOwner, addUser, addEmployee, makeRole,
- * callRoute, userRow, setPlan, count.
+ * callRoute, userRow, setPlan, count, makeInvoiceWithCustomer, fillWhatsAppQuota.
  */
 import { randomUUID } from 'crypto';
 import { config as loadEnv } from 'dotenv';
+
+// Own-origin document links for the invoice WhatsApp send (Task 2).
+process.env.NEXT_PUBLIC_APP_URL = 'https://app.test.khatario';
 
 const TEST_DB = 'kh_phase2_test';
 const enabled = !!process.env.PHASE2_TEST_DATABASE_URL || process.env.SUBSCRIPTION_DB_TEST === '1';
@@ -34,6 +37,7 @@ jest.mock('@/lib/platform-whatsapp-send', () => ({
   lookupTenantWhatsAppPhone: jest.fn(async () => null),
   sendPlatformEventWhatsApp: jest.fn(async () => undefined),
 }));
+jest.mock('@/lib/whatsapp', () => ({ sendWhatsAppMessage: jest.fn(async () => undefined) }));
 jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
 jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
 
@@ -54,6 +58,9 @@ import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscrip
 import { CONSOLE_SEAT_COUNT_SQL, userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import { PATCH as patchUserRoute } from '@/app/api/settings/users/[id]/route';
 import { PATCH as patchEmployeeRoute } from '@/app/api/employees/[id]/route';
+import { POST as postInvoiceWhatsApp } from '@/app/api/invoices/[id]/whatsapp/route';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { checkLimit, clearAddonCache } from '@/lib/subscription';
 
 const run = enabled ? describe : describe.skip;
 
@@ -203,6 +210,7 @@ run('plan enforcement (kh_phase2_test)', () => {
       body?: Record<string, unknown>;
       params?: { id: string };
       sessionVersion?: number;
+      headers?: Record<string, string>;
     },
   ): Promise<Response> {
     const headers: Record<string, string> = {
@@ -211,6 +219,7 @@ run('plan enforcement (kh_phase2_test)', () => {
       'x-authenticated-user-id': args.userId,
       'x-authenticated-session-version': String(args.sessionVersion ?? SESSION_VERSION),
       'x-khatario-pathname': args.path,
+      ...(args.headers ?? {}),
     };
     headerBag.current = headers;
     const req = new NextRequest(`http://localhost${args.path}`, {
@@ -236,6 +245,36 @@ run('plan enforcement (kh_phase2_test)', () => {
   async function count(sqlAfterFrom: string, params: unknown[]): Promise<number> {
     const r = await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM ${sqlAfterFrom}`, params);
     return Number(r!.n);
+  }
+
+
+  /** A customer with a phone number and an invoice for it. Returns the invoice id. */
+  async function makeInvoiceWithCustomer(biz: string): Promise<string> {
+    const customerId = randomUUID();
+    const invoiceId = randomUUID();
+    await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Cust', $3)`, [
+      customerId, biz, phone(),
+    ]);
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE)`,
+      [invoiceId, biz, customerId, `INV-${invoiceId.slice(0, 6)}`],
+    );
+    return invoiceId;
+  }
+
+  /** Insert today's whatsapp_messages rows (the rows checkLimit counts) up to the plan's daily limit. */
+  async function fillWhatsAppQuota(biz: string): Promise<void> {
+    const check = await checkLimit(biz, 'whatsapp');
+    const limit = check.limit as number;
+    for (let i = check.current; i < limit; i++) {
+      await query(
+        `INSERT INTO whatsapp_messages (business_id, to_number, message_type, status)
+         VALUES ($1, $2, 'text', 'sent')`,
+        [biz, phone()],
+      );
+    }
+    clearSubscriptionCache(biz);
   }
 
   const patchUser = (biz: string, owner: string, id: string, body: Record<string, unknown>) =>
@@ -339,6 +378,113 @@ run('plan enforcement (kh_phase2_test)', () => {
       const bySql = await queryOne<{ count: number }>(CONSOLE_SEAT_COUNT_SQL, [biz]);
       expect(bySql!.count).toBe(3);
       expect(byRule).toBe(bySql!.count);
+    });
+  });
+  describe('SUB-09: the invoice WhatsApp send is checked like every other send', () => {
+    const ownUrl = (id: string) => `https://app.test.khatario/api/invoices/${id}/pdf`;
+    let biz: string;
+    let owner: string;
+    let invoiceId: string;
+
+    const send = (userId: string, body: Record<string, unknown>) =>
+      callRoute(postInvoiceWhatsApp as unknown as RouteHandler, {
+        biz, userId, method: 'POST', path: `/api/invoices/${invoiceId}/whatsapp`, body, params: { id: invoiceId },
+      });
+
+    beforeEach(async () => {
+      jest.mocked(sendWhatsAppMessage).mockClear();
+      ({ biz, owner } = await newBusinessWithOwner('free', { label: 'wa' }));
+      invoiceId = await makeInvoiceWithCustomer(biz);
+    });
+
+    it('a user without invoice permission cannot send', async () => {
+      const noPerm = await addUser(biz, { roleId: await makeRole(biz, 'noinvoice') });
+      await query(`UPDATE users SET auth_session_version = 7 WHERE id = $1`, [noPerm]);
+      const res = await send(noPerm, { pdf_url: ownUrl(invoiceId) });
+      expect(res.status).toBe(403);
+      expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+    });
+
+    it('a link to another site is refused', async () => {
+      const res = await send(owner, { pdf_url: 'https://evil.example/x.pdf' });
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('INVALID_PDF_URL');
+      expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+    });
+
+    it.each(['javascript:alert(1)', '//evil.example/x.pdf', '/api/invoices/x/pdf', 'https://app.test.khatario\\@evil.example/x'])(
+      'the link %s is refused',
+      async (pdf_url) => {
+        const res = await send(owner, { pdf_url });
+        expect(res.status).toBe(400);
+        expect((await res.json()).code).toBe('INVALID_PDF_URL');
+        expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+      },
+    );
+
+    it('the daily cap applies', async () => {
+      await fillWhatsAppQuota(biz);
+      const res = await send(owner, { pdf_url: ownUrl(invoiceId) });
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+      expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+    });
+
+    it('a permitted user under the cap can send', async () => {
+      const res = await send(owner, { pdf_url: ownUrl(invoiceId) });
+      expect(res.status).toBe(200);
+      expect(sendWhatsAppMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('the document URL handed to the sender is the normalised href, not the raw value', async () => {
+      const res = await send(owner, { pdf_url: `  HTTPS://APP.test.khatario:443/api/invoices/${invoiceId}/pdf  ` });
+      expect(res.status).toBe(200);
+      const args = jest.mocked(sendWhatsAppMessage).mock.calls[0];
+      expect(args[3]).toBe(`https://app.test.khatario/api/invoices/${invoiceId}/pdf`);
+      expect(args[4]).toBe('document');
+    });
+
+    it('outside production the request origin is also accepted (loopback test host)', async () => {
+      const res = await send(owner, { pdf_url: `http://localhost/api/invoices/${invoiceId}/pdf` });
+      expect(res.status).toBe(200);
+    });
+
+    it('in production a spoofed Host header cannot make a foreign link pass', async () => {
+      const prev = process.env.NODE_ENV;
+      (process.env as Record<string, string>).NODE_ENV = 'production';
+      try {
+        const res = await callRoute(postInvoiceWhatsApp as unknown as RouteHandler, {
+          biz, userId: owner, method: 'POST', path: `/api/invoices/${invoiceId}/whatsapp`,
+          body: { pdf_url: 'https://evil.example/x.pdf' }, params: { id: invoiceId },
+          headers: { host: 'evil.example', 'x-forwarded-host': 'evil.example', 'x-forwarded-proto': 'https' },
+        });
+        expect(res.status).toBe(400);
+        expect((await res.json()).code).toBe('INVALID_PDF_URL');
+        expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+      } finally {
+        (process.env as Record<string, string>).NODE_ENV = prev as string;
+      }
+    });
+
+    it('a custom message is passed through on a plan with the custom-message entitlement', async () => {
+      await query(
+        `INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'connect', true, 'test')
+         ON CONFLICT (business_id, module_key) DO UPDATE SET enabled = true`,
+        [biz],
+      );
+      await setPlan(biz, 'connect', 'connect');
+      clearAddonCache(biz);
+      const res = await send(owner, { pdf_url: ownUrl(invoiceId), custom_message: 'Thanks for your order' });
+      expect(res.status).toBe(200);
+      expect(jest.mocked(sendWhatsAppMessage).mock.calls[0][2]).toBe('Thanks for your order');
+    });
+
+    it('a custom message without the custom-message entitlement falls back to the default text', async () => {
+      const res = await send(owner, { pdf_url: ownUrl(invoiceId), custom_message: 'Buy now' });
+      expect(res.status).toBe(200);
+      const text = jest.mocked(sendWhatsAppMessage).mock.calls[0][2];
+      expect(text).not.toBe('Buy now');
+      expect(text).toMatch(/^Hello! Please find your invoice INV-/);
     });
   });
 });
