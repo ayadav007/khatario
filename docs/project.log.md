@@ -2052,3 +2052,20 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The admin subscription editor still computes dates in JavaScript.
   - Existing customer flows (upgrade, cancel, coupon validate) still send `business_id` from the browser; the server ignores it in favour of the session.
   - One test-mode refund on Razorpay and on Easebuzz is owed; Easebuzz has no refund webhook here, so its refunds settle through the nightly check or an admin retry.
+
+## 2026-11-27: Billing screens and wording (fifth fix plan after the audit)
+- **Asked:** "go ahead with the next plans"; the owner asked why it was taking long, so this plan ran with one review at the end instead of one per task.
+- **Decided:**
+  - The plan catalogue is the truth: text was changed to match it; no plan or price was changed.
+  - The payment screen says a plan is active only when the server says the payment completed; a failed payment says the plan was not changed and that the bank normally returns any money taken (the app cannot know whether money left the account).
+  - Pickers offer plans on sale, the customer's current plan (renewable even if retired) and their product's free plan. The upgrade route refuses a priced plan that is not on sale.
+  - Website wording now states that Free works in the phone app only, that HR Lite starts with Starter, and that Connect's bot and AI replies need the paid plan.
+  - Staff without the plan-change permission get 403 on billing history and receipts.
+- **Shipped:** on branch `claude/gifted-gates-jx4rbn`, not merged, not deployed. The billing and security suites pass locally (1,296 tests); `tsc` clean.
+- **Open:**
+  - Nothing was seen in a browser. The phone change (`phone/lib/screens/settings/plan_picker_screen.dart`, `plan_billing_screen.dart`) was not compiled or run: build it and tap through on a device before release.
+  - One test ("cancel then pay the same plan" in `tests/db/renewal-refund-gst.db.test.ts`) failed once in five full combined runs and passes alone; cause not found.
+  - The HR Lite description stored in the database still says "Included with every Billing plan" (false for Free); needs an owner-approved migration.
+  - The sales assistant's `HR_LAUNCHED=false` flag and some knowledge documents still say HR is coming soon while the website sells it.
+  - Add-on prices are set in code (`app/api/subscriptions/addons/route.ts`), not in the catalogue.
+  - Audit findings still open: SUB-17, 19, 24, 25, 35, 38, 39, 45, the rest of SUB-14 and SUB-20.

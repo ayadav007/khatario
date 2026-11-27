@@ -47,12 +47,20 @@ export function bannerMessage(input: BannerInput): string {
 
 /** The short text of the compact banner (shown on pages other than the dashboard). */
 export function bannerCompactMessage(input: Pick<BannerInput, 'kind' | 'daysRemaining'>): string {
-  if (input.kind === 'grace_expiring') {
-    return input.daysRemaining > 0
-      ? `Plan ended — renew within ${input.daysRemaining}d to keep access`
-      : 'Plan ended — renew to keep access';
+  switch (input.kind) {
+    case 'grace_expiring':
+      return input.daysRemaining > 0
+        ? `Plan ended — renew within ${input.daysRemaining}d to keep access`
+        : 'Plan ended — renew to keep access';
+    case 'trial_expired':
+      return 'Trial ended — you are on the Free plan';
+    case 'grace_expired':
+      return 'Plan ended — you are on the Free plan';
+    case 'cancelled':
+      return 'Plan cancelled — access ends soon';
+    case 'trial_ending':
+      return `Trial ends in ${input.daysRemaining}d — upgrade to keep access`;
   }
-  return `Trial ends in ${input.daysRemaining}d — upgrade to keep access`;
 }
 
 /** The button text. Grace is about renewing the plan, not choosing a new one. */

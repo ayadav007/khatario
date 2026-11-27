@@ -69,6 +69,7 @@ import { GET as modulesCurrentGet } from '@/app/api/subscriptions/modules/curren
 import { GET as currentGet } from '@/app/api/subscriptions/current/route';
 import { GET as debugGet } from '@/app/api/subscriptions/debug/route';
 import { GET as addonsDebugGet } from '@/app/api/subscriptions/addons/debug/route';
+import { POST as downgradePost } from '@/app/api/subscriptions/downgrade/route';
 import { GET as featurePlanGet } from '@/app/api/subscriptions/feature-plan/route';
 import { PLAN_NOT_ON_SALE_MESSAGE } from '@/lib/subscription/plan-offer-rules';
 import type { BillingCycle } from '@/lib/subscription/apply-plan-change';
@@ -78,6 +79,7 @@ const run = enabled ? describe : describe.skip;
 run('billing screens (kh_phase2_test)', () => {
   jest.setTimeout(60000);
   const created: string[] = [];
+  const coupons: string[] = [];
   let biz: string;
   const ownerOf = new Map<string, string>();
 
@@ -233,6 +235,10 @@ run('billing screens (kh_phase2_test)', () => {
         await query(`DELETE FROM platform_billing_webhook_events WHERE business_id = $1 OR payload::text LIKE $2`, [id, `%${id}%`]).catch(() => undefined);
         await query(`DELETE FROM subscription_events WHERE business_id = $1`, [id]).catch(() => undefined);
         await query(`DELETE FROM businesses WHERE id = $1`, [id]).catch(() => undefined);
+      }
+      for (const id of coupons) {
+        await query(`DELETE FROM coupon_redemptions WHERE coupon_id = $1`, [id]).catch(() => undefined);
+        await query(`DELETE FROM coupons WHERE id = $1`, [id]).catch(() => undefined);
       }
       await closePool();
     }
@@ -479,6 +485,52 @@ run('billing screens (kh_phase2_test)', () => {
       expect(byId(await plansFor(stranger), 'hr_free')).toBeUndefined();
     });
 
+    describe('a paying customer can always choose the free plan of their product', () => {
+      async function downgrade(businessId: string, target: string, moduleKey: string, confirmed: boolean) {
+        return downgradePost(post('/api/subscriptions/downgrade', { target_plan_id: target, module_key: moduleKey, confirmed }, asOwner(businessId)));
+      }
+
+      it('HR Starter customer sees HR Free as a selectable downgrade, and the request is accepted', async () => {
+        await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'hr', true, 'test') ON CONFLICT DO NOTHING`, [biz]);
+        await setRow(biz, 'hr_starter', { module: 'hr' });
+        const hr = await plansFor(biz, '?module_key=hr');
+        expect(byId(hr, 'hr_free')!.offer).toEqual({ on_sale: false, current: false, renewable: false, selectable: true });
+        // One free plan per product: not the included HR Lite, not the trial.
+        expect(hr.map((p) => p.id)).not.toContain('hr_staff_lite');
+        expect(hr.map((p) => p.id)).not.toContain('hr_trial');
+        const preview = await downgrade(biz, 'hr_free', 'hr', false);
+        expect(preview.status).toBe(200);
+        const done = await downgrade(biz, 'hr_free', 'hr', true);
+        expect(done.status).toBe(200);
+        expect((await queryOne<{ s: string | null }>(`SELECT scheduled_plan_id AS s FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'hr'`, [biz]))!.s).toBe('hr_free');
+      });
+
+      it('an HR trial customer is offered HR Free too, and a free HR customer is not offered a second free plan', async () => {
+        await setRow(biz, 'hr_trial', { module: 'hr', status: 'trial', endOffset: 20 });
+        expect(byId(await plansFor(biz, '?module_key=hr'), 'hr_free')!.offer.selectable).toBe(true);
+        await setRow(biz, 'hr_free', { module: 'hr', endOffset: null });
+        const hr = (await plansFor(biz, '?module_key=hr')).filter((p) => ['hr_free', 'hr_staff_lite', 'hr_trial'].includes(p.id));
+        expect(hr.map((p) => p.id)).toEqual(['hr_free']);
+      });
+
+      it('Billing: a paid customer is offered Free and may downgrade to it', async () => {
+        await setRow(biz, 'billing_starter');
+        expect(byId(await plansFor(biz, '?module_key=billing'), 'free')!.offer.selectable).toBe(true);
+        expect((await downgrade(biz, 'free', 'billing', true)).status).toBe(200);
+      });
+
+      it('Connect: a paying customer is offered Connect (not active) and may downgrade to it; Classic and trial stay hidden', async () => {
+        await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'connect', true, 'test') ON CONFLICT DO NOTHING`, [biz]);
+        await setRow(biz, 'connect', { module: 'connect' });
+        const connect = await plansFor(biz, '?module_key=connect');
+        expect(byId(connect, 'connect_free')!.offer).toEqual({ on_sale: false, current: false, renewable: false, selectable: true });
+        expect((await downgrade(biz, 'connect_free', 'connect', true)).status).toBe(200);
+        await setRow(biz, 'billing_starter');
+        const ids = (await plansFor(biz)).map((p) => p.id);
+        for (const hidden of ['growth', 'business', 'trial', 'hr_trial']) expect(ids).not.toContain(hidden);
+      });
+    });
+
     it('a plan priced at Rs 1 is listed and can be chosen; a hidden plan priced at Rs 1 stays hidden (price is never the rule)', async () => {
       const keep = await queryOne<{ a: string; b: string; c: string }>(
         `SELECT (SELECT price_monthly::text FROM subscription_plans WHERE id = 'billing_business') AS a,
@@ -573,6 +625,63 @@ run('billing screens (kh_phase2_test)', () => {
     });
   });
 
+  describe('a public Rs 1 plan is bought through the real checkout and completion', () => {
+    it('checkout creates the payment for Rs 1, and the signed payment activates the plan', async () => {
+      const keep = await queryOne<{ p: string; y: string }>(`SELECT price_monthly::text AS p, price_yearly::text AS y FROM subscription_plans WHERE id = 'billing_business'`);
+      await query(`UPDATE subscription_plans SET price_monthly = 1, price_yearly = 1 WHERE id = 'billing_business'`);
+      const spy = jest
+        .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+        .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+      try {
+        await setRow(biz, 'billing_starter', { startOffset: -1, endOffset: 29 });
+        const res = await checkoutPost(post('/api/subscriptions/checkout', { plan_id: 'billing_business', billing_cycle: 'monthly' }, asOwner(biz)));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toMatchObject({ success: true, mode: 'redirect' });
+        // The gateway is asked for the price the server worked out, never a client figure.
+        const quoted = (spy.mock.calls[0][0] as { amount: number }).amount;
+        expect(quoted).toBeGreaterThanOrEqual(1);
+        const tx = body.billingTransactionId as string;
+        const total = await queryOne<{ t: string }>(`SELECT total_amount::text AS t FROM billing_transactions WHERE id = $1`, [tx]);
+        const r = await hook('payment.captured', 'pay_scr_' + sfx(), 'captured',
+          { business_id: biz, billing_transaction_id: tx, plan_id: 'billing_business', billing_cycle: 'monthly' }, Math.round(Number(total!.t) * 100));
+        expect(r).toMatchObject({ ok: true });
+        expect((await statusOf(biz, tx)).body).toMatchObject({ status: 'completed', plan_name: 'Business' });
+        expect((await queryOne<{ plan_id: string }>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))!.plan_id).toBe('billing_business');
+      } finally {
+        spy.mockRestore();
+        await query(`UPDATE subscription_plans SET price_monthly = $1, price_yearly = $2 WHERE id = 'billing_business'`, [keep!.p, keep!.y]);
+      }
+    });
+  });
+
+  describe('the Rs 0 coupon path still works', () => {
+    async function freeCoupon(): Promise<string> {
+      const r = await queryOne<{ id: string; code: string }>(
+        `INSERT INTO coupons (code, type, value, max_per_business) VALUES ($1, 'percentage', 100, 1) RETURNING id, code`,
+        [`SC${randomUUID().slice(0, 10).toUpperCase()}`],
+      );
+      coupons.push(r!.id);
+      return r!.code;
+    }
+    const planOf = async (b: string) =>
+      (await queryOne<{ plan_id: string }>(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [b]))!.plan_id;
+
+    it('a 100% coupon on a plan on sale upgrades instantly', async () => {
+      await setRow(biz, 'billing_starter');
+      const res = await checkoutPost(post('/api/subscriptions/checkout', { plan_id: 'billing_growth', billing_cycle: 'monthly', coupon_code: await freeCoupon() }, asOwner(biz)));
+      expect(await res.json()).toMatchObject({ success: true, mode: 'instant' });
+      expect(await planOf(biz)).toBe('billing_growth');
+    });
+
+    it('a 100% coupon on the current retired Classic plan renews it instantly', async () => {
+      await setRow(biz, 'growth', { startOffset: -10, endOffset: 20 });
+      const res = await checkoutPost(post('/api/subscriptions/checkout', { plan_id: 'growth', billing_cycle: 'monthly', coupon_code: await freeCoupon() }, asOwner(biz)));
+      expect(await res.json()).toMatchObject({ success: true, mode: 'instant' });
+      expect(await planOf(biz)).toBe('growth');
+    });
+  });
+
   // ---- 3. upgrade prompts name a plan that can be bought ----
 
   describe('feature upgrade prompt', () => {
@@ -605,6 +714,11 @@ run('billing screens (kh_phase2_test)', () => {
       const plan = await featurePlan(biz, 'hr_attendance');
       expect(plan!.planId).toBe('hr_starter');
       expect(plan!.allPlansWithFeature.map((p) => p.planId)).not.toContain('hr_staff_lite');
+    });
+
+    it('a customer on a retired Classic plan is named the lowest on-sale paid plan with the feature', async () => {
+      await setRow(biz, 'growth');
+      expect((await featurePlan(biz, 'advanced_barcode'))!.planId).toBe('billing_starter');
     });
 
     it('a business already on Growth is pointed above Growth, never down', async () => {

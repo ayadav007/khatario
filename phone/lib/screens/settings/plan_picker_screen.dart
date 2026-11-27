@@ -40,6 +40,12 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
     return null;
   }
 
+  /// The server says this plan cannot be chosen now (offer.selectable == false). A missing field means it can.
+  bool _blocked(Map<String, dynamic>? plan) {
+    final offer = plan?['offer'];
+    return offer is Map && offer['selectable'] == false;
+  }
+
   Future<void> _payOnWebsite() async {
     final go = await showDialog<bool>(
       context: context,
@@ -66,7 +72,7 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
   Future<void> _continue() async {
     final plan = _selected;
     if (plan == null || _saving) return;
-    if (plan['id']?.toString() == widget.currentPlanId) return;
+    if (plan['id']?.toString() == widget.currentPlanId || _blocked(plan)) return;
     final monthly = toNum(plan['price_monthly']);
     final yearly = toNum(plan['price_yearly']);
     final priced = _yearly ? (yearly > 0 ? yearly : monthly) : monthly;
@@ -90,7 +96,7 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
   Widget build(BuildContext context) {
     final plan = _selected;
     final name = plan?['display_name']?.toString() ?? 'plan';
-    final current = plan?['id']?.toString() == widget.currentPlanId;
+    final current = plan?['id']?.toString() == widget.currentPlanId || _blocked(plan);
     final save = bestYearlySave(widget.plans);
     final included = plan == null ? const <String>[] : planIncludedLines(plan);
     return Scaffold(

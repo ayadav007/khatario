@@ -57,7 +57,8 @@ export function nextPollStep(elapsedMs: number, result: ServerCheckoutStatus | n
   return elapsedMs >= PAYMENT_POLL_MAX_MS ? 'timeout' : 'again';
 }
 
-const BANK_NOTE = 'Your bank statement shows whether any money was taken.';
+const NOT_THROUGH =
+  'This payment did not go through and your plan was not changed. If money left your account, your bank normally returns it within a few working days; write to support if it does not.';
 
 /** The words for the current state. `status` is the latest server answer; `timedOut` is set after two minutes. */
 export function paymentScreen(
@@ -76,7 +77,7 @@ export function paymentScreen(
       phase: 'failed',
       tone: 'warning',
       title: 'Payment was not completed',
-      body: `No ${what} was changed. ${BANK_NOTE} You can try again any time.`,
+      body: NOT_THROUGH,
     };
   }
 
@@ -109,14 +110,14 @@ export function paymentScreen(
         phase: 'failed',
         tone: 'danger',
         title: 'Payment did not go through',
-        body: `No ${what} was changed. ${BANK_NOTE} You can try again any time.`,
+        body: NOT_THROUGH,
       };
     case 'expired':
       return {
         phase: 'failed',
         tone: 'warning',
         title: 'The payment link expired',
-        body: `No ${what} was changed and nothing was charged for this link. Start again to pay.`,
+        body: NOT_THROUGH,
       };
     case 'refunded':
       return {

@@ -195,7 +195,7 @@ export function ModuleSubscriptionCard({
           {isStaffLite ? (
             <div className="flex items-baseline gap-2">
               <span className="type-kpi-value">Included</span>
-              <span className="text-text-secondary">with Billing · up to 30 staff</span>
+              <span className="text-text-secondary">with Starter and above · up to 30 staff</span>
             </div>
           ) : isFree ? (
             <div className="flex items-baseline gap-2">

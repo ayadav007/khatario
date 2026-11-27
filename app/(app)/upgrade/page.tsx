@@ -1,7 +1,7 @@
 'use client';
 
 import { PageHeader } from '@/components/layout/PageHeader';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ type OfferedPlan = {
   product_line?: string;
   is_public?: boolean;
   is_active?: boolean;
+  offer?: { current: boolean; selectable: boolean };
 };
 
 const PRODUCT_LABELS: Record<string, string> = { billing: 'Billing', hr: 'HR', connect: 'Connect' };
@@ -28,7 +29,7 @@ function formatInr(value: number): string {
 /** Plans a visitor can buy today: public, active and not free, straight from the plan catalogue. */
 function plansOnSale(plans: OfferedPlan[]): OfferedPlan[] {
   return plans.filter(
-    (p) => p.is_public !== false && p.is_active !== false && (Number(p.price_monthly) > 0 || Number(p.price_yearly) > 0),
+    (p) => !p.offer?.current && p.offer?.selectable !== false && p.is_public !== false && p.is_active !== false && (Number(p.price_monthly) > 0 || Number(p.price_yearly) > 0),
   );
 }
 
@@ -37,13 +38,25 @@ export default function UpgradePage() {
   const { business } = useAuth();
   const [planName, setPlanName] = useState<string>('Free');
   const [plans, setPlans] = useState<OfferedPlan[]>([]);
+  const [plansState, setPlansState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const loadPlans = useCallback(() => {
+    setPlansState('loading');
+    fetch('/api/subscriptions/plans', { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('plans');
+        return res.json();
+      })
+      .then((data) => {
+        setPlans(plansOnSale(Array.isArray(data.plans) ? data.plans : []));
+        setPlansState('ready');
+      })
+      .catch(() => setPlansState('error'));
+  }, []);
 
   useEffect(() => {
-    fetch('/api/subscriptions/plans', { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : { plans: [] }))
-      .then((data) => setPlans(plansOnSale(Array.isArray(data.plans) ? data.plans : [])))
-      .catch(() => setPlans([]));
-  }, []);
+    loadPlans();
+  }, [loadPlans]);
 
   useEffect(() => {
     if (business?.id) {
@@ -80,7 +93,19 @@ export default function UpgradePage() {
             To access this feature, please upgrade your subscription plan.
           </p>
 
-          {plans.length > 0 && (
+          {plansState === 'loading' && <p className="text-sm text-gray-500 mb-4">Loading plans...</p>}
+          {plansState === 'error' && (
+            <div className="bg-slate-50 border border-primary-200 rounded-lg p-4 mb-4 text-sm text-primary-800">
+              <p>Plans could not be loaded.</p>
+              <button type="button" onClick={loadPlans} className="mt-2 font-semibold underline">
+                Try again
+              </button>
+            </div>
+          )}
+          {plansState === 'ready' && plans.length === 0 && (
+            <p className="text-sm text-gray-500 mb-4">No plans are on sale right now. Open Subscription Plans to see your options.</p>
+          )}
+          {plansState === 'ready' && plans.length > 0 && (
             <div className="bg-slate-50 border border-primary-200 rounded-lg p-4 mb-4">
               <h3 className="font-semibold text-primary-900 mb-2">Available Plans:</h3>
               <ul className="space-y-2 text-sm text-primary-800">

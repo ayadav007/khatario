@@ -65,6 +65,19 @@ describe('planOfferFor', () => {
   });
 });
 
+describe('the module free plan', () => {
+  const hrFree = plan('hr_free', { is_public: false, price_monthly: 0, price_yearly: 0 });
+  it('is offered as a downgrade target when its id is in the own-free set, and only then', () => {
+    expect(planOfferFor(hrFree, none, new Set(['hr_free']))).toEqual({ on_sale: false, current: false, renewable: false, selectable: true });
+    expect(planOfferFor(hrFree, none)).toBeNull();
+    expect(planOfferFor(plan('growth', { is_public: false }), none, new Set(['hr_free']))).toBeNull();
+    expect(planOfferFor(plan('trial', { is_public: false }), none, new Set(['hr_free']))).toBeNull();
+  });
+  it('an inactive free plan is not offered', () => {
+    expect(planOfferFor({ ...hrFree, is_active: false }, none, new Set(['hr_free']))).toBeNull();
+  });
+});
+
 describe('selectOfferedPlans', () => {
   const catalogue = [
     plan('free', { price_monthly: 0, price_yearly: 0 }),
@@ -116,6 +129,14 @@ describe('pickUpgradePlansForFeature', () => {
   it('orders by tier, not price: a Rs 1 higher tier does not jump the queue', () => {
     const cheapTop = [row('billing_starter', 2), row('billing_business', 4, { price_monthly: 1, price_yearly: 1 })];
     expect(ids(pickUpgradePlansForFeature(cheapTop, { onSaleOnly: true, productLine: 'billing' }))).toEqual(['billing_starter', 'billing_business']);
+  });
+  it('a current plan that is not on sale has no tier among the new plans and is ignored', () => {
+    const out = pickUpgradePlansForFeature(rows, {
+      onSaleOnly: true,
+      productLine: 'billing',
+      current: [{ id: 'growth', sort_order: 30, product_line: 'billing', on_sale: false }],
+    });
+    expect(ids(out)).toEqual(['billing_starter', 'billing_growth']);
   });
   it('points above the current plan of the same product only', () => {
     const out = pickUpgradePlansForFeature(rows, {

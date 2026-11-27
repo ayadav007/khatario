@@ -43,7 +43,8 @@ export type UpgradePlanFilter = {
   /** Only plans of this product (`billing`, `hr`, `connect`). Null for a feature shared by products. */
   productLine?: string | null;
   /** The plans the business is on now: the answer must be a higher tier than the current plan of its product. */
-  current?: Array<TierPlan & { product_line?: string | null }>;
+  /** A current plan that is not on sale (a retired Classic plan) has no tier among the new plans: it is ignored. */
+  current?: Array<TierPlan & { product_line?: string | null; on_sale?: boolean }>;
 };
 
 /**
@@ -67,7 +68,7 @@ export function pickUpgradePlansForFeature(rows: readonly CatalogueRow[], filter
       if (filter.productLine && line !== filter.productLine) return false;
       const candidate = { id: r.plan_id, sort_order: r.sort_order ?? 0 };
       return !(filter.current ?? []).some(
-        (c) => (c.product_line ?? 'billing') === line && comparePlanTier(candidate, c) <= 0,
+        (c) => c.on_sale !== false && (c.product_line ?? 'billing') === line && comparePlanTier(candidate, c) <= 0,
       );
     })
     .sort(

@@ -68,14 +68,16 @@ describe('paymentScreen', () => {
     expect(s.body).toContain('bought 20 days');
     expect(paymentScreen(ret, status({ status: 'completed', shortened_days: 1 }), false).body).toContain('bought 1 day.');
   });
-  it('failed: no plan was changed, and the bank shows whether money was taken', () => {
+  it('failed: plan not changed, money that left the account comes back through the bank', () => {
     const s = paymentScreen(ret, status({ status: 'failed' }), false);
     expect(s).toMatchObject({ phase: 'failed', tone: 'danger' });
-    expect(s.body).toMatch(/No plan was changed/);
-    expect(s.body).toMatch(/bank statement shows whether any money was taken/);
+    expect(s.body).toMatch(/did not go through and your plan was not changed/);
+    expect(s.body).toMatch(/bank normally returns it within a few working days; write to support if it does not/);
+    expect(s.body).not.toMatch(/nothing was charged/i);
   });
   it('expired and refunded have their own words', () => {
     expect(paymentScreen(ret, status({ status: 'expired' }), false).title).toBe('The payment link expired');
+    expect(paymentScreen(ret, status({ status: 'expired' }), false).body).not.toMatch(/nothing was charged/i);
     expect(paymentScreen(ret, status({ status: 'refunded' }), false).title).toBe('This payment was refunded');
   });
   it('timeout: still being confirmed, switches on by itself, nothing to pay again', () => {
@@ -95,12 +97,12 @@ describe('paymentScreen', () => {
   it('a cancelled return needs no waiting and changes nothing', () => {
     const s = paymentScreen({ ...ret, hint: 'cancelled' }, null, false);
     expect(s).toMatchObject({ phase: 'failed', title: 'Payment was not completed' });
-    expect(s.body).toMatch(/No plan was changed/);
+    expect(s.body).toMatch(/plan was not changed/);
   });
   it('an add-on says add-on and names it', () => {
     const addon = { kind: 'addon' as const, hint: 'success' as const, tx: 'abc' };
     expect(paymentScreen(addon, status({ status: 'completed', kind: 'addon', addon_label: 'Khatario AI' }), false).title).toBe('Khatario AI is active');
-    expect(paymentScreen(addon, status({ status: 'failed', kind: 'addon' }), false).body).toMatch(/No add-on was changed/);
+    expect(paymentScreen(addon, status({ status: 'failed', kind: 'addon' }), false).body).toMatch(/did not go through/);
   });
   it('never prints a plan id: a missing plan name falls back to generic words', () => {
     const s = paymentScreen(ret, status({ status: 'completed', plan_name: null }), false);

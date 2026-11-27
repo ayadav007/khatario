@@ -119,10 +119,12 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> with WidgetsBindi
           _featuresCard(),
           _historyCard(),
           const SizedBox(height: AppSpace.md),
-          KButton(
-            label: 'Change plan',
-            onPressed: _changePlan,
-          ),
+          // An older server does not send can_manage_billing: treat a missing value as allowed.
+          if (_subscription['can_manage_billing'] != false)
+            KButton(
+              label: 'Change plan',
+              onPressed: _changePlan,
+            ),
         ],
       ],
     );
@@ -192,6 +194,8 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> with WidgetsBindi
   Widget _moduleCard(Map<String, dynamic> module) {
     final sub = jsonMap(module['subscription']);
     if (sub.isEmpty) return const SizedBox.shrink();
+    // No price from the server (staff without billing access get the plan name only): show no price line.
+    final hasPrice = sub['price_monthly'] != null;
     final price = toNum(sub['price_monthly']);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpace.md),
@@ -207,7 +211,7 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> with WidgetsBindi
               if ((sub['plan_description']?.toString() ?? '').isNotEmpty)
                 Text(sub['plan_description'].toString(), style: AppText.caption),
               const SizedBox(height: 4),
-              Text(price <= 0 ? 'Free' : '${inr(price)} / month', style: AppText.body),
+              if (hasPrice) Text(price <= 0 ? 'Free' : '${inr(price)} / month', style: AppText.body),
               for (final usage in jsonList(module['usage'])) _usageRow(usage),
             ],
           ),

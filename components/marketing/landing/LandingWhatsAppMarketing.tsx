@@ -25,7 +25,7 @@ export const LANDING_WHATSAPP_MARKETING_DEFAULTS: LandingWhatsAppMarketingConten
   intro:
     'Send bills and reminders free from your own number. When you want more, Khatario Connect runs offers, a team inbox and AI replies on the official WhatsApp Business API.',
   cards: [
-    { tier: 'Free with Billing', title: 'Bills & reminders', text: 'Link your number with a QR code. Bills, statements and polite payment reminders go out by themselves.' },
+    { tier: 'With Billing', title: 'Bills & reminders', text: 'Link your number with a QR code. Bills and statements go out from it. Automatic payment reminders come with Starter and above.' },
     { tier: 'Khatario Connect', title: 'Offers & campaigns', text: 'Festival offers to the right customers with approved templates, sent from your own Meta account.' },
     { tier: 'Khatario Connect', title: 'Shared inbox', text: 'One WhatsApp number, many staff replying. Nothing gets missed.' },
     { tier: 'Khatario Connect', title: 'Bot rules & AI replies', text: 'Answers the late-night “is it in stock?” questions for you.' },

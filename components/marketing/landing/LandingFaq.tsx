@@ -69,7 +69,7 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'Can I track staff attendance and salary?',
-      a: 'Yes. Staff check in from their own phone at the shop; location, shop Wi-Fi and the device are checked so fake GPS does not work. Salary is worked out from attendance and leave. HR Lite for up to 30 staff comes with Starter, Growth includes HR Starter for up to 50, and Business includes HR Pro for up to 200. The Free plan does not include HR. Phone check-in for staff is part of HR Starter and above.',
+      a: 'Yes. Staff check in from their own phone at the shop; location, shop Wi-Fi and the device are checked so fake GPS does not work. Salary is worked out from attendance; leave tracking is part of HR Pro. HR Lite for up to 30 staff comes with Starter, Growth includes HR Starter for up to 50, and Business includes HR Pro for up to 200. The Free plan does not include HR. Phone check-in for staff is part of HR Starter and above.',
     },
     {
       q: 'Can my staff and other branches use it too?',

@@ -17,6 +17,12 @@ describe('subscription banner words', () => {
     expect(bannerMessage({ kind: 'trial_ending', daysRemaining: 0 })).toMatch(/last day of your trial/);
     expect(bannerMessage({ kind: 'trial_ending', daysRemaining: 1 })).toBe('Your trial ends in 1 day. Upgrade to keep full access.');
   });
+  it('the compact banner says trial only for a trial that is still running', () => {
+    for (const kind of ['grace_expiring', 'trial_expired', 'grace_expired', 'cancelled'] as const) {
+      expect(bannerCompactMessage({ kind, daysRemaining: 2 })).not.toMatch(/trial ends/i);
+    }
+    expect(bannerCompactMessage({ kind: 'trial_expired', daysRemaining: 0 })).toBe('Trial ended — you are on the Free plan');
+  });
   it('grace asks to renew, not to choose a plan', () => {
     expect(bannerCta('grace_expiring')).toBe('Renew now');
     expect(bannerCta('trial_ending')).toBe('Choose a plan');

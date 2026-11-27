@@ -63,10 +63,19 @@ export function isPlanOnSale(plan: OfferablePlan): boolean {
  * The offer for one plan, or null when it must not be listed at all (not on sale and not current).
  * Pure: the callers hand in the catalogue row and what the business is on.
  */
-export function planOfferFor(plan: OfferablePlan, current: ReadonlyMap<string, CurrentPlanRef>): PlanOffer | null {
+export function planOfferFor(
+  plan: OfferablePlan,
+  current: ReadonlyMap<string, CurrentPlanRef>,
+  /** The module's own free plan, for each product whose current plan is paid or a trial (a downgrade target). */
+  ownFreePlanIds: ReadonlySet<string> = new Set(),
+): PlanOffer | null {
   const onSale = isPlanOnSale(plan);
   const here = current.get(plan.id);
   if (!here) {
+    // The module's own free plan stays a valid downgrade target even when it is hidden.
+    if (!onSale && plan.is_active !== false && ownFreePlanIds.has(plan.id)) {
+      return { on_sale: false, current: false, renewable: false, selectable: true };
+    }
     return onSale ? { on_sale: true, current: false, renewable: false, selectable: true } : null;
   }
   const renewable =
@@ -78,10 +87,11 @@ export function planOfferFor(plan: OfferablePlan, current: ReadonlyMap<string, C
 export function selectOfferedPlans<T extends OfferablePlan>(
   plans: readonly T[],
   current: ReadonlyMap<string, CurrentPlanRef>,
+  ownFreePlanIds: ReadonlySet<string> = new Set(),
 ): Array<T & { offer: PlanOffer }> {
   const out: Array<T & { offer: PlanOffer }> = [];
   for (const plan of plans) {
-    const offer = planOfferFor(plan, current);
+    const offer = planOfferFor(plan, current, ownFreePlanIds);
     if (offer) out.push({ ...plan, offer });
   }
   return out;
