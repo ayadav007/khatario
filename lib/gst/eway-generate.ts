@@ -14,9 +14,10 @@ import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
 import {
   miFindEwayByDocument,
   miGenerateEway,
-  miGetEwayStatus,
+  miGetEwayDetails,
   toMiEwayPayload,
   type EwayTransport,
+  type MiEwayDetails,
   type MiEwayResult,
 } from '@/lib/gsp/mastersindia/eway';
 
@@ -42,11 +43,13 @@ export type EwayGenerateDeps = {
   loadCredentials?: typeof loadGspCredentials;
   generate?: typeof miGenerateEway;
   findByDocument?: typeof miFindEwayByDocument;
-  getStatus?: typeof miGetEwayStatus;
+  getDetails?: typeof miGetEwayDetails;
 };
 
 const SHIP_TO_NOT_SAVED = 'This document ships to an address that is not saved on the customer';
 const MODES = ['road', 'rail', 'air', 'ship'] as const;
+/** Invoice kinds that never move goods on an e-way bill. */
+const NOT_EWAY_INVOICE_TYPES = ['proforma_invoice', 'credit_note', 'debit_note'];
 const DOC_TYPE: Record<NicEwayBill['docType'], EwayDocType> = {
   INV: 'tax_invoice', BIL: 'bill_of_supply', CHL: 'delivery_challan',
 };
@@ -101,8 +104,12 @@ function transportOf(input: GenerateEwayInput): EwayTransport {
   };
 }
 
-function toParsed(input: GenerateEwayInput, bill: NicEwayBill, t: EwayTransport, r: MiEwayResult): ParsedEwayBill {
-  const distance = Number(bill.transDistance) || 0;
+/** A duplicate or found bill is recorded with the portal's own vehicle, distance and validity, not this click's. */
+type PortalFacts = Pick<MiEwayDetails, 'vehicleNumber' | 'distanceKm'>;
+
+function toParsed(input: GenerateEwayInput, bill: NicEwayBill, click: EwayTransport, r: MiEwayResult, portal: PortalFacts | null): ParsedEwayBill {
+  const t: EwayTransport = portal ? { ...click, vehicleNumber: portal.vehicleNumber } : click;
+  const distance = portal?.distanceKm != null ? portal.distanceKm : Number(bill.transDistance) || 0;
   const isOdc = !!t.isOdc;
   return {
     source_type: input.source_type,
@@ -138,7 +145,7 @@ export async function generateEwayBillViaGsp(
   const loadCredentials = deps.loadCredentials ?? loadGspCredentials;
   const generate = deps.generate ?? miGenerateEway;
   const findByDocument = deps.findByDocument ?? miFindEwayByDocument;
-  const getStatus = deps.getStatus ?? miGetEwayStatus;
+  const getDetails = deps.getDetails ?? miGetEwayDetails;
   const pool = getPool();
 
   if (input?.source_type !== 'invoice' && input?.source_type !== 'delivery_challan') {
@@ -163,6 +170,25 @@ export async function generateEwayBillViaGsp(
     [businessId, input.source_type, input.source_id],
   );
   if (existing.rows.length) throw new EwayBillInputError('This document already has an active e-way bill.', 409, 'EWAY_EXISTS');
+
+  // 2b. Only a document that moves goods can carry an e-way bill (the same rule the pages use).
+  if (input.source_type === 'invoice') {
+    const inv = (
+      await pool.query(`SELECT status, document_type, deleted_at FROM invoices WHERE id = $1 AND business_id = $2`, [input.source_id, businessId])
+    ).rows[0];
+    if (!inv) throw new EwayBillInputError('Invoice not found', 404);
+    if (inv.status !== 'final' || inv.deleted_at || NOT_EWAY_INVOICE_TYPES.includes(String(inv.document_type || ''))) {
+      throw new EwayBillInputError('Only a final invoice can get an e-way bill', 409, 'NOT_ELIGIBLE');
+    }
+  } else {
+    const dc = (
+      await pool.query(`SELECT status FROM delivery_challans WHERE id = $1 AND business_id = $2`, [input.source_id, businessId])
+    ).rows[0];
+    if (!dc) throw new EwayBillInputError('Delivery challan not found', 404);
+    if (dc.status !== 'sent' && dc.status !== 'delivered') {
+      throw new EwayBillInputError('Only a sent or delivered challan can get an e-way bill', 409, 'NOT_ELIGIBLE');
+    }
+  }
 
   // 3. The bill and the provider payload.
   const transport = transportOf(input);
@@ -196,22 +222,37 @@ export async function generateEwayBillViaGsp(
     limitClient.release();
   }
   if (!check.allowed) {
+    // A positive limit was reached; otherwise the check explains why (no subscription, a plan without e-way bills).
     throw new EwayBillInputError(
-      "You have reached this month's e-way bill limit for your plan. Upgrade your plan to generate more.",
+      check.limit > 0
+        ? "You have reached this month's e-way bill limit for your plan. Upgrade your plan to generate more."
+        : check.message || 'Your plan does not include e-way bill generation.',
       403,
       'LIMIT_EXCEEDED',
     );
   }
 
-  /** A bill the portal already held for this document number is recorded only while it is still active. */
-  const assertStillActive = async (ewbNumber: string, onError: (e: unknown) => unknown) => {
-    let status: Awaited<ReturnType<typeof miGetEwayStatus>>;
+  /**
+   * A bill the portal already held for this document number is recorded only when it was made for this very
+   * document (number and date) and is still active; it is then stored with the portal's own details.
+   */
+  const portalCheck = async (ewbNumber: string, onError: (e: unknown) => unknown): Promise<MiEwayDetails> => {
+    let d: MiEwayDetails;
     try {
-      status = await getStatus(creds, fromGstin, ewbNumber);
+      d = await getDetails(creds, fromGstin, ewbNumber);
     } catch (e) {
       throw onError(e);
     }
-    if (status !== 'active') {
+    const sameDoc =
+      d.documentNumber.toUpperCase() === String(bill.docNo).trim().toUpperCase() && d.documentDate === String(bill.docDate).trim();
+    if (!sameDoc) {
+      throw new EwayBillInputError(
+        `The e-way bill portal holds e-way bill ${ewbNumber} for document ${d.documentNumber} dated ${d.documentDate}, which does not match this document. Check the portal.`,
+        409,
+        'EWAY_MISMATCH',
+      );
+    }
+    if (d.status !== 'active') {
       throw new EwayBillInputError(
         'The e-way bill portal still holds an old e-way bill ' + ewbNumber +
           ' for this document number. Cancelled bills cannot be regenerated on the same number from here; check the portal.',
@@ -219,25 +260,48 @@ export async function generateEwayBillViaGsp(
         'EWAY_STALE_DUPLICATE',
       );
     }
+    return d;
   };
 
-  // 5-6. Generate; no transaction is open here. Look up by document number only when the call went unanswered.
+  /** True when we already hold this number for this document as no longer active (for example cancelled earlier). */
+  const heldInactive = async (ewbNumber: string) =>
+    (
+      await pool.query(
+        `SELECT 1 FROM eway_bills WHERE business_id = $1 AND source_type = $2 AND source_id = $3 AND ewb_number = $4 AND status <> 'active' LIMIT 1`,
+        [businessId, input.source_type, input.source_id, ewbNumber],
+      )
+    ).rows.length > 0;
+
+  // 5-6. Generate; no transaction is open here. Look up by document number when the call went unanswered,
+  // or when the portal refused it as a repeat of a document number that already has a bill.
   let result: MiEwayResult;
+  let portal: MiEwayDetails | null = null;
   try {
     result = await generate(creds, payload);
   } catch (e) {
-    if (!(e instanceof GspError) || (e.kind !== 'timeout' && e.kind !== 'unreachable')) throw gspFailure(e, fromGstin);
+    const unanswered = e instanceof GspError && (e.kind === 'timeout' || e.kind === 'unreachable');
+    const repeat =
+      e instanceof GspError && e.kind === 'rejected' && (e.nicCode === '604' || /already.*generated|duplicate/i.test(e.message));
+    if (!unanswered && !repeat) throw gspFailure(e, fromGstin);
+    // When the lookup gives no usable answer: unanswered means check the portal; a refused repeat keeps the portal's own words.
+    const giveUp = (err?: unknown): unknown => {
+      if (err !== undefined && !(err instanceof GspError)) return err;
+      return unanswered ? noAnswer() : gspFailure(e, fromGstin);
+    };
     let found: MiEwayResult | null = null;
     try {
       found = await findByDocument(creds, fromGstin, bill.docNo, bill.docType);
     } catch {
       found = null;
     }
-    if (!found) throw noAnswer();
-    await assertStillActive(found.ewbNumber, (err) => (err instanceof GspError ? noAnswer() : err));
+    if (!found) throw giveUp();
+    // The lookup can return the bill cancelled earlier on this document rather than a newer one: no answer, not a stale duplicate.
+    if (unanswered && (await heldInactive(found.ewbNumber))) throw noAnswer();
+    portal = await portalCheck(found.ewbNumber, giveUp);
     result = found;
   }
-  if (result.duplicate) await assertStillActive(result.ewbNumber, (err) => gspFailure(err, fromGstin));
+  if (result.duplicate && !portal) portal = await portalCheck(result.ewbNumber, (err) => gspFailure(err, fromGstin));
+  if (portal) result = { ...result, validUntil: portal.validUntil ?? result.validUntil };
 
   // 7-8. Record in one transaction; on failure the next click reaches the duplicate path and records it.
   let client: PoolClient | null = null;
@@ -245,7 +309,7 @@ export async function generateEwayBillViaGsp(
     client = await pool.connect();
     await client.query('BEGIN');
     await setInvoiceAuditContext(client, { actorUserId: userId, action: 'eway_updated' });
-    const view = await createEwayBill(client, businessId, toParsed(input, bill, transport, result), userId, {
+    const view = await createEwayBill(client, businessId, toParsed(input, bill, transport, result, portal), userId, {
       generatedVia: 'api',
       requestId: result.requestId,
       printUrl: result.printUrl,
@@ -254,7 +318,12 @@ export async function generateEwayBillViaGsp(
     await client.query('COMMIT');
     return view;
   } catch (e: any) {
-    if (client) await client.query('ROLLBACK').catch(() => undefined);
+    if (client) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      // Release before the lookups below, so this request never holds two pooled connections.
+      client.release();
+      client = null;
+    }
     // A concurrent request for the same document may have saved this very bill first.
     const saved = await pool
       .query(
@@ -264,6 +333,20 @@ export async function generateEwayBillViaGsp(
       .then((r) => (r.rows[0] ? getEwayBill(pool, businessId, r.rows[0].id) : null))
       .catch(() => null);
     if (saved) return saved;
+    // The number is already recorded here against another document: clicking again would fail the same way.
+    if (e?.code === '23505') {
+      const elsewhere = await pool
+        .query(`SELECT 1 FROM eway_bills WHERE business_id = $1 AND ewb_number = $2 LIMIT 1`, [businessId, result.ewbNumber])
+        .then((r) => r.rows.length > 0)
+        .catch(() => false);
+      if (elsewhere) {
+        throw new EwayBillInputError(
+          'E-way bill ' + result.ewbNumber + ' is already recorded here against another document. Open the e-way bills page to check it.',
+          409,
+          'EWAY_NUMBER_TAKEN',
+        );
+      }
+    }
     console.error('[eway-generate] generated e-way bill not saved', { ewbNumber: result.ewbNumber, error: e?.message });
     throw new EwayBillInputError(
       'E-way bill ' + result.ewbNumber + ' was generated but could not be saved here. Click Generate again to record it.',

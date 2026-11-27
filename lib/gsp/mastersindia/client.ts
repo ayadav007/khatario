@@ -149,6 +149,8 @@ export async function gspCall<T = any>(
     throw new GspError('rejected', text, nic != null ? String(nic) : null);
   }
   if (res.status === 401) throw new GspError('auth', 'Masters India rejected the credentials');
+  // A server error with no e-way bill answer is an outage, not a rejection: the bill may or may not exist.
+  if (res.status >= 500) throw new GspError('unreachable', 'Masters India had a server error');
   if (body && typeof body === 'object' && body.error) {
     throw new GspError('rejected', String(body.error_description || body.error));
   }

@@ -203,6 +203,8 @@ export type EwayBillAction =
       in_transit?: 'road' | 'warehouse' | 'others' | null;
       vehicle_number?: string;
       transport_mode?: 'road' | 'rail' | 'air' | 'ship';
+      transport_doc_number?: string;
+      transport_doc_date?: string;
     }
   | {
       action: 'vehicle';
@@ -238,6 +240,21 @@ export function assertRemainingKm(v: unknown): number {
   return km;
 }
 
+/**
+ * A cancelled bill's number must not keep printing on its document: clear the document's own e-way bill
+ * field when it still holds that number. Runs in the caller's transaction, under its invoice audit context.
+ */
+async function clearLegacyNumber(client: PoolClient, businessId: string, sourceType: EwaySourceType, sourceId: string | null, ewbNumber: string) {
+  const src = SOURCES[sourceType];
+  if (!src?.legacy || !sourceId) return;
+  const dateSet = src.legacy.date ? `, ${src.legacy.date} = NULL` : '';
+  await client.query(
+    `UPDATE ${src.table} SET ${src.legacy.number} = NULL${dateSet}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND business_id = $2 AND ${src.legacy.number} = $3`,
+    [sourceId, businessId, ewbNumber]
+  );
+}
+
 /** Cancel, reject, close, extend, or update Part B (vehicle). */
 export async function updateEwayBill(
   client: PoolClient,
@@ -262,6 +279,7 @@ export async function updateEwayBill(
           WHERE id = $1 AND business_id = $2`,
         [id, businessId, now, a.reason || null]
       );
+      await clearLegacyNumber(client, businessId, row.source_type, row.source_id, row.ewb_number);
       break;
     case 'reject':
       assertOpenFor(row.status, 'be rejected');
@@ -293,11 +311,15 @@ export async function updateEwayBill(
     case 'vehicle': {
       assertOpenFor(row.status, 'take a new vehicle');
       const vehicle = String(a.vehicle_number ?? '').trim().toUpperCase().replace(/\s+/g, '') || null;
-      if (!vehicle && !a.transporter_name) throw new EwayBillInputError('Enter the vehicle number or transporter');
+      // Rail, air and ship travel on a transport document (railway receipt, airway bill, bill of lading), not a vehicle.
+      const docNumber = String(a.transport_doc_number ?? '').trim() || null;
+      if (!vehicle && !a.transporter_name && !docNumber) {
+        throw new EwayBillInputError('Enter the vehicle number, transporter or transport document number');
+      }
       await client.query(
-        `INSERT INTO eway_bill_vehicles (eway_bill_id, transport_mode, vehicle_number, transporter_name, transporter_gstin, reason, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, a.transport_mode || 'road', vehicle, a.transporter_name || null, a.transporter_gstin || null, a.reason || 'Vehicle changed', userId]
+        `INSERT INTO eway_bill_vehicles (eway_bill_id, transport_mode, vehicle_number, transporter_name, transporter_gstin, transport_doc_number, reason, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, a.transport_mode || 'road', vehicle, a.transporter_name || null, a.transporter_gstin || null, docNumber, a.reason || 'Vehicle changed', userId]
       );
       if (override?.validUntil) {
         await client.query(`UPDATE eway_bills SET valid_until = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`, [id, businessId, override.validUntil]);

@@ -89,3 +89,12 @@ it('reads a 24-hour date with no AM/PM and trailing space as IST', () => {
   expect(parseGspDate('06/12/2026 23:59:59 ')?.toISOString()).toBe('2026-12-06T18:29:59.000Z');
   expect(parseGspDate('06/12/2026 00:00:00')?.toISOString()).toBe('2026-12-05T18:30:00.000Z');
 });
+
+it('treats a server error with no results as unreachable, not a rejection', async () => {
+  const f = fakeFetch([json({ token: jwt(9e9) }), json({ error: 'Internal Server Error' }, 502)]);
+  await expect(gspCall(creds, { method: 'POST', path: 'ewayBillsGenerate/', body: {} }, { fetch: f.fn }))
+    .rejects.toMatchObject({ kind: 'unreachable' });
+  // The token is cached from the first call.
+  const g = fakeFetch([json({ detail: 'oops' }, 500)]);
+  await expect(gspCall(creds, { method: 'GET', path: 'x/' }, { fetch: g.fn })).rejects.toMatchObject({ kind: 'unreachable' });
+});

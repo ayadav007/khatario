@@ -88,6 +88,12 @@ describe('e-way bill builder ship-to and dispatch-from', () => {
     expect((await run(db({ customerGstin: null, shipping: pune }))).shipToGstin).toBe('URP');
     expect((await run(db({ shipping: pune }), { shipToGstin: '27AAACR5055K1ZO' })).shipToGstin).toBe('27AAACR5055K1ZO');
   });
+  it('leaves the ship-to name blank when the ship-to GSTIN is not the buyer one, and keeps it when it is', async () => {
+    const other = await run(db({ shipping: pune }), { shipToGstin: '27AAACR5055K1ZO' });
+    expect([other.shipToGstin, other.shipToTradeName]).toEqual(['27AAACR5055K1ZO', '']);
+    const own = await run(db({ shipping: pune }), { shipToGstin: '33ADVFS4469F1ZJ' });
+    expect([own.shipToGstin, own.shipToTradeName]).toEqual(['33ADVFS4469F1ZJ', 'Chennai Buyer']);
+  });
   it('is Bill To - Ship To when a ship-to GSTIN is given even without a shipping address', async () => {
     const b = await run(db({}), { shipToGstin: '27AAACR5055K1ZO' });
     expect([b.transactionType, b.toAddr1]).toEqual([2, 'Anna Salai']);

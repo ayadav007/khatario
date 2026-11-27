@@ -69,11 +69,13 @@ export function toMiEwayPayload(bill: NicEwayBill, t: EwayTransport): Record<str
   }
   needTransportDoc(t);
   if (bill.itemList.length > MAX_ITEMS) throw new EwayBillInputError(`An e-way bill can carry at most ${MAX_ITEMS} items`);
+  const subSupply = SUB_SUPPLY[bill.subSupplyType];
+  if (!subSupply) throw new EwayBillInputError('This kind of movement cannot be sent to the e-way bill portal from here yet');
   return {
     userGstin: bill.fromGstin,
     gstin_of_consignor: bill.fromGstin,
     supply_type: 'outward',
-    sub_supply_type: SUB_SUPPLY[bill.subSupplyType] ?? 'Supply',
+    sub_supply_type: subSupply,
     sub_supply_description: bill.subSupplyDesc,
     document_type: DOC_TYPE[bill.docType],
     document_number: bill.docNo,
@@ -171,15 +173,48 @@ export async function miFindEwayByDocument(
   }
 }
 
-/** Status of a bill as the portal reports it. */
-export async function miGetEwayStatus(
+export type MiEwayStatus = 'active' | 'cancelled' | 'other';
+/** What the portal holds for a bill: its status, the document it was made for, and its current Part B. */
+export type MiEwayDetails = {
+  status: MiEwayStatus;
+  documentNumber: string;
+  /** DD/MM/YYYY, as the portal sends it. */
+  documentDate: string;
+  validUntil: Date | null;
+  vehicleNumber: string | null;
+  distanceKm: number | null;
+};
+
+/** The bill as the portal holds it (GetEwayBill). */
+export async function miGetEwayDetails(
   creds: GspCredentials, gstin: string, ewbNumber: string, deps: GspDeps = {},
-): Promise<'active' | 'cancelled' | 'other'> {
+): Promise<MiEwayDetails> {
   const r = await gspCall<any>(creds, {
     method: 'GET', path: 'getEwayBillData/', query: { action: 'GetEwayBill', gstin, eway_bill_number: ewbNumber },
   }, deps);
-  const s = String(r.data?.eway_bill_status ?? '').trim().toLowerCase();
-  return s === 'active' ? 'active' : s.startsWith('cancel') ? 'cancelled' : 'other';
+  const m = r.data ?? {};
+  const s = String(m.eway_bill_status ?? '').trim().toLowerCase();
+  // The latest vehicle entry is the one in use; entries carry their update time.
+  const vehicles: any[] = Array.isArray(m.VehiclListDetails) ? [...m.VehiclListDetails] : [];
+  const at = (v: any) => parseGspDate(v?.vehicle_number_update_date)?.getTime() ?? 0;
+  vehicles.sort((a, b) => at(b) - at(a));
+  const vehicle = String(vehicles[0]?.vehicle_number ?? '').trim().toUpperCase().replace(/\s+/g, '');
+  const km = Number(m.transportation_distance);
+  return {
+    status: s === 'active' ? 'active' : s.startsWith('cancel') ? 'cancelled' : 'other',
+    documentNumber: String(m.document_number ?? '').trim(),
+    documentDate: String(m.document_date ?? '').trim(),
+    validUntil: parseGspDate(m.eway_bill_valid_date),
+    vehicleNumber: vehicle || null,
+    distanceKm: m.transportation_distance != null && Number.isFinite(km) ? km : null,
+  };
+}
+
+/** Status of a bill as the portal reports it. */
+export async function miGetEwayStatus(
+  creds: GspCredentials, gstin: string, ewbNumber: string, deps: GspDeps = {},
+): Promise<MiEwayStatus> {
+  return (await miGetEwayDetails(creds, gstin, ewbNumber, deps)).status;
 }
 
 function dateOf(s: unknown, what: string): Date {

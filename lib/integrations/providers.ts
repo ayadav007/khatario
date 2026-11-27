@@ -70,6 +70,9 @@ const mastersindia: ProviderServer = {
       if (e instanceof gspClient.GspError && e.kind === 'auth') {
         return { ok: false, reason: 'rejected', message: 'Masters India did not accept this username and password.' };
       }
+      if (e instanceof gspClient.GspError && e.kind === 'not_configured') {
+        return { ok: false, reason: 'unreachable', message: 'E-way bill and e-invoice connections are not set up on this server yet.' };
+      }
       return { ok: false, reason: 'unreachable', message: 'Could not reach Masters India. Nothing was saved; try again.' };
     }
   },

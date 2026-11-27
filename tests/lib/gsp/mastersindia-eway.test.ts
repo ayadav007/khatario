@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GspError, clearGspTokenCache } from '@/lib/gsp/mastersindia/client';
 import {
-  miCancelEway, miCloseEway, miExtendEway, miFindEwayByDocument, miGenerateEway, miGetEwayStatus,
+  miCancelEway, miCloseEway, miExtendEway, miFindEwayByDocument, miGenerateEway, miGetEwayDetails, miGetEwayStatus,
   miUpdatePartB, toMiEwayPayload,
 } from '@/lib/gsp/mastersindia/eway';
 import { EwayBillInputError } from '@/lib/gst/eway-bills';
@@ -96,6 +96,15 @@ describe('toMiEwayPayload', () => {
     expect((toMiEwayPayload(bill(), { mode: 'air', docNumber: 'A1', docDate: '2026-11-25' }) as any).transportation_mode).toBe('Air');
   });
 
+  it('refuses a sub-supply type it has no portal spelling for, instead of sending Supply', () => {
+    const t = { mode: 'road' as const, vehicleNumber: 'KA01AB1234' };
+    for (const n of [2, 6, 7, 99]) {
+      expect(() => toMiEwayPayload(bill({ subSupplyType: n }), t)).toThrow(
+        new EwayBillInputError('This kind of movement cannot be sent to the e-way bill portal from here yet'),
+      );
+    }
+  });
+
   it('refuses a road bill with neither vehicle nor transporter', () => {
     expect(() => toMiEwayPayload(bill(), { mode: 'road' })).toThrow(
       new EwayBillInputError("Enter the vehicle number, or the transporter's GSTIN to generate Part A only"),
@@ -172,6 +181,24 @@ describe('calls', () => {
     expect(await miGetEwayStatus(creds, G, '1', { fetch: replyWith(ok({ eway_bill_status: 'CANCELLED' })) })).toBe('cancelled');
     expect(await miGetEwayStatus(creds, G, '1', { fetch: replyWith(ok({ eway_bill_status: 'Rejected' })) })).toBe('other');
     expect(await miGetEwayStatus(creds, G, '1', { fetch: replyWith(ok({})) })).toBe('other');
+  });
+
+  it('reads the document, validity, vehicle and distance of a bill', async () => {
+    const d = await miGetEwayDetails(creds, G, '371010926768', { fetch: replyWith(loginOk, fixture('eway-get.json')) });
+    expect(d).toEqual({
+      status: 'active', documentNumber: 'KH/17957940280', documentDate: '27/11/2026',
+      validUntil: new Date('2026-12-06T18:29:00.000Z'), vehicleNumber: 'WXX2121', distanceKm: 1769,
+    });
+    const latest = await miGetEwayDetails(creds, G, '1', {
+      fetch: replyWith(ok({
+        eway_bill_status: 'CANCELLED', VehiclListDetails: [
+          { vehicle_number: 'KA01AB1111', vehicle_number_update_date: '27/11/2026 09:10:00 AM' },
+          { vehicle_number: 'ka01 ab 2222', vehicle_number_update_date: '27/11/2026 01:10:00 PM' },
+        ],
+      })),
+    });
+    expect([latest.status, latest.vehicleNumber, latest.validUntil, latest.distanceKm, latest.documentNumber])
+      .toEqual(['cancelled', 'KA01AB2222', null, null, '']);
   });
 
   it('cancels a bill', async () => {

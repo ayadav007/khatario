@@ -48,6 +48,7 @@ const HELPERS = [
   'ensureInterBranchInvoiceForTransfer',
   // Write invoices through a dynamic table name the writer pattern cannot see.
   'createEwayBill',
+  'updateEwayBill',
   'mergeItems',
 ];
 const HELPER_CALL_RE = new RegExp(`(^|[^A-Za-z0-9_])(${HELPERS.join('|')})[(]`);

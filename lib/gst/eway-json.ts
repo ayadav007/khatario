@@ -150,7 +150,10 @@ async function party(
     pincode: PIN(place.pin),
     state,
     actState: place.act,
-    shipTo: differs ? { gstin: shipToGstin || x.gstin || 'URP', tradeName: cut(x.name, 100) } : null,
+    // A ship-to GSTIN other than the buyer's is another business, whose name we do not hold: leave it blank (optional at the portal).
+    shipTo: differs
+      ? { gstin: shipToGstin || x.gstin || 'URP', tradeName: shipToGstin && shipToGstin !== x.gstin ? '' : cut(x.name, 100) }
+      : null,
   };
 }
 

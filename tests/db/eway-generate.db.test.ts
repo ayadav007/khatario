@@ -15,7 +15,7 @@ const d = url ? describe : describe.skip;
 import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { GspError } from '@/lib/gsp/mastersindia/client';
-import type { MiEwayResult } from '@/lib/gsp/mastersindia/eway';
+import type { MiEwayDetails, MiEwayResult } from '@/lib/gsp/mastersindia/eway';
 import { buildLimitCountQuery } from '@/lib/subscription/limit-registry';
 import { generateEwayBillViaGsp, type EwayGenerateDeps, type GenerateEwayInput } from '@/lib/gst/eway-generate';
 
@@ -33,17 +33,29 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
   const sellerGstin = '29ABCDE1234F1Z5';
   const [invoiceId, invoice2Id, invoice3Id, invoice4Id, invoice5Id, invoice6Id, invoice7Id, invoice8Id, invoice9Id] =
     Array.from({ length: 9 }, () => randomUUID());
+  // Fix wave: repeat refusal, mismatch, eligibility, regenerate after cancel, number taken, save failure.
+  const [inv10, inv11, inv12, inv13, inv14, inv15, inv16, draftId, proformaId] = Array.from({ length: 9 }, () => randomUUID());
+  const challanId = randomUUID();
 
   const creds = { username: 'u', password: 'p' };
   const ok: MiEwayResult = {
     ewbNumber: '301009218802', generatedAt: new Date(), validUntil: new Date(Date.now() + 864e5),
     printUrl: 'https://x/p', alert: null, duplicate: false, requestId: 'R1',
   };
-  const deps = (over: Partial<EwayGenerateDeps> = {}): EwayGenerateDeps => ({
+  /** What the portal holds for a bill; by default made for invoice n of this run, today, and active. */
+  const today = () => {
+    const d = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+  };
+  const held = (n: number, over: Partial<MiEwayDetails> = {}): MiEwayDetails => ({
+    status: 'active', documentNumber: `EW${n}-${tag}`, documentDate: today(), validUntil: null, vehicleNumber: null, distanceKm: null,
+    ...over,
+  });
+  const deps = (over: Partial<EwayGenerateDeps> = {}, n = 0): EwayGenerateDeps => ({
     loadCredentials: async () => creds,
     generate: jest.fn(async () => ok),
     findByDocument: jest.fn(async () => null),
-    getStatus: jest.fn(async () => 'active' as const),
+    getDetails: jest.fn(async () => held(n)),
     ...over,
   });
   const forInvoice = (id: string, over: Partial<GenerateEwayInput> = {}): GenerateEwayInput => ({
@@ -58,12 +70,12 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
   const setPlanLimit = (n: number) =>
     pool.query(`UPDATE subscription_plan_limits SET limit_value = $2 WHERE plan_id = $1 AND limit_key = 'max_eway_bills_per_month'`, [planId, n]);
 
-  async function seedInvoice(id: string, n: number, shippingAddress: string | null = null) {
+  async function seedInvoice(id: string, n: number, shippingAddress: string | null = null, status = 'final', documentType = 'tax_invoice') {
     await pool.query(
       `INSERT INTO invoices (id, business_id, branch_id, customer_id, invoice_number, invoice_date, status, document_type,
                              place_of_supply_state_code, shipping_address, subtotal, grand_total, is_editable)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'final', 'tax_invoice', '27', $6, 1000, 1180, false)`,
-      [id, businessId, branchId, customerId, `EW${n}-${tag}`, shippingAddress],
+       VALUES ($1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'Asia/Kolkata')::date, $7, $8, '27', $6, 1000, 1180, false)`,
+      [id, businessId, branchId, customerId, `EW${n}-${tag}`, shippingAddress, status, documentType],
     );
     await pool.query(
       `INSERT INTO invoice_items (invoice_id, item_id, item_name, hsn_sac, quantity, unit, unit_price, tax_rate, tax_amount,
@@ -124,6 +136,20 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
     await seedInvoice(invoice7Id, 7);
     await seedInvoice(invoice8Id, 8);
     await seedInvoice(invoice9Id, 9);
+    await seedInvoice(inv10, 10);
+    await seedInvoice(inv11, 11);
+    await seedInvoice(inv12, 12);
+    await seedInvoice(inv13, 13);
+    await seedInvoice(inv14, 14);
+    await seedInvoice(inv15, 15);
+    await seedInvoice(inv16, 16);
+    await seedInvoice(draftId, 17, null, 'draft');
+    await seedInvoice(proformaId, 18, null, 'final', 'proforma_invoice');
+    await pool.query(
+      `INSERT INTO delivery_challans (id, business_id, branch_id, customer_id, challan_number, challan_date, status)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'draft')`,
+      [challanId, businessId, branchId, customerId, `DC1-${tag}`],
+    );
   });
 
   afterAll(async () => {
@@ -133,6 +159,7 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
       await client.query('BEGIN');
       await withLedgerDelete(client, 'tenant_purge', userId, async () => {
         await client.query(`DELETE FROM eway_bills WHERE business_id = $1`, [businessId]);
+        await client.query(`DELETE FROM delivery_challans WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM business_module_subscriptions WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM business_modules WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
@@ -205,20 +232,19 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
     const d1 = deps({
       generate: jest.fn(async () => { throw new GspError('timeout', 'slow'); }),
       findByDocument: jest.fn(async () => ({ ...ok, ewbNumber: '311009218805' })),
-      getStatus: jest.fn(async () => 'active' as const),
-    });
+    }, 2);
     expect((await generateEwayBillViaGsp(businessId, userId, input2, d1)).ewb_number).toBe('311009218805');
     expect(d1.findByDocument).toHaveBeenCalledTimes(1);
     expect(d1.findByDocument).toHaveBeenCalledWith(creds, sellerGstin, `EW2-${tag}`, 'INV');
-    expect(d1.getStatus).toHaveBeenCalledTimes(1);
-    expect(d1.getStatus).toHaveBeenCalledWith(creds, sellerGstin, '311009218805');
+    expect(d1.getDetails).toHaveBeenCalledTimes(1);
+    expect(d1.getDetails).toHaveBeenCalledWith(creds, sellerGstin, '311009218805');
   });
 
   it('after a timeout, does not record a found bill the portal no longer holds as active', async () => {
     const d1 = deps({
       generate: jest.fn(async () => { throw new GspError('timeout', 'slow'); }),
       findByDocument: jest.fn(async () => ({ ...ok, ewbNumber: '371009218806' })),
-      getStatus: jest.fn(async () => 'cancelled' as const),
+      getDetails: jest.fn(async () => held(9, { status: 'cancelled' })),
     });
     await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(invoice9Id), d1)).rejects.toMatchObject({
       code: 'EWAY_STALE_DUPLICATE', status: 409,
@@ -231,7 +257,7 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
     const d1 = deps({
       generate: jest.fn(async () => { throw new GspError('unreachable', 'down'); }),
       findByDocument: jest.fn(async () => ({ ...ok, ewbNumber: '371009218806' })),
-      getStatus: jest.fn(async () => { throw new GspError('auth', 'bad login'); }),
+      getDetails: jest.fn(async () => { throw new GspError('auth', 'bad login'); }),
     });
     await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(invoice9Id), d1)).rejects.toMatchObject({ code: 'GSP_NO_ANSWER', status: 502 });
     expect(await rowsFor(invoice9Id)).toHaveLength(0);
@@ -261,6 +287,11 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
       await expect(generateEwayBillViaGsp(businessId, userId, input3, d1)).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED', status: 403 });
       const err = await generateEwayBillViaGsp(businessId, userId, input3, d1).catch((e) => e);
       expect(err.message).toContain('e-way bill limit');
+      // A plan with no e-way bills at all (limit 0) is not told it reached a monthly limit.
+      await setPlanLimit(0);
+      const none = await generateEwayBillViaGsp(businessId, userId, input3, d1).catch((e) => e);
+      expect(none).toMatchObject({ code: 'LIMIT_EXCEEDED', status: 403 });
+      expect(none.message).not.toContain("this month's e-way bill limit");
       expect(err.message).not.toContain('eway_bills');
       expect(d1.generate).not.toHaveBeenCalled();
     } finally {
@@ -268,34 +299,145 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
     }
   });
 
-  it('a generated-but-unsaved bill is recorded by the next click', async () => {
-    const clash = '321009218809';
-    // Same number already recorded by hand for no document: the insert of the generated bill fails.
+  it('a generated-but-unsaved bill is recorded by the next click, with the portal vehicle and validity', async () => {
+    const number = '321009218809';
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const connect = jest.spyOn(pool, 'connect');
+    try {
+      // The provider says yes, then the save cannot get a connection.
+      const first = deps({
+        generate: jest.fn(async () => {
+          connect.mockImplementationOnce((() => Promise.reject(new Error('pool exhausted'))) as any);
+          return { ...ok, ewbNumber: number };
+        }),
+      }, 4);
+      await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(invoice4Id), first)).rejects.toMatchObject({
+        code: 'EWAY_NOT_SAVED', status: 500,
+        message: `E-way bill ${number} was generated but could not be saved here. Click Generate again to record it.`,
+      });
+      expect(await rowsFor(invoice4Id)).toHaveLength(0);
+      for (const call of logged.mock.calls) expect(JSON.stringify(call)).not.toMatch(/password/i);
+    } finally {
+      connect.mockRestore();
+      logged.mockRestore();
+    }
+
+    const portalValid = new Date(Date.now() + 3 * 864e5);
+    const second = deps({
+      generate: jest.fn(async () => ({ ...ok, ewbNumber: number, duplicate: true, alert: 'E-way bill is already generated on this document number' })),
+      getDetails: jest.fn(async () => held(4, { vehicleNumber: 'MH12ZZ0001', validUntil: portalValid, distanceKm: 333 })),
+    });
+    // This click typed another vehicle and distance; the portal's own are recorded.
+    const v = await generateEwayBillViaGsp(businessId, userId, forInvoice(invoice4Id, { vehicle_number: 'KA05XY9999', distance_km: 50 }), second);
+    expect(v.ewb_number).toBe(number);
+    expect(second.getDetails).toHaveBeenCalledWith(creds, sellerGstin, number);
+    expect([v.vehicle_number, v.distance_km, new Date(v.valid_until!).getTime()]).toEqual(['MH12ZZ0001', 333, portalValid.getTime()]);
+    const inv = await pool.query('SELECT eway_bill_number FROM invoices WHERE id = $1', [invoice4Id]);
+    expect(inv.rows[0].eway_bill_number).toBe(number);
+  });
+
+  it('says the number is taken when it is already recorded against another document', async () => {
+    const clash = '391009218809';
     const pre = await pool.query(
       `INSERT INTO eway_bills (business_id, source_type, source_id, ewb_number, distance_km, generated_at)
        VALUES ($1, 'other', NULL, $2, 10, NOW()) RETURNING id`,
       [businessId, clash],
     );
-    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
-      const first = deps({ generate: jest.fn(async () => ({ ...ok, ewbNumber: clash })) });
-      await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(invoice4Id), first)).rejects.toMatchObject({
-        code: 'EWAY_NOT_SAVED', status: 500,
-        message: `E-way bill ${clash} was generated but could not be saved here. Click Generate again to record it.`,
+      const d1 = deps({ generate: jest.fn(async () => ({ ...ok, ewbNumber: clash })) });
+      await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv14), d1)).rejects.toMatchObject({
+        code: 'EWAY_NUMBER_TAKEN', status: 409,
+        message: `E-way bill ${clash} is already recorded here against another document. Open the e-way bills page to check it.`,
       });
-      expect(await rowsFor(invoice4Id)).toHaveLength(0);
-      for (const call of logged.mock.calls) expect(JSON.stringify(call)).not.toMatch(/password/i);
+      expect(await rowsFor(inv14)).toHaveLength(0);
     } finally {
-      logged.mockRestore();
+      await pool.query('DELETE FROM eway_bills WHERE id = $1', [pre.rows[0].id]);
     }
-    await pool.query('DELETE FROM eway_bills WHERE id = $1', [pre.rows[0].id]);
+  });
 
-    const second = deps({ generate: jest.fn(async () => ({ ...ok, ewbNumber: clash, duplicate: true, alert: 'E-way bill is already generated on this document number' })) });
-    const v = await generateEwayBillViaGsp(businessId, userId, forInvoice(invoice4Id), second);
-    expect(v.ewb_number).toBe(clash);
-    expect(second.getStatus).toHaveBeenCalledWith(creds, sellerGstin, clash);
-    const inv = await pool.query('SELECT eway_bill_number FROM invoices WHERE id = $1', [invoice4Id]);
-    expect(inv.rows[0].eway_bill_number).toBe(clash);
+  it('does not record a duplicate the portal holds for another document, and records nothing', async () => {
+    const d1 = deps({
+      generate: jest.fn(async () => ({ ...ok, ewbNumber: '401009218801', duplicate: true })),
+      getDetails: jest.fn(async () => held(10, { documentNumber: 'OTHER/9', documentDate: '01/11/2026' })),
+    });
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv10), d1)).rejects.toMatchObject({
+      code: 'EWAY_MISMATCH', status: 409,
+      message: 'The e-way bill portal holds e-way bill 401009218801 for document OTHER/9 dated 01/11/2026, which does not match this document. Check the portal.',
+    });
+    expect(await rowsFor(inv10)).toHaveLength(0);
+    // Same number, other date: also refused.
+    const d2 = deps({
+      generate: jest.fn(async () => ({ ...ok, ewbNumber: '401009218801', duplicate: true })),
+      getDetails: jest.fn(async () => held(10, { documentDate: '01/01/2020' })),
+    });
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv10), d2)).rejects.toMatchObject({ code: 'EWAY_MISMATCH' });
+    expect(await rowsFor(inv10)).toHaveLength(0);
+  });
+
+  it('when the portal refuses a repeat document number (604), records the bill it holds for this document', async () => {
+    const d1 = deps({
+      generate: jest.fn(async () => { throw new GspError('rejected', '604: E-way bill(s) are already generated for the same document number', '604'); }),
+      findByDocument: jest.fn(async () => ({ ...ok, ewbNumber: '411009218801' })),
+    }, 11);
+    const v = await generateEwayBillViaGsp(businessId, userId, forInvoice(inv11), d1);
+    expect(v.ewb_number).toBe('411009218801');
+    expect(d1.findByDocument).toHaveBeenCalledWith(creds, sellerGstin, `EW11-${tag}`, 'INV');
+    expect(d1.getDetails).toHaveBeenCalledWith(creds, sellerGstin, '411009218801');
+  });
+
+  it('when the portal refuses a duplicate in words and nothing is found, passes the refusal on', async () => {
+    const d1 = deps({
+      generate: jest.fn(async () => { throw new GspError('rejected', 'Duplicate document number', null); }),
+    });
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv12), d1)).rejects.toMatchObject({
+      code: 'GSP_REJECTED', status: 422, message: `E-way bill portal: Duplicate document number (GSTIN ${sellerGstin})`,
+    });
+    expect(d1.findByDocument).toHaveBeenCalledTimes(1);
+    expect(await rowsFor(inv12)).toHaveLength(0);
+  });
+
+  it('refuses a draft invoice, a proforma and a draft challan without calling the provider', async () => {
+    const d1 = deps();
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(draftId), d1)).rejects.toMatchObject({
+      code: 'NOT_ELIGIBLE', status: 409, message: 'Only a final invoice can get an e-way bill',
+    });
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(proformaId), d1)).rejects.toMatchObject({ code: 'NOT_ELIGIBLE' });
+    await expect(
+      generateEwayBillViaGsp(businessId, userId, { source_type: 'delivery_challan', source_id: challanId, distance_km: 10, vehicle_number: 'KA01AB1234' }, d1),
+    ).rejects.toMatchObject({ code: 'NOT_ELIGIBLE', status: 409, message: 'Only a sent or delivered challan can get an e-way bill' });
+    expect(d1.generate).not.toHaveBeenCalled();
+    // A deleted invoice is refused too.
+    await pool.query('UPDATE invoices SET deleted_at = NOW() WHERE id = $1', [inv16]);
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv16), d1)).rejects.toMatchObject({ code: 'NOT_ELIGIBLE' });
+    expect(d1.generate).not.toHaveBeenCalled();
+  });
+
+  it('after a cancel, records the new bill the portal gives for the same document number', async () => {
+    // As the sandbox does (eway-regenerate-after-cancel.json): a new number, no duplicate alert.
+    await pool.query(
+      `INSERT INTO eway_bills (business_id, source_type, source_id, ewb_number, distance_km, generated_at, generated_via, status, cancelled_at)
+       VALUES ($1, 'invoice', $2, '421009218801', 120, NOW() - INTERVAL '2 hours', 'api', 'cancelled', NOW())`,
+      [businessId, inv13],
+    );
+    const d1 = deps({ generate: jest.fn(async () => ({ ...ok, ewbNumber: '421009218802' })) });
+    const v = await generateEwayBillViaGsp(businessId, userId, forInvoice(inv13), d1);
+    expect([v.ewb_number, v.stored_status]).toEqual(['421009218802', 'active']);
+    expect(d1.getDetails).not.toHaveBeenCalled();
+    expect(await rowsFor(inv13)).toHaveLength(2);
+  });
+
+  it('after a timeout, a lookup that returns the bill cancelled on this document is no answer, not a stale duplicate', async () => {
+    await pool.query(
+      `INSERT INTO eway_bills (business_id, source_type, source_id, ewb_number, distance_km, generated_at, generated_via, status, cancelled_at)
+       VALUES ($1, 'invoice', $2, '431009218801', 120, NOW() - INTERVAL '2 hours', 'api', 'cancelled', NOW())`,
+      [businessId, inv15],
+    );
+    const d1 = deps({
+      generate: jest.fn(async () => { throw new GspError('timeout', 'slow'); }),
+      findByDocument: jest.fn(async () => ({ ...ok, ewbNumber: '431009218801' })),
+    }, 15);
+    await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(inv15), d1)).rejects.toMatchObject({ code: 'GSP_NO_ANSWER' });
+    expect(d1.getDetails).not.toHaveBeenCalled();
   });
 
   it('when a concurrent click saved the same bill first, returns that bill instead of an error', async () => {
@@ -325,7 +467,7 @@ d('generate e-way bills through the GSP (kh_phase2_test)', () => {
   it('does not record a duplicate the portal no longer holds as active', async () => {
     const d1 = deps({
       generate: jest.fn(async () => ({ ...ok, ewbNumber: '331009218801', duplicate: true })),
-      getStatus: jest.fn(async () => 'cancelled' as const),
+      getDetails: jest.fn(async () => held(5, { status: 'cancelled' })),
     });
     await expect(generateEwayBillViaGsp(businessId, userId, forInvoice(invoice5Id), d1)).rejects.toMatchObject({
       code: 'EWAY_STALE_DUPLICATE', status: 409, message: expect.stringContaining('331009218801'),

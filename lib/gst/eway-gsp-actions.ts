@@ -4,6 +4,7 @@
 // Never log credentials, tokens or request bodies.
 import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
+import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { EwayBillInputError, istDate } from '@/lib/gst/eway-bills';
 import {
   assertCancelWindow,
@@ -16,8 +17,16 @@ import {
   type EwayBillView,
 } from '@/lib/gst/eway-bill-records';
 import { gspFailure } from '@/lib/gst/eway-generate';
+import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
-import { miCancelEway, miCloseEway, miExtendEway, miUpdatePartB, type EwayTransport } from '@/lib/gsp/mastersindia/eway';
+import {
+  miCancelEway,
+  miCloseEway,
+  miExtendEway,
+  miGetEwayStatus,
+  miUpdatePartB,
+  type EwayTransport,
+} from '@/lib/gsp/mastersindia/eway';
 
 export type EwayActionDeps = {
   loadCredentials?: typeof loadGspCredentials;
@@ -25,6 +34,7 @@ export type EwayActionDeps = {
   partB?: typeof miUpdatePartB;
   extend?: typeof miExtendEway;
   close?: typeof miCloseEway;
+  getStatus?: typeof miGetEwayStatus;
 };
 
 const text = (v: unknown) => String(v ?? '').trim();
@@ -94,6 +104,13 @@ export async function pushEwayActionToGsp(
   if (a.action === 'extend') {
     if (!place || !stateCode || !pincode) throw new EwayBillInputError('Enter the place, state and PIN code the goods are in now');
     if (!text(a.reason)) throw new EwayBillInputError('Enter the reason for the extension');
+    // Goods on a road vehicle need its number; goods in transit (in a warehouse or between vehicles) do not.
+    if (
+      pick(MODES, a.transport_mode, 'road', 'a valid transport mode') === 'road' && !a.in_transit &&
+      !vehicleOf(a.vehicle_number) && !vehicleOf(bill.vehicle_number)
+    ) {
+      throw new EwayBillInputError('Enter the vehicle number');
+    }
   }
   if (a.action === 'close' && !text(a.remarks)) throw new EwayBillInputError('Enter remarks for closing the e-way bill');
 
@@ -134,10 +151,14 @@ export async function pushEwayActionToGsp(
         return { validUntil: r.validUntil };
       }
       case 'extend': {
+        const mode = pick(MODES, a.transport_mode, 'road', 'a valid transport mode');
         const transport: EwayTransport = {
-          mode: pick(MODES, a.transport_mode, 'road', 'a valid transport mode'),
-          vehicleNumber: vehicleOf(a.vehicle_number) ?? vehicleOf(bill.vehicle_number),
+          mode,
+          // Only a road move falls back to the bill's own vehicle.
+          vehicleNumber: vehicleOf(a.vehicle_number) ?? (mode === 'road' ? vehicleOf(bill.vehicle_number) : null),
           isOdc: bill.is_odc,
+          docNumber: text(a.transport_doc_number) || null,
+          docDate: text(a.transport_doc_date) || null,
         };
         const inTransit = a.in_transit ? pick(IN_TRANSIT, a.in_transit, null, 'where the goods are in transit') : null;
         const r = await (deps.extend ?? miExtendEway)(creds, {
@@ -155,6 +176,16 @@ export async function pushEwayActionToGsp(
       }
     }
   } catch (e) {
+    // A cancel or close the portal refuses may already have been made by an earlier attempt whose local save failed.
+    if ((a.action === 'cancel' || a.action === 'close') && e instanceof GspError && e.kind === 'rejected') {
+      let status: Awaited<ReturnType<typeof miGetEwayStatus>> | null = null;
+      try {
+        status = await (deps.getStatus ?? miGetEwayStatus)(creds, gstin, bill.ewb_number, undefined);
+      } catch {
+        status = null;
+      }
+      if (a.action === 'cancel' ? status === 'cancelled' : status !== null && status !== 'active') return {};
+    }
     throw gspFailure(e, gstin);
   }
   return null;
@@ -180,6 +211,8 @@ export async function applyEwayBillAction(
   try {
     client = await pool.connect();
     await client.query('BEGIN');
+    // A cancel clears the invoice's own e-way bill number: an invoice write, so the edit log needs to know who did it.
+    await setInvoiceAuditContext(client, { actorUserId: userId, action: 'eway_updated' });
     const view = await updateEwayBill(client, businessId, id, action, userId, now, pushed?.validUntil ? { validUntil: pushed.validUntil } : undefined);
     await client.query('COMMIT');
     return view;
@@ -195,8 +228,11 @@ export async function applyEwayBillAction(
       );
     }
     console.error('[eway-actions] portal change not saved', { id, action: action.action, error: e?.message });
+    const retrySafe = action.action === 'cancel' || action.action === 'close';
     throw new EwayBillInputError(
-      'The change was made on the e-way bill portal but could not be saved here. Reload and record it manually.',
+      retrySafe
+        ? 'The change was made on the e-way bill portal but could not be saved here. Try the same action again and Khatario will pick it up.'
+        : 'The change was made on the e-way bill portal but could not be saved here. Reload and check the bill on the portal before trying again.',
       500,
       'EWAY_NOT_SAVED',
     );
