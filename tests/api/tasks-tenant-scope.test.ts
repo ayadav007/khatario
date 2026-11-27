@@ -30,7 +30,15 @@ jest.mock('@/lib/db', () => ({
   queryOne: async (sql: string, params?: unknown[]) => answer(sql, params).rows[0] ?? null,
   queryRows: async (sql: string, params?: unknown[]) => answer(sql, params).rows,
 }));
-jest.mock('@/lib/subscription/limit-response', () => ({ limitExceededResponse: jest.fn().mockResolvedValue(null) }));
+jest.mock('@/lib/subscription/limit-response', () => ({ limitExceededResponse: jest.fn().mockResolvedValue(null), limitRefusedResponse: jest.fn().mockReturnValue(null) }));
+// Limited INSERTs run under the limit lock on a pool client (lib/subscription/limit-lock); here the same
+// statement goes through the mocked database so the test still sees it.
+jest.mock('@/lib/subscription/limit-lock', () => ({
+  LimitRefusedError: class LimitRefusedError extends Error {},
+  limitedQueryOne: async (_b: string, _l: string, sql: string, params: unknown[] = []) => answer(sql, params).rows[0] ?? null,
+  withLimitedCreate: async (_b: string, _l: unknown, fn: (c: unknown) => unknown) =>
+    fn({ query: async (sql: string, params: unknown[] = []) => answer(sql, params) }),
+}));
 jest.mock('@/lib/hr/manager-scope', () => ({ getEmployeeIdForUser: jest.fn().mockResolvedValue(null) }));
 
 import { GET, POST } from '@/app/api/tasks/route';

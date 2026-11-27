@@ -13,6 +13,16 @@ jest.mock('@/lib/db', () => ({
 }));
 const mockCheckLimit = jest.fn();
 jest.mock('@/lib/subscription', () => ({ checkLimit: (...a: unknown[]) => mockCheckLimit(...a) }));
+// Employee INSERTs run under the limit lock on a pool client (lib/subscription/limit-lock); here the client is
+// the mocked database so the test still sees the statements.
+jest.mock('@/lib/subscription/limit-lock', () => ({
+  LimitRefusedError: class LimitRefusedError extends Error {},
+  withLimitedCreate: async (_b: string, _l: unknown, fn: (c: unknown) => unknown) =>
+    fn({ query: async (sql: string, params: unknown[] = []) => {
+      const row = await mockQueryOne(sql, params);
+      return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+    } }),
+}));
 const mockAuthorize = jest.fn();
 jest.mock('@/lib/authorization', () => ({
   authorize: (...a: unknown[]) => mockAuthorize(...a),
