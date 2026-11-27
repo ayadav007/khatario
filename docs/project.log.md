@@ -2069,3 +2069,21 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - The sales assistant's `HR_LAUNCHED=false` flag and some knowledge documents still say HR is coming soon while the website sells it.
   - Add-on prices are set in code (`app/api/subscriptions/addons/route.ts`), not in the catalogue.
   - Audit findings still open: SUB-17, 19, 24, 25, 35, 38, 39, 45, the rest of SUB-14 and SUB-20.
+
+## 2026-11-27: Remaining billing findings (sixth fix plan after the audit)
+- **Asked:** "please continue to fix rest".
+- **Decided:**
+  - Coupons: re-checked under a row lock when the payment completes; if a coupon ran out in between, the customer keeps what they paid for and the nightly report flags it. Minimum plan by tier. A coupon that would make a yearly or longer plan free takes off one month instead. Coupons work through their last valid day.
+  - Limits: count and insert under one lock per business and limit; a failed count refuses with "Please try again in a moment"; the lock waits at most 5 seconds; a registry limit of 0 means 0. Staff commissions from invoices and daily sales history are never limited (they are earnings and history, not things a person creates).
+  - WhatsApp: every automatic sender checks the plan, keeps the feature gate it had before (none gained a new one), and reserves its place under the daily limit before sending. Replies to a customer's own message do not count toward the daily limit (otherwise a busy bot stops invoices and reminders); AI replies keep their monthly limit. Supplier Hub notices (sent from Khatario's number) are not capped.
+  - Over the limit after a downgrade: users beyond the seats and branches beyond the branch limit are paused or read-only 7 days after the owner is first warned (banner and one email). The owner and the default branch are never affected; by default the longest-standing users and oldest branches keep access; the owner can choose. A pause applies only to that business. Read-only branches still allow reading, GST work, payments against existing bills and reports. Nothing is deleted; an upgrade restores access at once.
+  - Free plan phone-only rule is applied when web pages render and fails closed with a retry screen if the plan cannot be checked; API routes and the phone app are not gated.
+  - Admin plan edits show how many businesses are affected, need that number confirmed, and are logged with before and after values. No plan versioning (owner decision).
+- **Shipped:** on branch `claude/gifted-gates-jx4rbn`, not merged, not deployed. Migrations 482 (HR Lite description), 483 (owner's choice of who keeps access), 484 (when a business was first over its limit) written, run only on the local test database. All billing, WhatsApp, security and API suites pass together locally (1,717 tests); `tsc` clean. Found and fixed on the way: free-month coupons never added their months (the stored value was read as text).
+- **Open:**
+  - Before deploy: run `node scripts/check-over-limit.js` on production (read-only, counts only) to see how many businesses will be warned; apply 477 to 484 on staging first.
+  - Not seen in a browser; phone changes (`phone/lib/api.dart`, `main.dart`, plan screens) not compiled: run `flutter analyze` and `flutter test`.
+  - Branch read-only does not yet cover stock-transfer dispatch/receive/cancel, POS and online-store writes, imports and stock counts. Credit notes from returns, system attendance rows and backup restore are deliberately not limited. Proforma invoices count toward the estimate limit but are not checked when created.
+  - A statement reminder about several bills still uses one daily place per bill, as before.
+  - A real business id from the removed `FIX_ADDON_START_DATE.sql` remains in git history; removing it needs a history rewrite (owner decision).
+  - Owner decisions: `HR_LAUNCHED` flag in `lib/rag/product-availability.ts`; plan versioning; add-on prices in code; the production `platform_limits` check (SUB-14).
