@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       current,
       targetPlanId: planId,
       billingCycle,
-      currentPlanIsPaid: current ? await planHasPaidPrice(current.plan_id) : false,
+      currentPlanIsPaid: current ? await planHasPaidPrice(current.plan_id, undefined, tenant.businessId) : false,
     });
 
     return NextResponse.json({

@@ -402,7 +402,7 @@ export async function adminUpdateSubscription(params: {
      )
      ON CONFLICT (business_id, module_key) DO UPDATE SET
        plan_id = EXCLUDED.plan_id,
-       plan_terms_id = CASE WHEN bms.plan_id IS DISTINCT FROM EXCLUDED.plan_id THEN NULL ELSE bms.plan_terms_id END,
+       plan_terms_id = CASE WHEN bms.plan_id IS DISTINCT FROM EXCLUDED.plan_id OR EXCLUDED.status = 'cancelled' THEN NULL ELSE bms.plan_terms_id END,
        status = EXCLUDED.status,
        end_date = EXCLUDED.end_date,
        trial_end_date = EXCLUDED.trial_end_date,

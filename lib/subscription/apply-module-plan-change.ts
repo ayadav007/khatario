@@ -166,7 +166,7 @@ async function applyOnClient(
       current: existing,
       targetPlanId: params.planId,
       billingCycle: params.billingCycle,
-      currentPlanIsPaid: existing ? await planHasPaidPrice(existing.plan_id, client) : false,
+      currentPlanIsPaid: existing ? await planHasPaidPrice(existing.plan_id, client, params.businessId) : false,
       shorten: params.shorten,
     },
     client,

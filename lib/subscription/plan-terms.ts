@@ -80,12 +80,15 @@ export function planEnabledFeaturesQuery(
       params: [planId],
     };
   }
+  // A pin that does not belong to this plan is ignored: the live matrix is read instead.
   return {
     sql: `SELECT pf.id
-     FROM subscription_plan_terms t
-     CROSS JOIN LATERAL jsonb_array_elements_text(t.features) AS f(feature_id)
-     JOIN platform_features pf ON pf.id = f.feature_id
-     WHERE t.id = $2::uuid AND t.plan_id = $1 AND pf.is_active = true`,
+     FROM platform_features pf
+     WHERE pf.is_active = true AND (
+       CASE WHEN EXISTS (SELECT 1 FROM subscription_plan_terms t WHERE t.id = $2::uuid AND t.plan_id = $1)
+            THEN pf.id IN (SELECT jsonb_array_elements_text(t.features) FROM subscription_plan_terms t WHERE t.id = $2::uuid AND t.plan_id = $1)
+            ELSE pf.id IN (SELECT spf.feature_id FROM subscription_plan_features spf WHERE spf.plan_id = $1 AND spf.enabled = true)
+       END)`,
     params: [planId, termsId],
   };
 }
@@ -107,10 +110,12 @@ export function planEnabledFeatureDetailQuery(
   }
   return {
     sql: `SELECT pf.id, pf.label, pf.category, pf.description
-         FROM subscription_plan_terms t
-         CROSS JOIN LATERAL jsonb_array_elements_text(t.features) AS f(feature_id)
-         JOIN platform_features pf ON pf.id = f.feature_id
-         WHERE t.id = $2::uuid AND t.plan_id = $1 AND pf.is_active = true
+         FROM platform_features pf
+         WHERE pf.is_active = true AND (
+           CASE WHEN EXISTS (SELECT 1 FROM subscription_plan_terms t WHERE t.id = $2::uuid AND t.plan_id = $1)
+                THEN pf.id IN (SELECT jsonb_array_elements_text(t.features) FROM subscription_plan_terms t WHERE t.id = $2::uuid AND t.plan_id = $1)
+                ELSE pf.id IN (SELECT spf.feature_id FROM subscription_plan_features spf WHERE spf.plan_id = $1 AND spf.enabled = true)
+           END)
          ORDER BY pf.category, pf.sort_order`,
     params: [planId, termsId],
   };

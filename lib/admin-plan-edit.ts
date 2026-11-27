@@ -395,10 +395,12 @@ export async function applyPlanPriceEdit(params: {
           }
         },
         applyToSnapshots: () =>
+          // The whole new price set, not only the changed cycles: everyone ends on the plan's prices and no snapshot
+          // keeps a cycle the plan no longer sells (or breaks the monthly-0 rule).
           applyPriceChangeToSnapshots(client, planId, {
-            price_monthly: after.price_monthly === undefined ? null : toRupees(after.price_monthly),
-            price_yearly: after.price_yearly === undefined ? null : toRupees(after.price_yearly),
-            price_3year: after.price_3year === undefined ? null : toRupees(after.price_3year),
+            price_monthly: toRupees(next.price_monthly),
+            price_yearly: toRupees(next.price_yearly),
+            price_3year: toRupees(next.price_3year),
           }),
         log: { before, after },
       };

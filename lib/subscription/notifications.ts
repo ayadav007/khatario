@@ -317,12 +317,15 @@ export async function sendRenewalReminders(): Promise<number> {
             (bs.end_date - CURRENT_DATE) AS days_left
      FROM business_module_subscriptions bs
      JOIN subscription_plans sp ON sp.id = bs.plan_id
+     LEFT JOIN subscription_plan_terms pt ON pt.id = bs.plan_terms_id AND pt.plan_id = bs.plan_id
      LEFT JOIN subscription_plans ssp ON ssp.id = bs.scheduled_plan_id
      WHERE bs.status = 'active'
        AND COALESCE(bs.cancel_at_period_end, false) = false
        AND (bs.scheduled_plan_id IS NULL OR bs.scheduled_plan_id <> ALL($1::text[]))
        AND bs.plan_id NOT IN ('trial', '${HR_TRIAL_PLAN_ID}')
-       AND (COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0 OR COALESCE(sp.price_3year, 0) > 0)
+       AND (CASE WHEN pt.id IS NULL
+                 THEN COALESCE(sp.price_monthly, 0) > 0 OR COALESCE(sp.price_yearly, 0) > 0 OR COALESCE(sp.price_3year, 0) > 0
+                 ELSE COALESCE(pt.price_monthly, 0) > 0 OR COALESCE(pt.price_yearly, 0) > 0 OR COALESCE(pt.price_3year, 0) > 0 END)
        AND bs.end_date IS NOT NULL
        AND (bs.end_date - CURRENT_DATE) BETWEEN -1 AND 7`,
     [[...FREE_TIER_PLAN_IDS]],

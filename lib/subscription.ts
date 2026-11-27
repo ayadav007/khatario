@@ -19,6 +19,7 @@ import {
 import { resolveBusinessLimit, type ResolvedLimit } from './subscription/resolve-limit';
 import { planEnabledFeaturesQuery, planLimitRowsQuery, planLimitValueQuery } from './subscription/plan-terms';
 import {
+  clearAllModuleSubscriptionCaches,
   clearModuleSubscriptionCache,
   getEntitlementPlanIdForModuleSub,
   getEntitlementTermsIdForModuleSub,
@@ -222,6 +223,8 @@ export function clearSubscriptionCache(businessId: string) {
 export function clearAllSubscriptionCaches() {
   subscriptionCache.clear();
   addonCache.clear();
+  // Holds each business's plan_terms_id: a plan save or "move to current terms" must not leave a stale pin for 60 s.
+  clearAllModuleSubscriptionCaches();
   clearOverLimitCache();
 }
 

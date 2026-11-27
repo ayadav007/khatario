@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { loadEffectivePlanPrices } from '@/lib/subscription/plan-terms';
 import { query } from '@/lib/db';
 import { isProductLineTrialPlanId } from '@/lib/product-lines';
 import {
@@ -32,10 +33,14 @@ export type CurrentPeriodRow = {
  * True when the plan has a price above zero for any billing cycle (never decided by plan id or
  * sort order, so a plan priced at ₹1 counts as paid).
  */
-export async function planHasPaidPrice(planId: string, client?: PoolClient): Promise<boolean> {
-  const sql = `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`;
-  const res = client ? await client.query(sql, [planId]) : await query(sql, [planId]);
-  const plan = res.rows[0];
+export async function planHasPaidPrice(planId: string, client?: PoolClient, businessId?: string | null): Promise<boolean> {
+  // With a business, the prices it pays (its older-terms snapshot when pinned on this plan), so a plan made
+  // free "for new customers only" is still a paid plan for the business that keeps paying for it.
+  const plan = await loadEffectivePlanPrices(
+    businessId,
+    planId,
+    async (sql, params) => ((client ? await client.query(sql, params) : await query(sql, params)).rows[0] ?? null),
+  );
   if (!plan) return false;
   return BILLING_CYCLES.some((cycle) => computePlanAmount(plan, cycle) > 0);
 }

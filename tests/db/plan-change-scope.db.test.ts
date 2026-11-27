@@ -65,6 +65,12 @@ import { POST as postPrices, GET as getPrices } from '@/app/api/admin/plans/[pla
 import { POST as postTerms, GET as getTerms } from '@/app/api/admin/plans/[planId]/terms/route';
 import { GET as previewGet } from '@/app/api/subscriptions/checkout/preview/route';
 import { GET as currentGet } from '@/app/api/subscriptions/current/route';
+import { POST as upgradePost } from '@/app/api/subscriptions/upgrade/route';
+import { POST as adminPlanUpsert } from '@/app/api/admin/subscriptions/plans/route';
+import { sendRenewalReminders } from '@/lib/subscription/notifications';
+import { khatarioMonthlyQuota } from '@/lib/ai-agent/billing';
+import { planEnabledFeaturesQuery } from '@/lib/subscription/plan-terms';
+import { readdirSync, statSync } from 'fs';
 
 const run = enabled ? describe : describe.skip;
 
@@ -736,23 +742,27 @@ run('plan changes: everyone now / only new customers (kh_phase2_test)', () => {
       expect(await queryOne(`SELECT plan_id, plan_terms_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz])).toMatchObject({ plan_id: plan, plan_terms_id: null });
     });
 
-    it('every statement in the code that sets business_module_subscriptions.plan_id also sets plan_terms_id', () => {
-      const files = [
-        'lib/admin-business-ops.ts',
-        'lib/platform-addon-checkout.ts',
-        'lib/subscription/module-subscriptions.ts',
-        'lib/subscription/apply-module-plan-change.ts',
-        'lib/subscription/module-plan-lifecycle.ts',
-        'lib/subscription/ensure-complimentary-hr.ts',
-        'lib/subscription/lifecycle.ts',
-      ];
+    it('every statement in lib/ and app/ that writes business_module_subscriptions.plan_id also sets plan_terms_id', () => {
+      const walk = (dir: string): string[] =>
+        readdirSync(dir).flatMap((n) => {
+          const f = join(dir, n);
+          if (statSync(f).isDirectory()) return n === 'node_modules' ? [] : walk(f);
+          return /\.(ts|tsx)$/.test(n) ? [f] : [];
+        });
+      const files = [...walk(join(process.cwd(), 'lib')), ...walk(join(process.cwd(), 'app'))];
+      const writers: string[] = [];
       for (const f of files) {
-        const src = readFileSync(join(process.cwd(), f), 'utf8');
-        // Split into SQL statements that write the table and require the pin in each one that assigns plan_id.
-        const stmts = src.split('`').filter((s) => /business_module_subscriptions/.test(s) && /(INSERT INTO|UPDATE)\s+business_module_subscriptions/.test(s) && /\bplan_id\s*=\s*(\$\d|EXCLUDED\.plan_id)/.test(s));
-        expect(stmts.length).toBeGreaterThan(0);
-        for (const s of stmts) expect(s).toMatch(/plan_terms_id/);
+        const src = readFileSync(f, 'utf8');
+        for (const stmt of src.split('`')) {
+          if (!/(INSERT INTO|UPDATE)\s+business_module_subscriptions/.test(stmt)) continue;
+          // An INSERT ... ON CONFLICT DO UPDATE SET plan_id = ..., or an UPDATE ... SET ... plan_id = <anything>.
+          const setPart = stmt.split(/\bSET\b/).slice(1).join(' SET ').split(/\bWHERE\b/)[0];
+          if (!/(^|[\s,])plan_id\s*=/.test(setPart)) continue;
+          writers.push(f);
+          expect({ file: f, pinCleared: /plan_terms_id/.test(stmt) }).toEqual({ file: f, pinCleared: true });
+        }
       }
+      expect(writers.length).toBeGreaterThanOrEqual(8);
     });
   });
 
@@ -804,6 +814,159 @@ run('plan changes: everyone now / only new customers (kh_phase2_test)', () => {
       await postTerms(req(`/api/admin/plans/${p1}/terms`, { action: 'move_to_current', confirm_older_terms_count: 1 }), ctx(p1));
       expect(await pinOf(a)).toBeNull();
       expect(await pinOf(b)).not.toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  describe('is the current plan paid: the business\'s own prices decide', () => {
+    async function paidThenFreeForNewCustomers() {
+      const plan = await newPlan({ monthly: 499, yearly: 0 });
+      const old = await newBusiness();
+      await putOnPlan(old, plan);
+      await query(`UPDATE business_module_subscriptions SET end_date = CURRENT_DATE + 3 WHERE business_id = $1`, [old]);
+      clearSubscriptionCache(old); clearModuleSubscriptionCache(old);
+      expect((await postP(plan, { price_monthly: 0 }, 1, 'new_customers')).status).toBe(200);
+      return { plan, old };
+    }
+
+    it('after a paid plan is made Rs 0 for new customers, a pinned renewal extends from its end date and pays its old price', async () => {
+      const { plan, old } = await paidThenFreeForNewCustomers();
+      const co = await checkoutAmount(old, plan);
+      expect(co.amount).toBe(499);
+      const prev = (await queryOne<{ e: string }>(`SELECT end_date::text AS e FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [old]))!.e;
+      const preview = await (await previewGet(new NextRequest(`http://localhost/api/subscriptions/checkout/preview?plan_id=${plan}&billing_cycle=monthly`, {
+        headers: { 'x-authenticated-business-id': old, 'x-authenticated-user-id': owner.get(old)! },
+      }))).json();
+      expect(preview.period_kind).toBe('renewal');
+      await completeSubscriptionCheckoutPaymentDetailed({
+        businessId: old, planId: plan, billingCycle: 'monthly', billingTransactionId: co.id, providerPaymentId: 'pay_' + randomUUID().slice(0, 8), amount: co.stored,
+      });
+      const after = await queryOne<{ ok: boolean }>(
+        `SELECT (end_date = ($1::date + make_interval(months => 1))::date) AS ok FROM business_module_subscriptions WHERE business_id = $2 AND module_key = 'billing'`, [prev, old]);
+      expect(after!.ok).toBe(true);
+    });
+
+    it('/api/subscriptions/upgrade does not move a pinned paying business to Free as if it were unpaid; an unpinned business on the Rs 0 plan can', async () => {
+      const { plan, old } = await paidThenFreeForNewCustomers();
+      const post = (b: string) => upgradePost(new NextRequest('http://localhost/api/subscriptions/upgrade', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-authenticated-business-id': b, 'x-authenticated-user-id': owner.get(b)! },
+        body: JSON.stringify({ plan_id: 'free', module_key: 'billing' }),
+      }));
+      const res = await post(old);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'USE_DOWNGRADE' });
+      expect(await queryOne(`SELECT plan_id FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [old])).toMatchObject({ plan_id: plan });
+      const fresh = await newBusiness();
+      await applyModuleSubscriptionPlanChange({ businessId: fresh, moduleKey: 'billing', planId: plan, billingCycle: 'monthly' });
+      expect(await pinOf(fresh)).toBeNull();
+      const ok = await post(fresh);
+      expect(ok.status).toBe(200);
+    });
+
+    it('a pinned business still gets renewal reminders; an unpinned one on the Rs 0 plan does not', async () => {
+      const { plan, old } = await paidThenFreeForNewCustomers();
+      const fresh = await newBusiness();
+      await applyModuleSubscriptionPlanChange({ businessId: fresh, moduleKey: 'billing', planId: plan, billingCycle: 'monthly' });
+      await query(`UPDATE business_module_subscriptions SET end_date = CURRENT_DATE + 3 WHERE business_id = $1`, [fresh]);
+      for (const b of [old, fresh]) await query(`UPDATE businesses SET email = $2 WHERE id = $1`, [b, `pcs-${b.slice(0, 8)}@example.test`]);
+      await sendRenewalReminders();
+      const n = async (b: string) => Number((await queryOne<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM subscription_notifications WHERE business_id = $1 AND notification_type LIKE 'renewal_reminder_%'`, [b]))!.n);
+      expect(await n(old)).toBe(1);
+      expect(await n(fresh)).toBe(0);
+      await query(`DELETE FROM subscription_notifications WHERE business_id = ANY($1::uuid[])`, [[old, fresh]]);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  describe('review fixes', () => {
+    it('a save and "move to current terms" clear the module-subscription cache: getBusinessSubscription shows the right terms at once', async () => {
+      const plan = await newPlan({ customers: 77 });
+      const old = await newBusiness();
+      await putOnPlan(old, plan);
+      expect((await getBusinessSubscription(old))!.features.limits.max_customers).toBe(77); // primes both caches
+      await postL(plan, { max_customers: 5 }, 1, 'new_customers');
+      expect((await getBusinessSubscription(old))!.features.limits.max_customers).toBe(77);
+      await postTerms(req(`/api/admin/plans/${plan}/terms`, { action: 'move_to_current', confirm_older_terms_count: 1 }), ctx(plan));
+      expect((await getBusinessSubscription(old))!.features.limits.max_customers).toBe(5);
+    });
+
+    it('the AI reply quota follows the pin immediately after a save', async () => {
+      const plan = `pcsc_${randomUUID().slice(0, 8)}`;
+      plans.push(plan);
+      await query(
+        `INSERT INTO subscription_plans (id, name, display_name, description, price_monthly, price_yearly, price_3year, currency, features, is_active, sort_order, product_line)
+         VALUES ($1, $1, 'Scope connect', 'x', 100, 1000, 0, 'INR', '{}'::jsonb, true, 99, 'connect')`, [plan]);
+      await query(`INSERT INTO subscription_plan_features (plan_id, feature_id, enabled) VALUES ($1, 'integration_whatsapp_bot', true)`, [plan]);
+      await query(`INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value) VALUES ($1, 'max_ai_replies_per_month', 500)`, [plan]);
+      const biz = await newBusiness();
+      await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'connect', true, 'test')`, [biz]);
+      await query(
+        `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+         VALUES ($1, 'connect', $2, 'active', CURRENT_DATE - 5, CURRENT_DATE + 20, 'monthly')`, [biz, plan]);
+      expect(await khatarioMonthlyQuota(biz)).toBe(500); // primes the module-subscription cache
+      expect((await postL(plan, { max_ai_replies_per_month: 50 }, 1, 'new_customers')).status).toBe(200);
+      expect(await khatarioMonthlyQuota(biz)).toBe(500);
+      const fresh = await newBusiness();
+      await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'connect', true, 'test')`, [fresh]);
+      await query(
+        `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+         VALUES ($1, 'connect', $2, 'active', CURRENT_DATE, CURRENT_DATE + 20, 'monthly')`, [fresh, plan]);
+      expect(await khatarioMonthlyQuota(fresh)).toBe(50);
+    });
+
+    it('"everyone" price save copies the whole price set into snapshots: no snapshot keeps a cycle the plan no longer sells', async () => {
+      const plan = await newPlan({ monthly: 100, yearly: 0 });
+      const old = await newBusiness();
+      await putOnPlan(old, plan);
+      await postP(plan, { price_monthly: 20000, price_yearly: 200000 }, 1, 'new_customers'); // snapshot: 100 / 0 ; live 200 / 2000
+      await postP(plan, { price_yearly: 0 }, 1, 'everyone'); // live: 200 / 0
+      await postP(plan, { price_monthly: 0, price_yearly: 0 }, 1, 'everyone'); // free for everyone
+      const [snap] = await snapshotsOf(plan);
+      expect([Number(snap.price_monthly), Number(snap.price_yearly), Number(snap.price_3year)]).toEqual([0, 0, 0]);
+    });
+
+    it('a pin that belongs to another plan is ignored by the feature query: the live matrix is read', async () => {
+      const a = await newPlan({ features: [F_BARCODE] });
+      const b = await newPlan({ features: [F_BARCODE, F_BRANDING] });
+      const biz = await newBusiness();
+      await putOnPlan(biz, a);
+      await postL(b, { max_customers: 1 }, 0, 'everyone');
+      await putOnPlan(await newBusiness(), b);
+      await postF(b, { [F_BARCODE]: true }, 1, 'new_customers');
+      const foreign = (await snapshotsOf(b))[0].id as string;
+      const q = planEnabledFeaturesQuery(a, foreign);
+      const rows = (await query(q.sql, q.params)).rows.map((r: any) => r.id);
+      expect(rows).toEqual([F_BARCODE]);
+    });
+
+    it('the admin editor marking a pinned row cancelled clears the pin', async () => {
+      const plan = await newPlan();
+      const biz = await newBusiness();
+      await putOnPlan(biz, plan);
+      await postL(plan, { max_customers: 5 }, 1, 'new_customers');
+      expect(await pinOf(biz)).not.toBeNull();
+      await adminUpdateSubscription({ businessId: biz, adminId, moduleKey: 'billing', planId: plan, status: 'cancelled' });
+      expect(await pinOf(biz)).toBeNull();
+    });
+
+    it('POST /api/admin/subscriptions/plans: same prices pass, a different price on an existing plan is 409 and writes nothing, a new plan with Rs 0.50 is 400', async () => {
+      const plan = await newPlan({ monthly: 100, yearly: 1000 });
+      const post = (body: Record<string, unknown>) =>
+        adminPlanUpsert(req('/api/admin/subscriptions/plans', { id: plan, name: 'n', display_name: 'Renamed', description: 'd', price_monthly: 100, price_yearly: 1000, price_3year: 0, features: {}, ...body }));
+      expect((await post({})).status).toBe(201);
+      expect(await queryOne(`SELECT display_name FROM subscription_plans WHERE id = $1`, [plan])).toMatchObject({ display_name: 'Renamed' });
+      const diff = await post({ price_monthly: 999, display_name: 'Nope' });
+      expect(diff.status).toBe(409);
+      expect(await diff.json()).toMatchObject({ code: 'USE_PRICE_ROUTE' });
+      expect(await livePrice(plan)).toBe(100);
+      expect(await queryOne(`SELECT display_name FROM subscription_plans WHERE id = $1`, [plan])).toMatchObject({ display_name: 'Renamed' });
+      const newId = `pcs_${randomUUID().slice(0, 8)}`;
+      plans.push(newId);
+      const bad = await adminPlanUpsert(req('/api/admin/subscriptions/plans', { id: newId, name: 'n', display_name: 'New', price_monthly: 0.5, price_yearly: 0, features: {} }));
+      expect(bad.status).toBe(400);
+      expect(await queryOne(`SELECT 1 FROM subscription_plans WHERE id = $1`, [newId])).toBeNull();
     });
   });
 

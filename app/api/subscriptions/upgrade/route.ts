@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { loadEffectivePlanPrices } from '@/lib/subscription/plan-terms';
 import { query, queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
@@ -111,16 +112,8 @@ export async function POST(request: NextRequest) {
       normalizePlatformModule(moduleKeyBody) ?? (await resolveModuleKeyForPlan(plan_id));
 
     const current = await getModuleSubscription(business_id, moduleKey, true);
-    const currentPlan = current
-      ? await queryOne<{
-          price_monthly: number | string;
-          price_yearly: number | string;
-          price_3year: number | string | null;
-        }>(
-          `SELECT price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
-          [current.plan_id],
-        )
-      : null;
+    // The prices the business itself pays for its current plan (its older-terms snapshot when pinned).
+    const currentPlan = current ? await loadEffectivePlanPrices(business_id, current.plan_id) : null;
     const currentPlanIsPaid =
       !!currentPlan &&
       BILLING_CYCLES.some((c) => computePlanAmount(currentPlan, c) > 0);

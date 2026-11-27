@@ -46,6 +46,10 @@ const moduleSubCache = new Map<
 >();
 const MODULE_SUB_CACHE_TTL = 60_000;
 
+export function clearAllModuleSubscriptionCaches(): void {
+  moduleSubCache.clear();
+}
+
 export function clearModuleSubscriptionCache(businessId: string): void {
   moduleSubCache.delete(businessId);
 }
