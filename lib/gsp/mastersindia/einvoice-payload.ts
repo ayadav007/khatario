@@ -3,7 +3,7 @@
 import type { PoolClient } from 'pg';
 import { EwayBillInputError } from '@/lib/gst/eway-bills';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
-import { PIN, cut, customerParty, dmy, r2, sellerParty, splitAddress, type ShipToPlace } from '@/lib/gst/eway-json';
+import { PIN, STATE, cut, customerParty, dmy, r2, sellerParty, splitAddress, type ShipToPlace } from '@/lib/gst/eway-json';
 import type { EwayTransport } from './eway';
 
 type Queryable = Pick<PoolClient, 'query'>;
@@ -38,6 +38,11 @@ const addr100 = (a: string | null | undefined, b?: string | null): [string, stri
   return [head, cut([tail, b].filter(Boolean).join(' '), 100)];
 };
 
+const lineAmount = (l: Row) => r2(r2(l.taxable_value) + r2(l.discount_amount));
+const qtyOf = (l: Row) => Math.round((Number(l.quantity) || 0) * factor(l) * 1000) / 1000;
+/** Pre-tax price per unit that fits total_amount: the stored price may include GST or leave out freight spread into the line. */
+const unitPrice = (l: Row) => (qtyOf(l) > 0 ? Math.round((lineAmount(l) / qtyOf(l)) * 1000) / 1000 : lineAmount(l));
+
 function itemList(lines: Row[]): Obj[] {
   return lines.map((l, i) => ({
     item_serial_number: String(i + 1),
@@ -45,10 +50,10 @@ function itemList(lines: Row[]): Obj[] {
     is_service: isService(l) ? 'Y' : 'N',
     hsn_code: digits(l.hsn_sac),
     // In the item's own unit: 5 BOX of 12 goes out as 60 PCS, so the price is per PCS.
-    quantity: Math.round((Number(l.quantity) || 0) * factor(l) * 1000) / 1000,
-    unit: cut(l.uqc, 8).toUpperCase() || 'OTH',
-    unit_price: r2((Number(l.unit_price) || 0) / factor(l)),
-    total_amount: r2(r2(l.taxable_value) + r2(l.discount_amount)),
+    quantity: qtyOf(l),
+    unit: cut(l.uqc || l.unit, 8).toUpperCase() || 'OTH',
+    unit_price: unitPrice(l),
+    total_amount: lineAmount(l),
     discount: r2(l.discount_amount),
     assessable_value: r2(l.taxable_value),
     gst_rate: Number(l.tax_rate) || 0,
@@ -88,8 +93,8 @@ function sellerDetails(reg: Awaited<ReturnType<typeof resolveSupplierRegistratio
 }
 
 function buyerDetails(inv: Row, c: Row, gstin: string, pos: string, isExport: boolean): Obj {
-  if (isExport) return { gstin: 'URP', legal_name: cut(c.name, 100), address1: '', address2: '', location: cut(c.city, 50) || 'Other Country', pincode: 999999, state_code: '96', place_of_supply: '96' };
   const [address1, address2] = addr100(c.billing);
+  if (isExport) return { gstin: 'URP', legal_name: cut(c.name, 100), address1, address2, location: cut(c.city, 50) || 'Other Country', pincode: 999999, state_code: '96', place_of_supply: '96' };
   return {
     gstin, legal_name: cut(c.name, 100), address1, address2, location: cut(c.city, 50), pincode: PIN(c.pin),
     state_code: two(gstin.slice(0, 2)), place_of_supply: pos,
@@ -168,6 +173,8 @@ export async function buildEinvoice(db: Queryable, businessId: string, invoiceId
   const seller = sellerGstin ? await sellerParty(db, businessId, inv.branch_id, lines.find((l) => l.location_id)?.location_id) : null;
   if (!sellerGstin) add('seller_gstin', 'Add your GSTIN in Business settings', { kind: 'business', id: null });
   if (!validPin(reg.pincode)) add('seller_pincode', 'Add the PIN code of your business address', { kind: 'business', id: null });
+  if (cut(reg.addressLine1, 100).length < 3) add('seller_address', 'Add your business address in Business settings', { kind: 'business', id: null });
+  if (cut(reg.city, 50).length < 3) add('seller_city', 'Add the city of your business address in Business settings', { kind: 'business', id: null });
 
   // Buyer.
   const custFix = { kind: 'customer' as const, id: inv.customer_id ?? null };
@@ -175,15 +182,24 @@ export async function buildEinvoice(db: Queryable, businessId: string, invoiceId
   if (!c) add('customer', 'Choose the customer', invFix);
   const buyerState = buyerGstin ? two(buyerGstin.slice(0, 2)) : c?.st ? two(c.st) : '';
   const pos = isExport ? '96' : inv.place_of_supply_state_code ? two(inv.place_of_supply_state_code) : buyerState;
+  if (c) {
+    if (!isExport && !buyerGstin) add('buyer_gstin', "Add the customer's GSTIN", custFix);
+    if (!isExport && !validPin(c.pin)) add('buyer_pincode', `Add the PIN code of ${c.name}`, custFix);
+    if (cut(c.billing, 100).length < 3) add('buyer_address', `Add the address of ${c.name}`, custFix);
+    if (!isExport && cut(c.city, 50).length < 3) add('buyer_city', `Add the city of ${c.name}`, custFix);
+  }
   if (c && !isExport) {
-    if (!buyerGstin) add('buyer_gstin', "Add the customer's GSTIN", custFix);
-    if (!validPin(c.pin)) add('buyer_pincode', `Add the PIN code of ${c.name}`, custFix);
     if (!pos) add('place_of_supply', 'Choose the place of supply', invFix);
   }
 
   // Ship-to: only a problem when an e-way bill is asked for with an address the customer does not have saved.
   let ship: Awaited<ReturnType<typeof customerParty>> | null = null;
-  if (c) {
+  if (c && isExport) {
+    // The foreign customer's own state and PIN code mean nothing here: only a typed Indian port place counts.
+    if (opts.shipTo) {
+      ship = { gstin: 'URP', name: cut(c.name, 100), addr1: cut(inv.shipping_address || c.billing, 120), addr2: '', place: cut(opts.shipTo.place, 50), pincode: PIN(opts.shipTo.pincode), state: STATE(opts.shipTo.stateCode), shipTo: { gstin: 'URP', tradeName: cut(c.name, 100) } };
+    }
+  } else if (c) {
     try {
       ship = await customerParty(db, businessId, 'customer', inv.customer_id, inv.shipping_address, null, opts.shipTo);
     } catch (e) {
@@ -228,7 +244,7 @@ export async function buildEinvoice(db: Queryable, businessId: string, invoiceId
     buyer_details: buyerDetails(inv, c, buyerGstin, pos, isExport),
   };
   if (seller.dispatchDiffers) payload.dispatch_details = { company_name: seller.name, ...placeBlock(seller) };
-  if (ship?.shipTo) payload.ship_details = { gstin: ship.shipTo.gstin, legal_name: cut(c.name, 100), ...placeBlock(ship) };
+  if (ship?.shipTo) payload.ship_details = { gstin: ship.shipTo.gstin === 'URP' ? 'URP' : buyerGstin || ship.shipTo.gstin, legal_name: cut(c.name, 100), ...placeBlock(ship) };
   if (isExport) {
     payload.export_details = {
       ship_bill_number: cut(inv.shipping_bill_number, 16), ship_bill_date: inv.shipping_bill_date ? dmy(inv.shipping_bill_date) : '',

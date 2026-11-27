@@ -7,7 +7,7 @@ type Ship = { address: string; city: string; state: string; pincode: string };
 type O = {
   invoiceNumber?: string; supplyType?: string; exportType?: string | null; documentType?: string; status?: string; irnStatus?: string | null;
   customerGstin?: string | null; customerPincode?: string | null; pos?: string | null; reverseCharge?: boolean; ecommerce?: string | null;
-  lines?: Line[]; grandTotal?: number; docShipping?: string | null; shipping?: Ship; godown?: boolean; noGstin?: boolean; customerState?: string | null; sellerPincode?: string;
+  lines?: Line[]; grandTotal?: number; docShipping?: string | null; shipping?: Ship; godown?: boolean; noGstin?: boolean; customerState?: string | null; snapshotGstin?: string; billing?: string | null; city?: string | null; sellerAddress?: string | null; sellerCity?: string | null; sellerPincode?: string;
 };
 
 const baseLine: Line = {
@@ -25,7 +25,7 @@ function db(o: O = {}) {
         return { rows: [{
           id: 'inv', status: o.status ?? 'final', invoice_number: o.invoiceNumber ?? 'INV-001', invoice_date: '2026-10-01', branch_id: 'br', customer_id: 'c',
           document_type: o.documentType ?? 'tax_invoice', supply_type: o.supplyType ?? 'b2b', export_type: o.exportType ?? null,
-          irn_status: o.irnStatus ?? null, customer_gstin: o.customerGstin === undefined ? '33ADVFS4469F1ZJ' : o.customerGstin,
+          irn_status: o.irnStatus ?? null, customer_gstin: o.snapshotGstin ?? (o.customerGstin === undefined ? '33ADVFS4469F1ZJ' : o.customerGstin),
           place_of_supply_state_code: o.pos === undefined ? '29' : o.pos, is_reverse_charge: !!o.reverseCharge, ecommerce_operator_gstin: o.ecommerce ?? null,
           shipping_bill_number: 'SB123', shipping_bill_date: '2026-10-02', port_code: 'INMAA1',
           shipping_address: o.docShipping ?? null, grand_total: o.grandTotal ?? sum,
@@ -34,14 +34,14 @@ function db(o: O = {}) {
       if (sql.includes('FROM invoice_items')) return { rows: lines.map((l) => ({ ...l, location_id: l.location_id ?? (o.godown ? 'hosur' : null) })) };
       if (sql.includes('FROM customers')) {
         return { rows: [{
-          gstin: o.customerGstin === undefined ? '33ADVFS4469F1ZJ' : o.customerGstin, name: 'Chennai Buyer', st: o.customerState === undefined ? '33' : o.customerState, billing: 'Anna Salai', city: 'Chennai',
+          gstin: o.customerGstin === undefined ? '33ADVFS4469F1ZJ' : o.customerGstin, name: 'Chennai Buyer', st: o.customerState === undefined ? '33' : o.customerState, billing: o.billing === undefined ? 'Anna Salai' : o.billing, city: o.city === undefined ? 'Chennai' : o.city,
           pin: o.customerPincode === undefined ? '600002' : o.customerPincode,
           ship_addr: o.shipping?.address ?? null, ship_city: o.shipping?.city ?? null, ship_state: o.shipping?.state ?? null, ship_pin: o.shipping?.pincode ?? null,
         }] };
       }
       if (sql.includes('br.gstin AS br_gstin')) {
         return { rows: [{
-          b_gstin: biz.gstin, b_state: biz.state, b_state_code: biz.state_code, b_address: biz.address_line1, b_address2: 'Near Park', b_city: biz.city, b_pincode: biz.pincode,
+          b_gstin: biz.gstin, b_state: biz.state, b_state_code: biz.state_code, b_address: o.sellerAddress === undefined ? biz.address_line1 : o.sellerAddress, b_address2: 'Near Park', b_city: o.sellerCity === undefined ? biz.city : o.sellerCity, b_pincode: biz.pincode,
           b_phone: '+91 98450 12345', b_email: 'acme@example.com',
           br_gstin: null, br_state: biz.state, br_state_code: '29', br_address1: null, br_city: null, br_pincode: null,
         }] };
@@ -272,6 +272,68 @@ describe('buildEinvoice', () => {
     const p: any = (await buildEinvoice(db({ godown: true }), 'biz', 'inv')).payload;
     expect(p.dispatch_details).toEqual({ company_name: 'Acme Traders', address1: 'SIPCOT Phase 2', address2: '', location: 'Hosur', pincode: 635109, state_code: '33' });
     expect(p.seller_details.pincode).toBe(560001);
+  });
+
+  describe('line price and unit', () => {
+    const one = async (l: Line) => ((await buildEinvoice(db({ lines: [l] }), 'biz', 'inv')).payload as any).item_list[0];
+    it('derives the pre-tax price for a GST-inclusive line', async () => {
+      const i = await one({ quantity: 1, unit_price: 1180, taxable_value: 1000, cgst_amount: 90, sgst_amount: 90 });
+      expect([i.quantity, i.unit_price, i.total_amount]).toEqual([1, 1000, 1000]);
+    });
+    it('derives the price when freight is spread into the line', async () => {
+      const i = await one({ quantity: 10, unit_price: 100, taxable_value: 1050, cgst_amount: 94.5, sgst_amount: 94.5 });
+      expect([i.quantity, i.unit_price, i.total_amount]).toEqual([10, 105, 1050]);
+    });
+    it('keeps a large alternate-unit quantity close to its amount', async () => {
+      const i = await one({ quantity: 1200, unit_factor: 12, unit_price: 1000, taxable_value: 1200000, cgst_amount: 108000, sgst_amount: 108000 });
+      expect([i.quantity, i.unit_price, i.total_amount]).toEqual([14400, 83.333, 1200000]);
+    });
+    it('sends the amount as the price for a service line without a quantity', async () => {
+      const i = await one({ hsn_sac: '9965', quantity: 0, unit_price: 0, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 });
+      expect([i.quantity, i.unit_price, i.total_amount]).toEqual([0, 100, 100]);
+    });
+    it('falls back to the line unit when the item has no UQC, then to OTH', async () => {
+      expect((await one({ uqc: null, unit: 'box' })).unit).toBe('BOX');
+      expect((await one({ uqc: null, unit: null })).unit).toBe('OTH');
+    });
+  });
+
+  describe('address checks and export', () => {
+    it('uses the billing address for an export buyer', async () => {
+      const p: any = (await buildEinvoice(db({ supplyType: 'export', exportType: 'wp', customerGstin: null, pos: '96', lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] }), 'biz', 'inv')).payload;
+      expect(p.buyer_details).toMatchObject({ address1: 'Anna Salai', address2: '', location: 'Chennai' });
+      const q: any = (await buildEinvoice(db({ supplyType: 'export', exportType: 'wp', customerGstin: null, city: null, pos: '96', lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] }), 'biz', 'inv')).payload;
+      expect(q.buyer_details.location).toBe('Other Country');
+    });
+    it('flags a short seller address and city, after the GSTIN and PIN problems', async () => {
+      const b = await buildEinvoice(db({ noGstin: true, sellerPincode: '5', sellerAddress: 'ab', sellerCity: '' }), 'biz', 'inv');
+      expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([
+        ['Add your GSTIN in Business settings', 'business', null], ['Add the PIN code of your business address', 'business', null],
+        ['Add your business address in Business settings', 'business', null], ['Add the city of your business address in Business settings', 'business', null],
+      ]);
+    });
+    it('flags a short buyer address and city after the GSTIN and PIN problems', async () => {
+      const b = await buildEinvoice(db({ customerGstin: null, customerPincode: null, billing: null, city: 'X' }), 'biz', 'inv');
+      expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([
+        ["Add the customer's GSTIN", 'customer', 'c'], ['Add the PIN code of Chennai Buyer', 'customer', 'c'],
+        ['Add the address of Chennai Buyer', 'customer', 'c'], ['Add the city of Chennai Buyer', 'customer', 'c'],
+      ]);
+    });
+    it('flags a short export buyer address but not the city', async () => {
+      const b = await buildEinvoice(db({ supplyType: 'export', exportType: 'wp', customerGstin: null, billing: 'x', city: null, pos: '96', lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] }), 'biz', 'inv');
+      expect(msgs(b)).toEqual(['Add the address of Chennai Buyer']);
+    });
+    it('builds export ship_details only from a typed ship-to place', async () => {
+      const o: O = { supplyType: 'export', exportType: 'wp', customerGstin: null, pos: '96', shipping: pune, docShipping: 'Plot 9, MIDC', lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] };
+      expect(((await buildEinvoice(db(o), 'biz', 'inv')).payload as any).ship_details).toBeUndefined();
+      const p: any = (await buildEinvoice(db(o), 'biz', 'inv', { shipTo: nashik })).payload;
+      expect(p.ship_details).toEqual({ gstin: 'URP', legal_name: 'Chennai Buyer', address1: 'Plot 9, MIDC', address2: '', location: 'Nashik', pincode: 422001, state_code: '27' });
+    });
+    it('uses the buyer block GSTIN (invoice snapshot) for ship_details', async () => {
+      const p: any = (await buildEinvoice(db({ snapshotGstin: '33AAACS1234A1Z5', shipping: pune, docShipping: 'Plot 9, MIDC' }), 'biz', 'inv')).payload;
+      expect(p.buyer_details.gstin).toBe('33AAACS1234A1Z5');
+      expect(p.ship_details.gstin).toBe('33AAACS1234A1Z5');
+    });
   });
 
   describe('ship_details', () => {
