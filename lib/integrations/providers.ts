@@ -2,6 +2,7 @@
 // (The `server-only` package is not a dependency of this repo, so this comment marks the boundary.)
 import type { PoolClient } from 'pg';
 import { queryOne } from '@/lib/db';
+import * as gspClient from '@/lib/gsp/mastersindia/client';
 import { clearShiprocketCache, verifyShiprocketLogin } from '@/lib/store/delivery/shiprocket';
 
 export type VerifyResult =
@@ -60,7 +61,29 @@ const shiprocket: ProviderServer = {
   },
 };
 
-export const PROVIDERS: Record<string, ProviderServer> = { shiprocket };
+const mastersindia: ProviderServer = {
+  async verify({ config, secrets }) {
+    try {
+      await gspClient.gspLogin({ username: config.username, password: secrets.password });
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof gspClient.GspError && e.kind === 'auth') {
+        return { ok: false, reason: 'rejected', message: 'Masters India did not accept this username and password.' };
+      }
+      return { ok: false, reason: 'unreachable', message: 'Could not reach Masters India. Nothing was saved; try again.' };
+    }
+  },
+
+  async countInFlight() {
+    return 0;
+  },
+
+  onChanged() {
+    gspClient.clearGspTokenCache();
+  },
+};
+
+export const PROVIDERS: Record<string, ProviderServer> = { shiprocket, mastersindia };
 
 export function getProvider(provider: string): ProviderServer | null {
   return Object.prototype.hasOwnProperty.call(PROVIDERS, provider) ? PROVIDERS[provider] : null;

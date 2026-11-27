@@ -168,6 +168,122 @@ export const INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
 
   {
 
+    id: 'gst-masters-india',
+
+    category: 'billing',
+
+    title: 'GST e-invoice and e-way bill (Masters India)',
+
+    shortDescription:
+
+      'Generate e-way bills and e-invoices from Khatario through your Masters India account, without typing them again on the government portal.',
+
+    icon: 'Building2',
+
+    featureKeys: ['e_invoice', 'eway_bill'],
+
+    featureKeysMatch: 'any',
+
+    ctaVariant: 'connect',
+
+    requiredPlatformModule: 'billing',
+
+    plugin: {
+
+      provider: 'mastersindia',
+
+      overview: [
+
+        'Connect your own Masters India account and Khatario generates e-way bills straight from your invoices and delivery challans. You can also cancel one, change the vehicle, extend the validity and close it from Khatario, so nothing needs to be typed again on the government portal.',
+
+        'E-invoices will follow on the same connection, so you set it up once.',
+
+      ],
+
+      setupSteps: [
+
+        'Create an account with Masters India and add your GSTIN there.',
+
+        'On the e-way bill portal (ewaybillgst.gov.in) open Registration, then For GSP, choose Masters India Private Limited and create an API user. Do the same on the e-invoice portal under API Registration if you issue e-invoices.',
+
+        'Give that API user to Masters India for your GSTIN, as their sign-up asks.',
+
+        'Enter your Masters India username and password here and save. Khatario checks the login before saving.',
+
+      ],
+
+      faq: [
+
+        {
+
+          q: 'Is this my GST portal password?',
+
+          a: 'No. It is the login of your Masters India account. Khatario never asks for your GST portal password.',
+
+        },
+
+        {
+
+          q: 'What does it cost?',
+
+          a: 'Khatario adds no charge for this connection. Masters India charges as per your account with them.',
+
+        },
+
+        {
+
+          q: 'I have more than one GSTIN.',
+
+          a: 'Add every GSTIN to the same Masters India account. Khatario sends each document under the GSTIN it was issued from.',
+
+        },
+
+        {
+
+          q: 'Can I disconnect?',
+
+          a: 'Yes. Khatario forgets the login. E-way bills already generated stay valid.',
+
+        },
+
+      ],
+
+      fields: [
+
+        {
+
+          key: 'username',
+
+          label: 'Masters India username',
+
+          help: 'The login of your Masters India account. Not your GST portal or e-way bill portal login.',
+
+          kind: 'text',
+
+          required: true,
+
+        },
+
+        {
+
+          key: 'password',
+
+          label: 'Masters India password',
+
+          kind: 'password',
+
+          required: true,
+
+        },
+
+      ],
+
+    },
+
+  },
+
+  {
+
     id: 'ai-sales-agent',
 
     category: 'ai',
