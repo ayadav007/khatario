@@ -17,7 +17,7 @@ export const LANDING_EVERYWHERE_DEFAULTS: LandingEverywhereContent = {
   heading: 'Counter computer, phone in your pocket, same data',
   intro: 'Bill at the shop and check today’s sales from home. Your data is the same on every device.',
   chips: [
-    { label: 'Phone, tablet & computer' },
+    { label: 'Phone, tablet & computer (Free: phone app)' },
     { label: 'Add to home screen like an app' },
     { label: 'Thermal & A4 printers' },
     { label: 'Bills in 13 languages' },

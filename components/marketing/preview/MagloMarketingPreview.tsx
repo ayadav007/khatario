@@ -78,7 +78,7 @@ export function MagloMarketingPreview() {
               </Link>
             </div>
             <p className="maglo-mkt__footnote">
-              No credit card to start · Works on phone &amp; computer · HR Lite for up to 30 staff
+              No credit card to start · Trial and paid plans on phone &amp; computer · HR Lite for up to 30 staff with paid plans
               included
             </p>
           </div>
@@ -148,7 +148,7 @@ export function MagloMarketingPreview() {
               {
                 icon: Users,
                 title: 'Staff & attendance',
-                body: 'HR Lite for up to 30 staff — attendance and simple payroll with billing.',
+                body: 'HR Lite for up to 30 staff — attendance and simple payroll, included with paid billing plans.',
               },
             ].map((f) => (
               <article key={f.title} className="maglo-mkt__feature">
@@ -191,7 +191,7 @@ export function MagloMarketingPreview() {
               <p className="maglo-mkt__eyebrow maglo-mkt__eyebrow--on-dark">Free to start</p>
               <h2>Try Khatario on your next bill — not on a demo script</h2>
               <p>
-                Unlimited GST bills on Free. Upgrade when you need more branches, staff roles or
+                Unlimited GST bills on Free. Upgrade when you need the website, more users, branches or
                 WhatsApp automation.
               </p>
             </div>

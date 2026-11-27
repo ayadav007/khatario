@@ -23,7 +23,7 @@ export const LANDING_SUITE_DEFAULTS: LandingSuiteContent = {
     { title: 'Billing & GST', text: 'GST bills, stock, accounts, UPI collection and GSTR files for your CA.', tag: 'Free plan', href: '#tour' },
     { title: 'Online store', text: 'Your items as a store with your name. Orders arrive as bills.', tag: 'Store themes', href: '#store' },
     { title: 'WhatsApp marketing', text: 'Festival offers, a shared inbox and AI replies on your own Meta account. No markup on messages.', tag: 'Khatario Connect', href: '#whatsapp' },
-    { title: 'Staff & HR', text: 'Phone check-in that can’t be faked, payroll from attendance, leave.', tag: 'Free up to 30 staff', href: '#staff' },
+    { title: 'Staff & HR', text: 'Phone check-in that can’t be faked, payroll from attendance, leave.', tag: 'HR Lite from Starter', href: '#staff' },
   ],
 };
 

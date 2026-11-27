@@ -20,7 +20,7 @@ export const LANDING_STAFF_MANAGEMENT_DEFAULTS: LandingStaffManagementContent = 
   kicker: 'Staff management',
   heading: 'Attendance, payroll and leave, without the register',
   intro: 'Staff check in from their own phone at the shop. Khatario checks they are really there, then works out salary from attendance.',
-  freeLine: 'HR Lite for up to 30 staff, included with every Billing plan',
+  freeLine: 'HR included with Starter, Growth and Business: up to 30, 50 and 200 staff. Not included with Free.',
   points: [
     { title: 'Location and shop Wi-Fi', text: 'Several GPS readings and nearby Wi-Fi are checked against your shops.' },
     { title: 'Fake GPS blocked', text: 'Rooted phones, emulators and developer mode are caught.' },

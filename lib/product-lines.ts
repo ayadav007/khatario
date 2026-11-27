@@ -28,7 +28,7 @@ export const LANDING_HERO_COPY: Record<
     subhead:
       'With the Khatario billing app, make a GST bill in seconds, send it on WhatsApp and collect by UPI. Then run your online store, WhatsApp offers and staff attendance from the same app.',
     cta: 'Start Billing trial',
-    footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
+    footnote: 'No credit card to start · 30-day trial on phone & computer · HR Lite for up to 30 staff with paid plans',
   },
   hr: {
     badges: ['Attendance & payroll', 'Made for India'],
@@ -56,7 +56,7 @@ export const TRIAL_EXTENSION_DAYS = 7;
 
 export const HR_TRIAL_PLAN_ID = 'hr_trial' as const;
 export const HR_FREE_PLAN_ID = 'hr_free' as const;
-/** Complimentary HR with every Billing package (incl. Free): 30 staff, simple payroll. */
+/** Complimentary HR bundled with Starter (30 staff, simple payroll); Free has no bundled HR. */
 export const HR_STAFF_LITE_PLAN_ID = 'hr_staff_lite' as const;
 /** Paid Connect plan (WABA, inbox, AI, templates, automation). */
 export const CONNECT_PLAN_ID = 'connect' as const;

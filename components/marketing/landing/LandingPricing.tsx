@@ -51,12 +51,12 @@ function getPricingCopy(productLine: ProductLine, content: LandingPricingContent
     case 'hr':
       return {
         title: 'HR pricing for teams of every size',
-        subtitle: 'Start with attendance, upgrade to payroll when you are ready.',
+        subtitle: 'Attendance and payroll from the first paid plan. HR Pro adds leave, the employee portal and recruitment.',
       };
     case 'connect':
       return {
         title: 'Connect: the official WhatsApp Business API',
-        subtitle: 'One add-on for your own WhatsApp Business number, AI replies, templates, the shared inbox and automation.',
+        subtitle: 'One plan for your own WhatsApp Business number, AI replies, templates, the shared inbox and automation.',
       };
     default:
       return { title: content.billingTitle, subtitle: content.billingSubtitle };

@@ -29,7 +29,7 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'Does it work on my phone?',
-      a: 'Yes. Khatario runs in the browser on your computer, tablet or phone, and you can add it to your home screen like an app. Your data is the same on every device.',
+      a: 'Yes. On the trial and every paid plan, Khatario runs in the browser on your computer, tablet or phone, and you can add it to your home screen like an app. Your data is the same on every device. The Free plan works in the Khatario phone app only, not on the website.',
     },
     {
       q: 'Which printers does it support?',
@@ -45,7 +45,7 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'Is there really a free plan?',
-      a: 'Yes. The Free plan includes unlimited GST invoices, customers and items, and you can send invoices on WhatsApp from your own number. New accounts also start with a trial of the full product, and no card is needed to begin.',
+      a: 'Yes. The Free plan includes unlimited GST invoices, customers and items, for one user in the Khatario phone app, and you can send invoices on WhatsApp from your own number (up to 20 messages a day). New accounts also start with a trial of the full product, and no card is needed to begin.',
     },
     {
       q: 'Can Khatario read my supplier bills?',
@@ -69,11 +69,11 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'Can I track staff attendance and salary?',
-      a: 'Yes. Staff check in from their own phone at the shop; location, shop Wi-Fi and the device are checked so fake GPS does not work. Salary is worked out from attendance and leave. HR Lite for up to 30 staff comes with every Billing plan.',
+      a: 'Yes. Staff check in from their own phone at the shop; location, shop Wi-Fi and the device are checked so fake GPS does not work. Salary is worked out from attendance and leave. HR Lite for up to 30 staff comes with Starter, Growth includes HR Starter for up to 50, and Business includes HR Pro for up to 200. The Free plan does not include HR. Phone check-in for staff is part of HR Starter and above.',
     },
     {
       q: 'Can my staff and other branches use it too?',
-      a: 'Yes. Growth includes up to 3 users. Business includes up to 10 users and up to 3 branches, each with their own login and permissions.',
+      a: 'Yes. Starter includes up to 3 users and Growth up to 5. Business includes up to 10 users and up to 3 branches, each with their own login and permissions.',
     },
   ],
 };

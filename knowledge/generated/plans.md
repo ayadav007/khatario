@@ -6,83 +6,87 @@ These are the plans currently offered on Khatario, taken directly from the live 
 
 ## Plan price summary
 
-- Free / Starter (Billing): Free (₹0).
-- Professional (Billing): ₹299 per month, or ₹2,999 per year (about 16% less than paying monthly).
-- Business (Billing): ₹999 per month, or ₹9,999 per year (about 17% less than paying monthly).
-- Enterprise (Billing): ₹2,999 per month, or ₹29,999 per year (about 17% less than paying monthly).
-- Trial (Billing): Free during the trial period.
-- Connect (Connect): Free (₹0).
+- Free (Billing): Free (₹0).
+- Starter (Billing): ₹299 per month, or ₹2,699 per year (about 25% less than paying monthly), or ₹5,999 for 3 years.
+- Growth (Billing): ₹499 per month, or ₹4,499 per year (about 25% less than paying monthly), or ₹9,999 for 3 years.
+- Business (Billing): ₹799 per month, or ₹7,199 per year (about 25% less than paying monthly), or ₹15,999 for 3 years.
+- Connect (Connect): ₹1,499 per month, or ₹14,388 per year (about 20% less than paying monthly), or ₹34,999 for 3 years.
 - Khatario HR: coming soon, no plans or prices yet. Khatario HR (employees, attendance, payroll and leave) is coming soon. It is not available to sign up for yet; Khatario Billing and Khatario Connect are available today.
 
-## Free / Starter plan (Billing)
+## Free plan (Billing)
 
-Perfect for solo freelancers and trying out the platform
+Free forever in the Khatario phone app: GST bills, quotations, purchases and GST reports for one user.
 
 Price: Free (₹0).
 
-### Free / Starter plan limits
+### Free plan limits
 
 - Branches: 1
-- Credit notes per month: 10
-- Customers: 10
-- Departments: 5
-- Emails per day: 10
-- Estimates / quotations per month: 10
-- Expenses per month: 20
-- Invoices per month: 20
-- Items (products and services): 10
-- Purchase orders per month: 10
-- Purchase bills per month: 10
-- Sales orders per month: 10
-- Suppliers: 10
-- Team users: 1
-- WhatsApp messages per day: 5
-
-### Free / Starter plan features
-
-- Purchase: Purchases
-- Sales: Invoices
-- Settings: Backup & Restore, WhatsApp Integration
-
-## Professional plan (Billing)
-
-Growing businesses and retail shops
-
-Price: ₹299 per month, or ₹2,999 per year (about 16% less than paying monthly).
-
-### Professional plan limits
-
-- Branches: 1
-- Credit notes per month: Unlimited
+- Credit notes per month: Not included
 - Customers: Unlimited
 - Emails per day: 10
 - Estimates / quotations per month: Unlimited
 - Expenses per month: Unlimited
-- Invoices per month: 500
+- Invoices per month: Unlimited
+- Items (products and services): Unlimited
+- Purchase orders per month: Not included
+- Purchase bills per month: Unlimited
+- Sales orders per month: Not included
+- Suppliers: Unlimited
+- Team users: 1
+- WhatsApp messages per day: 20
+
+### Free plan features
+
+- Advanced: Scan & Add Items
+- Inventory: Dead Stock Widget
+- Purchase: Purchases
+- Reports: Basic Reports, GST Reports
+- Sales: Estimates & Quotations, Invoice profitability, Invoices, New Invoice
+- Settings: Accessibility Features, Advanced Filters, Backup & Restore, Bulk Actions, Customizable Dashboard, Mobile Enhancements, Print language, WhatsApp Integration
+
+## Starter plan (Billing)
+
+Billing on computer and phone with POS, barcodes, reminders and 3 users.
+
+Price: ₹299 per month, or ₹2,699 per year (about 25% less than paying monthly), or ₹5,999 for 3 years.
+
+### Starter plan limits
+
+- Branches: 1
+- Credit notes per month: Unlimited
+- Customers: Unlimited
+- Emails per day: 100
+- Estimates / quotations per month: Unlimited
+- Expenses per month: Unlimited
+- Invoices per month: Unlimited
 - Items (products and services): Unlimited
 - Purchase orders per month: Unlimited
 - Purchase bills per month: Unlimited
 - Sales orders per month: Unlimited
 - Suppliers: Unlimited
 - Team users: 3
-- WhatsApp messages per day: 10
+- WhatsApp messages per day: 200
 
-### Professional plan features
+### Starter plan features
 
-- Purchase: Expense Tracking, Inventory Adjustments, Purchases, Suppliers
-- Reports: Basic Reports
-- Sales: Debit Notes, Delivery Challans, Invoices, Work Orders
-- Settings: Backup & Restore, Template Customization, Users & Roles, WhatsApp Integration
+- Advanced: Barcode Scanning, Custom Branding, Scan & Add Items
+- Integrations: Email Invoicing, Email payment reminders, Payment Gateway, WhatsApp auto reminders, WhatsApp credit alerts
+- Inventory: Barcode Label Printing, Dead Stock Widget, Label Template Designer, Print Labels from Purchase (GRN), Thermal Printer (ZPL) Output, Weight-Embedded PLU Barcodes
+- Purchase: Expense Tracking, Purchase Orders, Purchases, Supplier Hub, Suppliers
+- Reports: Basic Reports, GST Reports
+- Sales: Credit Notes, Estimates & Quotations, Invoice profitability, Invoices, New Invoice, Party-specific item pricing, e-Way bills
+- Settings: Accessibility Features, Advanced Filters, Backup & Restore, Bulk Actions, Customizable Dashboard, Mobile Enhancements, POS Mode, Print language, Template Customization, Use on the website, Users & Roles, WhatsApp Integration
 
-## Business plan (Billing)
+## Growth plan (Billing)
 
-Established businesses with advanced needs
+Everything in Starter plus full accounting and 5 users.
 
-Price: ₹999 per month, or ₹9,999 per year (about 17% less than paying monthly).
+Price: ₹499 per month, or ₹4,499 per year (about 25% less than paying monthly), or ₹9,999 for 3 years.
 
-### Business plan limits
+### Growth plan limits
 
-- Branches: 3
+- Branches: 1
 - Credit notes per month: Unlimited
 - Customers: Unlimited
 - Emails per day: 200
@@ -94,100 +98,74 @@ Price: ₹999 per month, or ₹9,999 per year (about 17% less than paying monthl
 - Purchase bills per month: Unlimited
 - Sales orders per month: Unlimited
 - Suppliers: Unlimited
+- Team users: 5
+- WhatsApp messages per day: 300
+
+### Growth plan features
+
+- Accounting: Bank import & reconciliation, Budgets, Chart of accounts, Credit approvals, Provisions, TDS / TCS
+- Advanced: Barcode Scanning, Custom Branding, Ledger & Accounting, Scan & Add Items
+- Integrations: Email Invoicing, Email payment reminders, Payment Gateway, WhatsApp auto reminders, WhatsApp credit alerts
+- Inventory: Barcode Label Printing, Dead Stock Widget, Label Template Designer, Print Labels from Purchase (GRN), Thermal Printer (ZPL) Output, Weight-Embedded PLU Barcodes
+- Purchase: Expense Tracking, Purchase Orders, Purchases, Supplier Hub, Suppliers
+- Reports: Advanced Reports, Basic Reports, GST Reports, Profit reports (basic)
+- Sales: Credit Notes, Estimates & Quotations, Invoice profitability, Invoices, New Invoice, Party-specific item pricing, Recurring Invoices, Sales Orders, e-Way bills
+- Settings: Accessibility Features, Additional businesses, Advanced Filters, Backup & Restore, Bulk Actions, Customizable Dashboard, Mobile Enhancements, POS Mode, Print language, Soft delete & restore, Template Customization, Use on the website, Users & Roles, WhatsApp Integration
+
+## Business plan (Billing)
+
+Everything in Growth plus branches, warehouses, online store, e-Invoice and 10 users.
+
+Price: ₹799 per month, or ₹7,199 per year (about 25% less than paying monthly), or ₹15,999 for 3 years.
+
+### Business plan limits
+
+- Branches: 3
+- Credit notes per month: Unlimited
+- Customers: Unlimited
+- Emails per day: 500
+- Estimates / quotations per month: Unlimited
+- Expenses per month: Unlimited
+- Invoices per month: Unlimited
+- Items (products and services): Unlimited
+- Purchase orders per month: Unlimited
+- Purchase bills per month: Unlimited
+- Sales orders per month: Unlimited
+- Suppliers: Unlimited
 - Team users: 10
-- WhatsApp messages per day: 100
+- WhatsApp messages per day: 500
 
 ### Business plan features
 
-- Advanced: Ledger & Accounting
-- Integrations: Email Invoicing
-- Purchase: Expense Tracking, Inventory Adjustments, Purchases, Suppliers
-- Reports: Advanced Reports, Basic Reports, GST Reports
-- Sales: Credit Notes, Debit Notes, Delivery Challans, Estimates & Quotations, Invoices, Recurring Invoices, Work Orders
-- Settings: Backup & Restore, Locations & Branches, Template Customization, Users & Roles, WhatsApp Integration
-
-## Enterprise plan (Billing)
-
-Large businesses with custom requirements
-
-Price: ₹2,999 per month, or ₹29,999 per year (about 17% less than paying monthly).
-
-### Enterprise plan limits
-
-- Branches: Unlimited
-- Credit notes per month: Unlimited
-- Customers: Unlimited
-- Emails per day: Unlimited
-- Estimates / quotations per month: Unlimited
-- Expenses per month: Unlimited
-- Invoices per month: Unlimited
-- Items (products and services): Unlimited
-- Purchase orders per month: Unlimited
-- Purchase bills per month: Unlimited
-- Sales orders per month: Unlimited
-- Suppliers: Unlimited
-- Team users: Unlimited
-- WhatsApp messages per day: Unlimited
-
-### Enterprise plan features
-
-- Advanced: Barcode Scanning, Custom Branding, Ledger & Accounting, Multi-Currency, Online Store
-- Integrations: API Access, Email Invoicing, Payment Gateway
-- Purchase: Expense Tracking, Inventory Adjustments, Purchases, Suppliers
-- Reports: Advanced Analytics, Advanced Reports, Basic Reports, GST Reports
-- Sales: Credit Notes, Debit Notes, Delivery Challans, Estimates & Quotations, Invoices, Recurring Invoices, Work Orders
-- Settings: Backup & Restore, Locations & Branches, Template Customization, Users & Roles, WhatsApp Integration
-
-## Trial plan (Billing)
-
-New account trial: full access during your trial window, then Free unless you subscribe.
-
-Price: Free during the trial period.
-
-### Trial plan limits
-
-- Branches: Unlimited
-- Credit notes per month: Unlimited
-- Customers: Unlimited
-- Emails per day: Unlimited
-- Estimates / quotations per month: Unlimited
-- Expenses per month: Unlimited
-- Invoices per month: Unlimited
-- Items (products and services): Unlimited
-- Purchase orders per month: Unlimited
-- Purchase bills per month: Unlimited
-- Sales orders per month: Unlimited
-- Suppliers: Unlimited
-- Team users: Unlimited
-- WhatsApp messages per day: Unlimited
-
-### Trial plan features
-
-- Advanced: Barcode Scanning, Custom Branding, Ledger & Accounting, Multi-Currency, Online Store
-- Integrations: API Access, Email Invoicing, Payment Gateway
-- Purchase: Expense Tracking, Inventory Adjustments, Purchases, Suppliers
-- Reports: Advanced Analytics, Advanced Reports, Basic Reports, GST Reports
-- Sales: Credit Notes, Debit Notes, Delivery Challans, Estimates & Quotations, Invoices, Recurring Invoices, Work Orders
-- Settings: Backup & Restore, Locations & Branches, Template Customization, Users & Roles, WhatsApp Integration
+- Accounting: Bank import & reconciliation, Budgets, Chart of accounts, Credit approvals, Provisions, TDS / TCS
+- Advanced: Barcode Scanning, Custom Branding, Ledger & Accounting, Multi-Currency, Online Store, Scan & Add Items
+- Integrations: API Access, Email Invoicing, Email payment reminders, Payment Gateway, WhatsApp auto reminders, WhatsApp credit alerts
+- Inventory: Barcode Label Printing, Dead Stock Widget, Label Template Designer, Print Labels from Purchase (GRN), Thermal Printer (ZPL) Output, Weight-Embedded PLU Barcodes
+- Purchase: Expense Tracking, Purchase Orders, Purchases, Supplier Hub, Suppliers
+- Reports: Advanced Analytics, Advanced Reports, Basic Reports, GST Reports, Profit reports (advanced), Profit reports (basic), Report Builder
+- Sales: Credit Notes, Estimates & Quotations, Invoice profitability, Invoices, New Invoice, Party-specific item pricing, Recurring Invoices, Sales Orders, e-Invoice (IRN), e-Way bills
+- Settings: Accessibility Features, Additional businesses, Advanced Filters, Backup & Restore, Bulk Actions, Customizable Dashboard, Locations & Branches, Mobile Enhancements, Multi-Device Login, POS Mode, Print language, Soft delete & restore, Template Customization, Use on the website, Users & Roles, Warehouses, WhatsApp Integration, Workflow Automation
 
 ## Connect plan (Connect)
 
-WhatsApp CRM platform — no platform fee; enable Bot or Send Message add-ons.
+Official WhatsApp Business API, shared inbox, AI agent, templates, campaigns and WhatsApp shop.
 
-Price: Free (₹0).
+Price: ₹1,499 per month, or ₹14,388 per year (about 20% less than paying monthly), or ₹34,999 for 3 years.
 
 ### Connect plan limits
 
 - Team users: 5
-- WhatsApp messages per day: 20
+- WhatsApp messages per day: 1,000
 
 ### Connect plan features
 
-- Settings: Users & Roles, WhatsApp Integration
+- Advanced: Scan & Add Items
+- Integrations: Connect: custom & bulk messages, Connect: inbox, bot & AI, WhatsApp auto reminders
+- Settings: Print language, Use on the website, Users & Roles, WhatsApp Integration
 
-## Connect WhatsApp add-ons
+## WhatsApp on Khatario
 
-The Connect plan itself has no platform fee. WhatsApp features are enabled as monthly add-ons:
-
-- WhatsApp Bot add-on: ₹499 per month.
-- Send Message add-on: ₹299 per month.
+- Every billing plan, including Free, can link a WhatsApp number by QR code to send invoices and payment reminders. Automatic scheduled payment reminders start on the Starter plan and go out over the QR link; they do not need Connect.
+- The Connect plan is a paid add-on for the official WhatsApp Business API: your own WhatsApp Business number, the shared team inbox, the AI agent, Meta-approved templates, campaigns, automation and the WhatsApp shop.
+- Connect includes its own WhatsApp agent seats, separate from billing plan users. Owners add agents under Settings → WhatsApp → Agents. Agents can chat with customers and view customers, items, invoices and orders, but cannot create or edit them or see purchases and accounts. A person can be moved between Billing users and WhatsApp agents.
+- Extra AI replies beyond the Connect allowance: Khatario AI top-up at ₹299 per month (requires Connect).

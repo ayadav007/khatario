@@ -17,7 +17,7 @@ const COPY: Record<ProductLine, { kicker: string; title: string; points: string[
   billing: {
     kicker: 'Before you go',
     title: 'Make your next bill on Khatario. Free.',
-    points: ['Unlimited GST bills on the Free plan', 'Send bills on WhatsApp from your own number', 'Works on your phone and your computer'],
+    points: ['Unlimited GST bills on the Free plan', 'Send bills on WhatsApp from your own number', 'Free plan runs in the Khatario phone app; the website comes with a trial or paid plan'],
     cta: 'Start free',
   },
   hr: {

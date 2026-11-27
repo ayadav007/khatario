@@ -81,7 +81,7 @@ export default function AboutPage() {
               <p className="mt-4 text-base leading-relaxed text-slate-600">
                 Khatario is built for shop owners who bill at the counter: kirana, medical, hardware, mobile, clothing
                 and other small businesses. You can start on the free plan with unlimited GST bills and no card, and
-                use the same account on your phone and your computer.
+                use the same account on your phone and, on a trial or paid plan, your computer.
               </p>
             </div>
           </div>

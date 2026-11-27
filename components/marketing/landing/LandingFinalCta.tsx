@@ -25,7 +25,7 @@ export const LANDING_FINAL_CTA_DEFAULTS: LandingFinalCtaContent = {
   ctaLabel: 'Start free trial',
 };
 
-const CONNECT_SUBTEXT = 'No platform fee — add WhatsApp Bot or Send Message when you are ready.';
+const CONNECT_SUBTEXT = 'Start with a free Connect account. The paid Connect plan adds the official WhatsApp Business API, AI replies and a shared inbox.';
 
 export function LandingFinalCta(props: Partial<LandingFinalCtaContent> = {}) {
   const c = withDefaults(LANDING_FINAL_CTA_DEFAULTS, props);

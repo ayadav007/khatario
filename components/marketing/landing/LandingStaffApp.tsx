@@ -111,7 +111,7 @@ function staffAppAvailability(catalog: PricingCatalog | null): string | null {
   const hrPlans = catalog.plans.filter((p) => p.productLine === 'hr');
   const lite = hrPlans.find((p) => p.id === HR_STAFF_LITE_PLAN_ID);
   if (lite?.features.includes(STAFF_APP_FEATURE) && lite.priceMonthly === 0) {
-    return 'Included free with every Billing plan.';
+    return 'Included free with the paid Billing plans.';
   }
   const first = hrPlans.find((p) => p.features.includes(STAFF_APP_FEATURE));
   return first ? `Included from ${first.name}.` : null;

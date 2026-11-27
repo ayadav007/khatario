@@ -77,7 +77,7 @@ const PRODUCT_MENUS: ProductMenu[] = [
     tagline: 'Attendance, payroll & leave',
     icon: Users,
     tile: 'bg-sky-600 text-white',
-    pitch: 'Free for up to 30 staff with any Billing plan, or on its own.',
+    pitch: 'HR Lite for up to 30 staff comes with paid Billing plans. Bigger HR plans on their own.',
     cta: 'Start HR trial',
     links: [
       { label: 'Phone check-in', text: 'Fake GPS and emulators blocked', icon: CalendarCheck, href: '/?product=hr#staff' },

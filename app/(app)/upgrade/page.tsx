@@ -8,10 +8,42 @@ import { Button } from '@/components/ui/Button';
 import { Lock, ArrowLeft, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 
+type OfferedPlan = {
+  id: string;
+  display_name?: string;
+  name?: string;
+  price_monthly: number | string;
+  price_yearly?: number | string;
+  product_line?: string;
+  is_public?: boolean;
+  is_active?: boolean;
+};
+
+const PRODUCT_LABELS: Record<string, string> = { billing: 'Billing', hr: 'HR', connect: 'Connect' };
+
+function formatInr(value: number): string {
+  return `₹${Math.round(value).toLocaleString('en-IN')}`;
+}
+
+/** Plans a visitor can buy today: public, active and not free, straight from the plan catalogue. */
+function plansOnSale(plans: OfferedPlan[]): OfferedPlan[] {
+  return plans.filter(
+    (p) => p.is_public !== false && p.is_active !== false && (Number(p.price_monthly) > 0 || Number(p.price_yearly) > 0),
+  );
+}
+
 export default function UpgradePage() {
   const router = useRouter();
   const { business } = useAuth();
   const [planName, setPlanName] = useState<string>('Free');
+  const [plans, setPlans] = useState<OfferedPlan[]>([]);
+
+  useEffect(() => {
+    fetch('/api/subscriptions/plans', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { plans: [] }))
+      .then((data) => setPlans(plansOnSale(Array.isArray(data.plans) ? data.plans : [])))
+      .catch(() => setPlans([]));
+  }, []);
 
   useEffect(() => {
     if (business?.id) {
@@ -48,23 +80,28 @@ export default function UpgradePage() {
             To access this feature, please upgrade your subscription plan.
           </p>
 
-          <div className="bg-slate-50 border border-primary-200 rounded-lg p-4 mb-4">
-            <h3 className="font-semibold text-primary-900 mb-2">Available Plans:</h3>
-            <ul className="space-y-2 text-sm text-primary-800">
-              <li className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                <span>Professional Plan - ₹299/month</span>
-              </li>
-              <li className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                <span>Business Plan - ₹999/month</span>
-              </li>
-              <li className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                <span>Enterprise Plan - ₹2,999/month</span>
-              </li>
-            </ul>
-          </div>
+          {plans.length > 0 && (
+            <div className="bg-slate-50 border border-primary-200 rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-primary-900 mb-2">Available Plans:</h3>
+              <ul className="space-y-2 text-sm text-primary-800">
+                {plans.map((plan) => {
+                  const line = plan.product_line && plan.product_line !== 'billing' ? PRODUCT_LABELS[plan.product_line] : null;
+                  const monthly = Number(plan.price_monthly);
+                  const yearly = Number(plan.price_yearly);
+                  const price = monthly > 0 ? `${formatInr(monthly)}/month` : `${formatInr(yearly)}/year`;
+                  return (
+                    <li key={plan.id} className="flex items-center">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      <span>
+                        {line ? `${line} ` : ''}
+                        {plan.display_name || plan.name} - {price}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
