@@ -278,7 +278,37 @@ export async function completeAddonCheckoutPayment(params: {
     );
 
     const price = WHATSAPP_ADDON_PRICING[addonType];
+    // The paid month starts where the add-on (or the Connect row, for legacy add-ons) currently ends,
+    // or today when it already ended: read it under lock before the upsert moves the end date.
+    // (Exact, unlike `new end - 1 month`, which is wrong across month ends: Jan 31 + 1 month = Feb 28.)
+    const legacy = addonType !== 'khatario_ai';
+    const prev = legacy
+      ? await client.query<{ start: string }>(
+          `SELECT (CASE WHEN plan_id = $2 AND status = 'active'
+                        THEN GREATEST(COALESCE(end_date, CURRENT_DATE), CURRENT_DATE)
+                        ELSE CURRENT_DATE END)::text AS start
+           FROM business_module_subscriptions
+           WHERE business_id = $1 AND module_key = 'connect' FOR UPDATE`,
+          [params.businessId, CONNECT_PLAN_ID],
+        )
+      : await client.query<{ start: string }>(
+          `SELECT GREATEST(COALESCE(end_date, CURRENT_DATE), CURRENT_DATE)::text AS start
+           FROM whatsapp_addons WHERE business_id = $1 AND addon_type = $2 FOR UPDATE`,
+          [params.businessId, addonType],
+        );
     await activateAddonForCheckout(params.businessId, addonType, price, client);
+    await client.query(
+      legacy
+        ? `UPDATE billing_transactions bt
+           SET period_start = COALESCE($3::date, bms.start_date), period_end = bms.end_date
+           FROM business_module_subscriptions bms
+           WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = 'connect'`
+        : `UPDATE billing_transactions bt
+           SET period_start = COALESCE($3::date, CURRENT_DATE), period_end = wa.end_date
+           FROM whatsapp_addons wa
+           WHERE bt.id = $1 AND wa.business_id = $2 AND wa.addon_type = 'khatario_ai'`,
+      [billingTransactionId, params.businessId, prev.rows[0]?.start ?? null],
+    );
 
     await client.query('COMMIT');
   } catch (err) {

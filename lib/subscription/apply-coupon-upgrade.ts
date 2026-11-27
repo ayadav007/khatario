@@ -1,3 +1,4 @@
+import { query } from '@/lib/db';
 import { recordBillingTransaction } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange, getBusinessPlatformRecipient } from '@/lib/platform-email';
 import { redeemCoupon } from '@/lib/subscription/coupons';
@@ -10,6 +11,17 @@ import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { normalizePlatformModule } from '@/lib/platform-modules';
 import { formatModulePlanReceiptLabel } from '@/lib/subscription/billing-labels';
 import type { CheckoutPricingResult } from '@/lib/subscription/checkout-pricing';
+
+/** Period the row paid for = the module row after the plan change and any free months (not transactional here). */
+async function recordPeriodFromModuleRow(txId: string, businessId: string, moduleKey: string): Promise<void> {
+  await query(
+    `UPDATE billing_transactions bt
+     SET period_start = bms.start_date, period_end = bms.end_date
+     FROM business_module_subscriptions bms
+     WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3`,
+    [txId, businessId, moduleKey],
+  );
+}
 
 /** Zero-amount upgrade (100% coupon, free_months, or free plan) with optional coupon redemption. */
 export async function applyInstantPlanUpgradeWithCoupon(params: {
@@ -58,6 +70,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
         params.billingCycle,
       ) + ' (coupon)',
     });
+    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey);
     await redeemCoupon(
       params.pricing.couponId,
       params.businessId,
@@ -66,7 +79,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       params.billingCycle,
     );
   } else if (params.pricing.finalAmount <= 0 && params.pricing.baseAmount <= 0) {
-    await recordBillingTransaction({
+    const { id: zeroTxId } = await recordBillingTransaction({
       businessId: params.businessId,
       planId: params.planId,
       moduleKey,
@@ -81,6 +94,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       ),
       skipEmails: false,
     });
+    await recordPeriodFromModuleRow(zeroTxId, params.businessId, moduleKey);
   }
 
   const recipient = await getBusinessPlatformRecipient(params.businessId);

@@ -572,6 +572,16 @@ export async function completeSubscriptionCheckoutPayment(params: {
       }
     }
 
+    // The payment row records the period the module row holds now, after the plan change and any
+    // free months (and carried trial days), so it can never disagree with the subscription.
+    await client.query(
+      `UPDATE billing_transactions bt
+       SET period_start = bms.start_date, period_end = bms.end_date
+       FROM business_module_subscriptions bms
+       WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3`,
+      [billingTransactionId, params.businessId, moduleKey],
+    );
+
     await client.query('COMMIT');
 
     committed = {

@@ -516,3 +516,226 @@ run('business deletion keeps payment rows (kh_phase2_test)', () => {
     expect((await listArchivedBillingTransactions(100000, 0)).length).toBeLessThanOrEqual(200);
   });
 });
+
+run('payment records the period it paid for (kh_phase2_test)', () => {
+  jest.setTimeout(60000);
+  const created: string[] = [];
+  const coupons: string[] = [];
+  let biz: string;
+
+  async function newBiz(): Promise<string> {
+    const id = randomUUID();
+    created.push(id);
+    await query(
+      `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type, primary_module)
+       VALUES ($1, $2, '27AAAPA1234A1Z5', '27', 'regular', 'billing')`,
+      [id, `Period ${id.slice(0, 6)}`],
+    );
+    await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'billing', true, 'test')`, [id]);
+    await query(
+      `INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Owner', $3, true)`,
+      [randomUUID(), id, `9${Math.floor(Math.random() * 1e9).toString().padStart(9, '0')}`],
+    );
+    return id;
+  }
+
+  async function pending(businessId: string, planId: string, amount: number, couponId?: string): Promise<string> {
+    const { id } = await recordBillingTransaction({
+      businessId, planId, amount, couponId, billingCycle: 'monthly',
+      paymentMethod: 'razorpay', status: 'pending', skipEmails: true,
+    });
+    await query(
+      `UPDATE billing_transactions SET gateway_response = '{"checkout_type":"subscription","provider":"razorpay"}'::jsonb WHERE id = $1`,
+      [id],
+    );
+    return id;
+  }
+
+  const notes = (b: string, tx: string, planId: string) => ({
+    business_id: b, billing_transaction_id: tx, plan_id: planId, billing_cycle: 'monthly',
+  });
+
+  async function pay(tx: string, b: string, planId: string, price: number) {
+    const raw = JSON.stringify({
+      event: 'payment.captured',
+      payload: { payment: { entity: { id: 'pay_per_' + randomUUID().slice(0, 10), status: 'captured', amount: Math.round(price * 100), notes: notes(b, tx, planId) } } },
+    });
+    const sig = createHmac('sha256', 'whsec_plan').update(raw).digest('hex');
+    expect(await processPlatformRazorpayWebhook(raw, { 'x-razorpay-signature': sig })).toMatchObject({ ok: true });
+  }
+
+  async function period(tx: string) {
+    return queryOne<{ period_start: string | null; period_end: string | null }>(
+      `SELECT period_start::text, period_end::text FROM billing_transactions WHERE id = $1`, [tx]);
+  }
+
+  async function modRow(b: string, key: string) {
+    return queryOne<{ start_date: string; end_date: string | null }>(
+      `SELECT start_date::text, end_date::text FROM business_module_subscriptions WHERE business_id=$1 AND module_key=$2`, [b, key]);
+  }
+
+  async function addonRow(b: string) {
+    return queryOne<{ start_date: string; end_date: string | null }>(
+      `SELECT start_date::text, end_date::text FROM whatsapp_addons WHERE business_id=$1 AND addon_type='khatario_ai'`, [b]);
+  }
+
+  async function payAddonTx(b: string, type: 'khatario_ai' | 'whatsapp_bot' = 'khatario_ai', amount = 299) {
+    const { id } = await recordBillingTransaction({
+      businessId: b, planId: 'connect', moduleKey: 'connect', amount, billingCycle: 'monthly',
+      paymentMethod: 'razorpay', status: 'pending', skipEmails: true,
+    });
+    await query(
+      `UPDATE billing_transactions SET gateway_response = $2::jsonb WHERE id = $1`,
+      [id, JSON.stringify({ checkout_type: 'whatsapp_addon', addon_type: type, provider: 'razorpay' })],
+    );
+    const r = await completeAddonCheckoutPayment({
+      businessId: b, billingTransactionId: id, providerPaymentId: 'pay_ap_' + randomUUID().replace(/-/g, '').slice(0, 14), amount,
+    });
+    return { id, r };
+  }
+
+  async function makeFreeMonthsCoupon(months: number): Promise<string> {
+    const r = await queryOne<{ id: string }>(
+      `INSERT INTO coupons (code, type, value, max_per_business) VALUES ($1, 'free_months', $2, 1) RETURNING id`,
+      [`PR${randomUUID().slice(0, 10).toUpperCase()}`, months],
+    );
+    coupons.push(r!.id);
+    return r!.id;
+  }
+
+  async function planPrice(planId: string): Promise<number> {
+    const p = await queryOne<{ price_monthly: string }>(`SELECT price_monthly::text FROM subscription_plans WHERE id=$1`, [planId]);
+    return Number(p!.price_monthly);
+  }
+
+  beforeAll(async () => {
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network disabled in tests'));
+    await query(readFileSync(join(process.cwd(), 'database/migrations/479_billing_record_constraints.sql'), 'utf8'));
+  });
+
+  beforeEach(async () => {
+    biz = await newBiz();
+    clearSubscriptionCache(biz);
+    clearModuleSubscriptionCache(biz);
+  });
+
+  afterAll(async () => {
+    jest.restoreAllMocks();
+    if (enabled) {
+      for (const id of created) {
+        await query(`DELETE FROM platform_billing_webhook_events WHERE business_id = $1 OR payload::text LIKE $2`, [id, `%${id}%`]).catch(() => undefined);
+        await query(`DELETE FROM businesses WHERE id = $1`, [id]).catch(() => undefined);
+      }
+      for (const id of coupons) {
+        await query(`DELETE FROM coupon_redemptions WHERE coupon_id = $1`, [id]).catch(() => undefined);
+        await query(`DELETE FROM coupons WHERE id = $1`, [id]).catch(() => undefined);
+      }
+      await closePool();
+    }
+  });
+
+  it('a completed subscription payment records its period', async () => {
+    const price = await planPrice('billing_growth');
+    const tx = await pending(biz, 'billing_growth', price);
+    await pay(tx, biz, 'billing_growth', price);
+    const m = await modRow(biz, 'billing');
+    expect(await period(tx)).toEqual({ period_start: m!.start_date, period_end: m!.end_date });
+    expect(m!.end_date).not.toBeNull();
+  });
+
+  it('free months are inside the recorded period', async () => {
+    const coupon = await makeFreeMonthsCoupon(3);
+    const tx = await pending(biz, 'billing_growth', 499, coupon);
+    await pay(tx, biz, 'billing_growth', 499);
+    const m = await modRow(biz, 'billing');
+    const p = await period(tx);
+    expect(p!.period_end).toBe(m!.end_date);
+    expect(p!.period_start).toBe(m!.start_date);
+    const expected = await queryOne<{ d: string }>(`SELECT ((CURRENT_DATE + interval '1 month')::date + interval '3 months')::date::text AS d`);
+    expect(p!.period_end).toBe(expected!.d);
+  });
+
+  it('an early renewal records the new period and leaves the first row unchanged', async () => {
+    const price = await planPrice('billing_growth');
+    const first = await pending(biz, 'billing_growth', price);
+    await pay(first, biz, 'billing_growth', price);
+    // Mark the first row with a period no renewal could produce, so any rewrite of it shows.
+    await query(`UPDATE billing_transactions SET period_start = '2020-01-01', period_end = '2020-02-01' WHERE id = $1`, [first]);
+    const firstPeriod = await period(first);
+    const second = await pending(biz, 'billing_growth', price);
+    await pay(second, biz, 'billing_growth', price);
+    const m = await modRow(biz, 'billing');
+    expect(await period(first)).toEqual(firstPeriod);
+    expect(await period(second)).toEqual({ period_start: m!.start_date, period_end: m!.end_date });
+    expect(firstPeriod).toEqual({ period_start: '2020-01-01', period_end: '2020-02-01' });
+  });
+
+  it('a redelivered payment does not rewrite the period', async () => {
+    const price = await planPrice('billing_growth');
+    const tx = await pending(biz, 'billing_growth', price);
+    await pay(tx, biz, 'billing_growth', price);
+    await query(`UPDATE billing_transactions SET period_start = '2020-01-01', period_end = '2020-02-01' WHERE id = $1`, [tx]);
+    const { completeSubscriptionCheckoutPayment } = await import('@/lib/platform-subscription-checkout');
+    const r = await completeSubscriptionCheckoutPayment({
+      businessId: biz, planId: 'billing_growth', billingCycle: 'monthly', billingTransactionId: tx,
+      providerPaymentId: 'pay_redeliver', amount: price,
+    });
+    expect(r).toBe('already_completed');
+    expect(await period(tx)).toEqual({ period_start: '2020-01-01', period_end: '2020-02-01' });
+  });
+
+  it('an add-on payment records its month', async () => {
+    const { id } = await payAddonTx(biz);
+    const a = await addonRow(biz);
+    expect(await period(id)).toEqual({ period_start: a!.start_date, period_end: a!.end_date });
+    const today = await queryOne<{ d: string }>(`SELECT CURRENT_DATE::text AS d`);
+    expect((await period(id))!.period_start).toBe(today!.d);
+  });
+
+  it('a second add-on payment starts where the first ended', async () => {
+    const one = await payAddonTx(biz);
+    const two = await payAddonTx(biz);
+    const p1 = await period(one.id);
+    const p2 = await period(two.id);
+    const a = await addonRow(biz);
+    expect(p2!.period_start).toBe(p1!.period_end);
+    expect(p2!.period_end).toBe(a!.end_date);
+    expect(await period(one.id)).toEqual(p1);
+  });
+
+  it('an add-on payment after it ended starts today', async () => {
+    const one = await payAddonTx(biz);
+    await query(`UPDATE whatsapp_addons SET status='expired', end_date = CURRENT_DATE - 10 WHERE business_id=$1 AND addon_type='khatario_ai'`, [biz]);
+    const two = await payAddonTx(biz);
+    const today = await queryOne<{ d: string }>(`SELECT CURRENT_DATE::text AS d`);
+    const a = await addonRow(biz);
+    expect(await period(two.id)).toEqual({ period_start: today!.d, period_end: a!.end_date });
+    expect(one.id).not.toBe(two.id);
+  });
+
+  it('a legacy add-on payment records the Connect month it granted', async () => {
+    const { id } = await payAddonTx(biz, 'whatsapp_bot', 299);
+    const m = await modRow(biz, 'connect');
+    expect(await period(id)).toEqual({ period_start: m!.start_date, period_end: m!.end_date });
+    const second = await payAddonTx(biz, 'whatsapp_bot', 299);
+    const m2 = await modRow(biz, 'connect');
+    expect((await period(second.id))).toEqual({ period_start: m!.end_date, period_end: m2!.end_date });
+  });
+
+  it('a 100% coupon upgrade records the period on its zero-amount row', async () => {
+    const coupon = await queryOne<{ id: string }>(
+      `INSERT INTO coupons (code, type, value, max_per_business) VALUES ($1, 'percentage', 100, 1) RETURNING id`,
+      [`PR${randomUUID().slice(0, 10).toUpperCase()}`],
+    );
+    coupons.push(coupon!.id);
+    const { applyInstantPlanUpgradeWithCoupon } = await import('@/lib/subscription/apply-coupon-upgrade');
+    await applyInstantPlanUpgradeWithCoupon({
+      businessId: biz, planId: 'billing_growth', planDisplayName: 'Growth', billingCycle: 'monthly',
+      pricing: { baseAmount: 499, discountAmount: 499, finalAmount: 0, couponId: coupon!.id },
+    });
+    const row = await queryOne<{ id: string }>(
+      `SELECT id FROM billing_transactions WHERE business_id=$1 AND payment_method='coupon'`, [biz]);
+    const m = await modRow(biz, 'billing');
+    expect(await period(row!.id)).toEqual({ period_start: m!.start_date, period_end: m!.end_date });
+  });
+});
