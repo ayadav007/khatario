@@ -143,11 +143,20 @@ export interface ImportResult {
   already: string[];
   unmatched: Array<{ ewb_number: string; from_gstin: string | null; supplier_name: string | null; doc_number: string | null; doc_date: string | null; value: number }>;
   invalid: Array<{ line: number; reason: string }>;
+  /** Matched rows left out because the plan's monthly e-way bill quota ran out. */
+  over_limit: string[];
 }
 
-export async function importInwardEwayBills(client: PoolClient, businessId: string, text: string, userId: string | null): Promise<ImportResult> {
+export async function importInwardEwayBills(
+  client: PoolClient,
+  businessId: string,
+  text: string,
+  userId: string | null,
+  /** Asked before each insert; false stops recording (the row is reported in `over_limit`). */
+  mayRecord: () => Promise<boolean> = async () => true
+): Promise<ImportResult> {
   const { rows, invalid } = readInwardEwbCsv(text);
-  const result: ImportResult = { matched: [], already: [], unmatched: [], invalid };
+  const result: ImportResult = { matched: [], already: [], unmatched: [], invalid, over_limit: [] };
   const existing = new Set(
     (await client.query(`SELECT ewb_number FROM eway_bills WHERE business_id = $1 AND ewb_number = ANY($2::text[])`, [businessId, rows.map((r) => r.ewb_number)])).rows.map(
       (r: any) => r.ewb_number
@@ -181,6 +190,10 @@ export async function importInwardEwayBills(client: PoolClient, businessId: stri
         ewb_number: r.ewb_number, from_gstin: r.from_gstin, supplier_name: r.supplier_name, doc_number: r.doc_number,
         doc_date: istDay(r.doc_date), value: r.value,
       });
+      continue;
+    }
+    if (!(await mayRecord())) {
+      result.over_limit.push(r.ewb_number);
       continue;
     }
     await client.query(

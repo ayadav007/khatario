@@ -72,6 +72,9 @@ import { POST as postInvoiceWhatsApp } from '@/app/api/invoices/[id]/whatsapp/ro
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { checkLimit, clearAddonCache } from '@/lib/subscription';
 import { GET as getLedgerRoute } from '@/app/api/ledger/route';
+import { POST as postEwayBillRoute } from '@/app/api/eway-bills/route';
+import { POST as postEwayImportRoute } from '@/app/api/eway-bills/import/route';
+import { PATCH as patchEwayBillRoute } from '@/app/api/eway-bills/[id]/route';
 import { POST as postBusinessRoute } from '@/app/api/businesses/route';
 import { authorize } from '@/lib/authorization';
 import { getPool } from '@/lib/db';
@@ -539,6 +542,157 @@ run('plan enforcement (kh_phase2_test)', () => {
       const text = jest.mocked(sendWhatsAppMessage).mock.calls[0][2];
       expect(text).not.toBe('Buy now');
       expect(text).toMatch(/^Hello! Please find your invoice INV-/);
+    });
+  });
+  describe('SUB-18: monthly e-Way bill quota', () => {
+    let seq = 0;
+    const uniqueEwb = () => {
+      seq += 1;
+      return `7${String(Date.now()).slice(-8)}${String(seq).padStart(3, '0')}`.slice(0, 12);
+    };
+    const payload = () => ({
+      ewb_number: uniqueEwb(),
+      distance_km: 120,
+      generated_at: new Date(Date.now() - 3600_000).toISOString(),
+    });
+    const createEwayBill = (biz: string, userId: string, body: Record<string, unknown> = payload()) =>
+      callRoute(postEwayBillRoute as unknown as RouteHandler, {
+        biz, userId, method: 'POST', path: '/api/eway-bills', body,
+      });
+    /** Insert `n` e-way bill rows created now (the rows checkLimit counts). */
+    async function fillEwayBills(biz: string, n: number): Promise<void> {
+      for (let i = 0; i < n; i++) {
+        await query(
+          `INSERT INTO eway_bills (business_id, source_type, ewb_number, distance_km, generated_at)
+           VALUES ($1, 'other', $2, 10, NOW())`,
+          [biz, uniqueEwb()],
+        );
+      }
+      clearSubscriptionCache(biz);
+    }
+    let biz: string;
+    let owner: string;
+
+    beforeEach(async () => {
+      ({ biz, owner } = await newBusinessWithOwner('billing_starter', { label: 'sub18' }));
+    });
+
+    it('check-limit reports the quota', async () => {
+      await fillEwayBills(biz, 10);
+      expect(await checkLimit(biz, 'eway_bills')).toMatchObject({ limit: 10, current: 10, allowed: false });
+    });
+
+    it('below the quota an e-Way bill is recorded', async () => {
+      await fillEwayBills(biz, 9);
+      const res = await createEwayBill(biz, owner);
+      expect(res.status).toBe(201);
+      expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+    });
+
+    it('the 11th e-Way bill in a month is refused on Starter', async () => {
+      await fillEwayBills(biz, 10);
+      const res = await createEwayBill(biz, owner);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({
+        code: 'SUBSCRIPTION_LIMIT_EXCEEDED', limit_type: 'eway_bills', limit: 10, current: 10,
+      });
+      expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+    });
+
+    it('the quota counts by the server creation time, not the client generated_at', async () => {
+      await fillEwayBills(biz, 10);
+      const res = await createEwayBill(biz, owner, {
+        ...payload(), generated_at: new Date(Date.now() - 40 * 86400_000).toISOString(),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('last month does not count', async () => {
+      await fillEwayBills(biz, 10);
+      await query(`UPDATE eway_bills SET created_at = created_at - INTERVAL '40 days' WHERE business_id = $1`, [biz]);
+      clearSubscriptionCache(biz);
+      const res = await createEwayBill(biz, owner);
+      expect(res.status).toBe(201);
+    });
+
+    it('Business plan is unlimited', async () => {
+      await fillEwayBills(biz, 10);
+      await setPlan(biz, 'billing', 'billing_business');
+      const res = await createEwayBill(biz, owner);
+      expect(res.status).toBe(201);
+    });
+
+    it('Growth allows 25', async () => {
+      await setPlan(biz, 'billing', 'billing_growth');
+      expect(await checkLimit(biz, 'eway_bills')).toMatchObject({ limit: 25, current: 0, allowed: true });
+    });
+
+    it('on Free the feature gate refuses before the limit', async () => {
+      const free = await newBusinessWithOwner('free', { label: 'sub18free' });
+      const res = await createEwayBill(free.biz, free.owner);
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+    });
+
+    it('editing an existing e-Way bill at the limit is not refused and does not count as new', async () => {
+      const res0 = await createEwayBill(biz, owner);
+      expect(res0.status).toBe(201);
+      const id = (await res0.json()).eway_bill.id as string;
+      await fillEwayBills(biz, 9);
+      const res = await callRoute(patchEwayBillRoute as unknown as RouteHandler, {
+        biz, userId: owner, method: 'PATCH', path: `/api/eway-bills/${id}`, params: { id },
+        body: { action: 'vehicle', vehicle_number: 'MH12AB1234' },
+      });
+      expect(res.status).toBe(200);
+      expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+    });
+
+    it('two simultaneous creates at 9 of 10 let exactly one through', async () => {
+      await fillEwayBills(biz, 9);
+      const results = await Promise.all([createEwayBill(biz, owner), createEwayBill(biz, owner)]);
+      expect(results.map((r) => r.status).sort()).toEqual([201, 403]);
+      expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+    });
+
+    describe('portal import', () => {
+      async function purchaseFor(b: string, billNumber: string): Promise<void> {
+        const sup = randomUUID();
+        await query(`INSERT INTO suppliers (id, business_id, name, gstin) VALUES ($1, $2, 'Sup', '27AAAPA1234A1Z5')`, [sup, b]);
+        await query(
+          `INSERT INTO purchases (id, business_id, supplier_id, bill_number, bill_date, grand_total, status)
+           VALUES ($1, $2, $3, $4, CURRENT_DATE, 100, 'received')`,
+          [randomUUID(), b, sup, billNumber],
+        );
+      }
+      const csvFor = (...bills: Array<[string, string]>) =>
+        ['EWB No,EWB Date,From GSTIN,Doc No,Value,Distance']
+          .concat(bills.map(([n, d]) => `${n},2026-11-27,27AAAPA1234A1Z5,${d},100,50`))
+          .join('\n');
+      const importCsv = (b: string, u: string, csv: string) =>
+        callRoute(postEwayImportRoute as unknown as RouteHandler, {
+          biz: b, userId: u, method: 'POST', path: '/api/eway-bills/import', body: { csv },
+        });
+
+      it('is refused at the limit', async () => {
+        await fillEwayBills(biz, 10);
+        await purchaseFor(biz, 'PB-1');
+        const res = await importCsv(biz, owner, csvFor([uniqueEwb(), 'PB-1']));
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+      });
+
+      it('stops at the limit part-way and reports what was left out', async () => {
+        await fillEwayBills(biz, 9);
+        await purchaseFor(biz, 'PB-1');
+        await purchaseFor(biz, 'PB-2');
+        const res = await importCsv(biz, owner, csvFor([uniqueEwb(), 'PB-1'], [uniqueEwb(), 'PB-2']));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.matched).toHaveLength(1);
+        expect(body.over_limit).toHaveLength(1);
+        expect(await count(`eway_bills WHERE business_id = $1`, [biz])).toBe(10);
+      });
     });
   });
   describe('SUB-12: plan checks use the session business; one trial per owner', () => {

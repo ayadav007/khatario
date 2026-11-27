@@ -3,6 +3,8 @@ import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import { getPool } from '@/lib/db';
 import { parseEwayBillInput } from '@/lib/gst/eway-bills';
 import { createEwayBill, listEwayBills } from '@/lib/gst/eway-bill-records';
+import { checkLimitInTransaction } from '@/lib/subscription';
+import { limitExceededReply } from '@/lib/subscription/limit-response';
 import { authorizeEwayBill, ewayBillErrorResponse } from '@/lib/gst/eway-bill-route';
 
 export const dynamic = 'force-dynamic';
@@ -34,6 +36,12 @@ export async function POST(request: NextRequest) {
   try {
     const parsed = parseEwayBillInput(await request.json().catch(() => ({})));
     await client.query('BEGIN');
+    // Feature gate ran in authorizeEwayBill; the monthly quota is checked under the subscription row lock.
+    const limit = await checkLimitInTransaction(client, auth.businessId, 'eway_bills');
+    if (!limit.allowed) {
+      await client.query('ROLLBACK');
+      return limitExceededReply('eway_bills', limit);
+    }
     await setInvoiceAuditContext(client, { actorUserId: auth.userId, action: 'eway_updated' });
     const eway_bill = await createEwayBill(client, auth.businessId, parsed, auth.userId);
     await client.query('COMMIT');
