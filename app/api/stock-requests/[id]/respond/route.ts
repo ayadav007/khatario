@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
@@ -12,6 +13,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
+
+  try {
+    await authorize(auth.userId, 'purchases', 'update', { businessId: auth.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   try {
     const requestId = params.id;

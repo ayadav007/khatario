@@ -45,6 +45,8 @@ jest.mock('@/lib/jwt', () => ({
   signRefreshToken: jest.fn(async () => 'refresh-token'),
 }));
 jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
+// The platform "Supplier Hub visible" switch. Visible by default; one test turns it off.
+jest.mock('@/lib/supplier-hub-visibility', () => ({ isSupplierHubVisible: jest.fn(async () => true) }));
 
 // authorize() and assertSessionValidForCookieAuth() read the request headers through next/headers.
 // callRoute() stores the current request's headers here so those reads see the same session.
@@ -87,6 +89,30 @@ import { AttendanceLimitError, recordCheckIn } from '@/lib/hr/attendance-punch';
 import { decideRegularizationRequest } from '@/lib/hr/attendance-regularization';
 import { serializeFaceEncoding } from '@/lib/face-recognition';
 import { ownerHasOtherBusiness, provisionBusiness } from '@/lib/businesses/provision-business';
+import { isSupplierHubVisible } from '@/lib/supplier-hub-visibility';
+import { POST as postLeaveType } from '@/app/api/leave-types/route';
+import { PATCH as patchLeaveType, DELETE as deleteLeaveType } from '@/app/api/leave-types/[id]/route';
+import {
+  GET as listJournalTemplates,
+  POST as postJournalTemplate,
+} from '@/app/api/journal-entries/templates/route';
+import {
+  GET as getJournalTemplate,
+  PATCH as patchJournalTemplate,
+  DELETE as deleteJournalTemplate,
+} from '@/app/api/journal-entries/templates/[id]/route';
+import { GET as listStockRequests, POST as postStockRequests } from '@/app/api/stock-requests/route';
+import { PATCH as patchStockRequest } from '@/app/api/stock-requests/[id]/route';
+import { GET as stockRequestSummary } from '@/app/api/stock-requests/summary/route';
+import { GET as stockReorderSuggestions } from '@/app/api/stock-requests/reorder-suggestions/route';
+import { GET as stockRequestEvents } from '@/app/api/stock-requests/[id]/events/route';
+import { POST as linkStockRequest } from '@/app/api/stock-requests/[id]/link/route';
+import { POST as respondStockRequest } from '@/app/api/stock-requests/[id]/respond/route';
+import { POST as spawnUpstreamStockRequest } from '@/app/api/stock-requests/[id]/spawn-upstream/route';
+import { GET as supplierDashboard } from '@/app/api/suppliers/dashboard/route';
+import { GET as supplierDashboardAnalytics } from '@/app/api/suppliers/dashboard/analytics/route';
+import { GET as supplierRequests } from '@/app/api/suppliers/requests/route';
+import { GET as supplierLookupCustomer } from '@/app/api/suppliers/lookup-customer/route';
 
 const run = enabled ? describe : describe.skip;
 
@@ -360,6 +386,7 @@ run('plan enforcement (kh_phase2_test)', () => {
     jest.restoreAllMocks();
     if (enabled) {
       for (const id of created) {
+        await query(`DELETE FROM journal_entry_templates WHERE business_id = $1`, [id]).catch(() => undefined);
         await query(`DELETE FROM employees WHERE business_id = $1`, [id]).catch(() => undefined);
         await query(`DELETE FROM user_businesses WHERE business_id = $1`, [id]).catch(() => undefined);
         await query(`DELETE FROM users WHERE business_id = $1`, [id]).catch(() => undefined);
@@ -1145,6 +1172,245 @@ run('plan enforcement (kh_phase2_test)', () => {
         await setPlan(biz, 'hr', 'hr_pro');
         expect((await checkLimit(biz, 'shifts')).limit).toBe(-1);
         expect((await checkLimit(biz, 'departments')).limit).toBe(-1);
+      });
+    });
+  });
+
+  describe('SUB-21: routes on gated features check the role permission and the plan', () => {
+    type Group = 'leave' | 'ledger' | 'hub';
+    type Row = {
+      name: string;
+      group: Group;
+      method: string;
+      handler: RouteHandler;
+      path: (biz: string) => string;
+      body?: (biz: string) => Record<string, unknown>;
+      params?: { id: string };
+      /** Statuses that prove the guard was passed (the handler ran to its own answer). */
+      passed: number[];
+    };
+    const ghost = randomUUID();
+    const tplBody = () => ({
+      name: `T-${randomUUID().slice(0, 6)}`,
+      lines: [
+        { account_id: randomUUID(), debit: 10, credit: 0 },
+        { account_id: randomUUID(), debit: 0, credit: 10 },
+      ],
+    });
+    const h = (fn: unknown) => fn as RouteHandler;
+
+    const rows: Row[] = [
+      // Leave types: GET /api/leave-types already authorizes the session user, so only the writes are listed.
+      { name: 'POST leave-types', group: 'leave', method: 'POST', handler: h(postLeaveType), path: () => '/api/leave-types',
+        body: () => ({ leave_name: 'X', leave_code: `X${randomUUID().slice(0, 4)}` }), passed: [201] },
+      { name: 'PATCH leave-types/[id]', group: 'leave', method: 'PATCH', handler: h(patchLeaveType),
+        path: () => `/api/leave-types/${ghost}`, params: { id: ghost }, body: () => ({ leave_name: 'Y' }), passed: [404] },
+      { name: 'DELETE leave-types/[id]', group: 'leave', method: 'DELETE', handler: h(deleteLeaveType),
+        path: () => `/api/leave-types/${ghost}`, params: { id: ghost }, passed: [404] },
+      // Journal templates (path /api/journal-entries maps to advanced_ledger).
+      { name: 'GET journal templates', group: 'ledger', method: 'GET', handler: h(listJournalTemplates),
+        path: () => '/api/journal-entries/templates', passed: [200] },
+      { name: 'POST journal templates', group: 'ledger', method: 'POST', handler: h(postJournalTemplate),
+        path: () => '/api/journal-entries/templates', body: tplBody, passed: [201] },
+      { name: 'GET journal templates/[id]', group: 'ledger', method: 'GET', handler: h(getJournalTemplate),
+        path: () => `/api/journal-entries/templates/${ghost}`, params: { id: ghost }, passed: [404] },
+      { name: 'PATCH journal templates/[id]', group: 'ledger', method: 'PATCH', handler: h(patchJournalTemplate),
+        path: () => `/api/journal-entries/templates/${ghost}`, params: { id: ghost }, body: () => ({ name: 'Z' }), passed: [404] },
+      { name: 'DELETE journal templates/[id]', group: 'ledger', method: 'DELETE', handler: h(deleteJournalTemplate),
+        path: () => `/api/journal-entries/templates/${ghost}`, params: { id: ghost }, passed: [404] },
+      // Supplier Hub: stock requests.
+      { name: 'GET stock-requests', group: 'hub', method: 'GET', handler: h(listStockRequests),
+        path: () => '/api/stock-requests', passed: [200] },
+      { name: 'POST stock-requests', group: 'hub', method: 'POST', handler: h(postStockRequests),
+        path: () => '/api/stock-requests', body: () => ({ requests: [] }), passed: [400] },
+      { name: 'PATCH stock-requests/[id]', group: 'hub', method: 'PATCH', handler: h(patchStockRequest),
+        path: () => `/api/stock-requests/${ghost}`, params: { id: ghost }, body: () => ({ responder_item_id: ghost }), passed: [404] },
+      { name: 'GET stock-requests/summary', group: 'hub', method: 'GET', handler: h(stockRequestSummary),
+        path: () => '/api/stock-requests/summary', passed: [200] },
+      { name: 'GET stock-requests/reorder-suggestions', group: 'hub', method: 'GET', handler: h(stockReorderSuggestions),
+        path: () => '/api/stock-requests/reorder-suggestions', passed: [200] },
+      { name: 'GET stock-requests/[id]/events', group: 'hub', method: 'GET', handler: h(stockRequestEvents),
+        path: () => `/api/stock-requests/${ghost}/events`, params: { id: ghost }, passed: [404] },
+      { name: 'POST stock-requests/[id]/link', group: 'hub', method: 'POST', handler: h(linkStockRequest),
+        path: () => `/api/stock-requests/${ghost}/link`, params: { id: ghost }, body: () => ({ purchase_order_id: ghost }), passed: [404] },
+      { name: 'POST stock-requests/[id]/respond', group: 'hub', method: 'POST', handler: h(respondStockRequest),
+        path: () => `/api/stock-requests/${ghost}/respond`, params: { id: ghost }, body: () => ({ status: 'declined' }), passed: [404] },
+      { name: 'POST stock-requests/[id]/spawn-upstream', group: 'hub', method: 'POST', handler: h(spawnUpstreamStockRequest),
+        path: () => `/api/stock-requests/${ghost}/spawn-upstream`, params: { id: ghost },
+        body: () => ({ upstream_business_id: ghost, requested_qty: 1 }), passed: [404] },
+      // Supplier Hub: dashboards and lookups.
+      { name: 'GET suppliers/dashboard', group: 'hub', method: 'GET', handler: h(supplierDashboard),
+        path: () => '/api/suppliers/dashboard', passed: [200] },
+      { name: 'GET suppliers/dashboard/analytics', group: 'hub', method: 'GET', handler: h(supplierDashboardAnalytics),
+        path: () => '/api/suppliers/dashboard/analytics', passed: [200] },
+      { name: 'GET suppliers/requests', group: 'hub', method: 'GET', handler: h(supplierRequests),
+        path: () => '/api/suppliers/requests', passed: [200] },
+      { name: 'GET suppliers/lookup-customer', group: 'hub', method: 'GET', handler: h(supplierLookupCustomer),
+        path: (biz) => `/api/suppliers/lookup-customer?supplier_business_id=${biz}&customer_name=nobody`, passed: [404] },
+    ];
+
+    const fx = {} as Record<Group, {
+      low: { biz: string; owner: string };
+      full: { biz: string; owner: string };
+      noPerm: string;
+    }>;
+
+    beforeAll(async () => {
+      const mk = async (g: Group, lowPlan: string, fullPlan: string, hr = false) => {
+        const low = hr
+          ? await newBusinessWithOwner('billing_growth', { hr: true, label: `s21-${g}-low` })
+          : await newBusinessWithOwner(lowPlan, { label: `s21-${g}-low` });
+        const full = hr
+          ? await newBusinessWithOwner('billing_growth', { hr: true, label: `s21-${g}-full` })
+          : await newBusinessWithOwner(fullPlan, { label: `s21-${g}-full` });
+        if (hr) {
+          await setPlan(low.biz, 'hr', lowPlan);
+          await setPlan(full.biz, 'hr', fullPlan);
+        }
+        const roleId = await makeRole(full.biz, 'no_permissions');
+        const noPerm = await addUser(full.biz, { roleId });
+        fx[g] = { low, full, noPerm };
+      };
+      await mk('leave', 'hr_starter', 'hr_pro', true);
+      await mk('ledger', 'billing_starter', 'billing_growth');
+      await mk('hub', 'free', 'billing_starter');
+    });
+
+    const call = (r: Row, biz: string, userId: string, sessionVersion?: number) =>
+      callRoute(r.handler, {
+        biz, userId, method: r.method, path: r.path(biz), body: r.body?.(biz), params: r.params, sessionVersion,
+      });
+
+    describe.each(rows.map((r) => [r.name, r] as const))('%s', (_n, r) => {
+      it('is refused on a plan without the feature (FEATURE_NOT_IN_PLAN)', async () => {
+        const { low } = fx[r.group];
+        const res = await call(r, low.biz, low.owner);
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+      });
+
+      it('is refused (403) for a user whose role lacks the permission, on a plan that has the feature', async () => {
+        const { full, noPerm } = fx[r.group];
+        const res = await call(r, full.biz, noPerm, 1);
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).not.toBe('FEATURE_NOT_IN_PLAN');
+      });
+
+      it('passes the guard for the owner on a plan with the feature', async () => {
+        const { full } = fx[r.group];
+        const res = await call(r, full.biz, full.owner);
+        expect(r.passed).toContain(res.status);
+      });
+    });
+
+    it('a refused leave-type create writes nothing', async () => {
+      const { low } = fx.leave;
+      await callRoute(postLeaveType as unknown as RouteHandler, {
+        biz: low.biz, userId: low.owner, method: 'POST', path: '/api/leave-types',
+        body: { leave_name: 'Nope', leave_code: 'NOPE' },
+      });
+      expect(await count('leave_types WHERE business_id = $1', [low.biz])).toBe(0);
+    });
+
+    it('a refused journal template create writes nothing', async () => {
+      const { low } = fx.ledger;
+      await callRoute(postJournalTemplate as unknown as RouteHandler, {
+        biz: low.biz, userId: low.owner, method: 'POST', path: '/api/journal-entries/templates', body: tplBody(),
+      });
+      expect(await count('journal_entry_templates WHERE business_id = $1', [low.biz])).toBe(0);
+    });
+
+    it('a hub route returns 404 FEATURE_HIDDEN while the platform Supplier Hub switch is off', async () => {
+      const { full } = fx.hub;
+      jest.mocked(isSupplierHubVisible).mockResolvedValueOnce(false);
+      const res = await callRoute(supplierDashboard as unknown as RouteHandler, {
+        biz: full.biz, userId: full.owner, method: 'GET', path: '/api/suppliers/dashboard',
+      });
+      expect(res.status).toBe(404);
+      expect((await res.json()).code).toBe('FEATURE_HIDDEN');
+    });
+
+    describe('stock requests between businesses A (requester), B (responder) and C (not a party)', () => {
+      let A: { biz: string; owner: string }, B: { biz: string; owner: string }, C: { biz: string; owner: string };
+      let requestId: string;
+      beforeAll(async () => {
+        A = await newBusinessWithOwner('billing_starter', { label: 's21-A' });
+        B = await newBusinessWithOwner('billing_starter', { label: 's21-B' });
+        C = await newBusinessWithOwner('billing_starter', { label: 's21-C' });
+        const itemId = randomUUID();
+        await query(
+          `INSERT INTO items (id, business_id, name, item_type, unit, selling_price, purchase_price, tax_rate, current_stock)
+           VALUES ($1, $2, 'Widget', 'goods', 'PCS', 10, 5, 0, 0)`,
+          [itemId, A.biz],
+        );
+        requestId = randomUUID();
+        await query(
+          `INSERT INTO quantity_requests (id, requester_business_id, responder_business_id, item_id, requested_qty, status)
+           VALUES ($1, $2, $3, $4, 5, 'pending')`,
+          [requestId, A.biz, B.biz, itemId],
+        );
+      });
+      afterAll(async () => {
+        await query(`DELETE FROM quantity_requests WHERE id = $1`, [requestId]).catch(() => undefined);
+      });
+
+      it('C cannot read the request events', async () => {
+        const res = await callRoute(stockRequestEvents as unknown as RouteHandler, {
+          biz: C.biz, userId: C.owner, method: 'GET', path: `/api/stock-requests/${requestId}/events`, params: { id: requestId },
+        });
+        expect(res.status).toBe(403);
+      });
+
+      it('C does not see it in the list', async () => {
+        const res = await callRoute(listStockRequests as unknown as RouteHandler, {
+          biz: C.biz, userId: C.owner, method: 'GET', path: '/api/stock-requests',
+        });
+        expect(res.status).toBe(200);
+        expect((await res.json()).requests.map((x: { id: string }) => x.id)).not.toContain(requestId);
+      });
+
+      it('C cannot respond, and the request stays pending', async () => {
+        const res = await callRoute(respondStockRequest as unknown as RouteHandler, {
+          biz: C.biz, userId: C.owner, method: 'POST', path: `/api/stock-requests/${requestId}/respond`,
+          params: { id: requestId }, body: { status: 'declined' },
+        });
+        expect(res.status).toBe(403);
+        const row = await queryOne<{ status: string }>(`SELECT status FROM quantity_requests WHERE id = $1`, [requestId]);
+        expect(row!.status).toBe('pending');
+      });
+
+      it('A (requester) cannot respond to its own request', async () => {
+        const res = await callRoute(respondStockRequest as unknown as RouteHandler, {
+          biz: A.biz, userId: A.owner, method: 'POST', path: `/api/stock-requests/${requestId}/respond`,
+          params: { id: requestId }, body: { status: 'declined' },
+        });
+        expect(res.status).toBe(403);
+      });
+
+      it('B (responder, on its own plan) can see and decline it', async () => {
+        const ev = await callRoute(stockRequestEvents as unknown as RouteHandler, {
+          biz: B.biz, userId: B.owner, method: 'GET', path: `/api/stock-requests/${requestId}/events`, params: { id: requestId },
+        });
+        expect(ev.status).toBe(200);
+        const res = await callRoute(respondStockRequest as unknown as RouteHandler, {
+          biz: B.biz, userId: B.owner, method: 'POST', path: `/api/stock-requests/${requestId}/respond`,
+          params: { id: requestId }, body: { status: 'declined' },
+        });
+        expect(res.status).toBeLessThan(300);
+      });
+
+      it('the plan checked is the caller\'s own: B on Free is refused although A has the hub', async () => {
+        await setPlan(B.biz, 'billing', 'free');
+        const res = await callRoute(stockRequestEvents as unknown as RouteHandler, {
+          biz: B.biz, userId: B.owner, method: 'GET', path: `/api/stock-requests/${requestId}/events`, params: { id: requestId },
+        });
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).toBe('FEATURE_NOT_IN_PLAN');
+        // A's own access is untouched.
+        const a = await callRoute(stockRequestEvents as unknown as RouteHandler, {
+          biz: A.biz, userId: A.owner, method: 'GET', path: `/api/stock-requests/${requestId}/events`, params: { id: requestId },
+        });
+        expect(a.status).toBe(200);
       });
     });
   });

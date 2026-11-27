@@ -3,7 +3,9 @@ import { queryOne, query, getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+
 
 /**
  * GET /api/journal-entries/templates/[id]
@@ -19,6 +21,16 @@ export async function GET(
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'journal', 'read', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
 
     const template = await queryOne(
       `SELECT 
@@ -72,6 +84,16 @@ export async function PATCH(
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'journal', 'update', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     const {
       name,
       description,
@@ -202,6 +224,16 @@ export async function DELETE(
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'journal', 'delete', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
 
     await client.query('BEGIN');
 

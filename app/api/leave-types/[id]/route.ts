@@ -4,7 +4,9 @@ import { LeaveType } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+
 
 /**
  * PATCH /api/leave-types/[id]
@@ -24,6 +26,16 @@ export async function PATCH(
     );
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'leave_requests', 'update', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     if (!businessId) {
       return NextResponse.json(
         { error: 'business_id is required' },
@@ -134,6 +146,16 @@ export async function DELETE(
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'leave_requests', 'delete', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
 
     // Verify leave type belongs to business
     const existing = await queryOne(

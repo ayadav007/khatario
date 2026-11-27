@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveType } from '@/types/database';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import {
   resolveActorContext,
   assertPortalFeatureForRequest,
@@ -77,6 +77,16 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'leave_requests', 'create', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     const {
       leave_name,
       leave_code,

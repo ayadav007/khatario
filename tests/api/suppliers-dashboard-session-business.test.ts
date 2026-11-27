@@ -16,6 +16,12 @@ jest.mock('@/lib/subscription/feature-access', () => ({
   FeatureAccessDeniedError: class extends Error {},
 }));
 
+// The routes now call authorize() (role permission + plan gate); that is covered in tests/db/plan-enforcement.db.test.ts.
+jest.mock('@/lib/authorization', () => ({
+  authorize: jest.fn().mockResolvedValue(undefined),
+  AuthorizationError: class extends Error {},
+}));
+
 import { GET as dashboard } from '@/app/api/suppliers/dashboard/route';
 import { GET as thresholds } from '@/app/api/suppliers/thresholds/route';
 import { GET as analytics } from '@/app/api/suppliers/dashboard/analytics/route';

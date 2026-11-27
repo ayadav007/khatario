@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryRows } from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import {
@@ -35,6 +36,13 @@ function periodRange(key: PeriodKey, today = new Date()): { from: string; to: st
 export async function GET(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
+
+  try {
+    await authorize(auth.userId, 'purchases', 'read', { businessId: auth.businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
   try {
     const { searchParams } = new URL(request.url);

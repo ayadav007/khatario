@@ -5,6 +5,8 @@ import { JournalEntryTemplate } from '@/types/journal-entries';
 export const dynamic = 'force-dynamic';
 
 import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+
 
 /**
  * GET /api/journal-entries/templates
@@ -16,6 +18,16 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'journal', 'read', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     const isActive = searchParams.get('is_active'); // Optional filter
 
     if (!businessId) {
@@ -76,6 +88,16 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const actorId = getAuthenticatedUserId(request);
+    if (!actorId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(actorId, 'journal', 'create', { businessId: business_id });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     const {
       name,
       description,

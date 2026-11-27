@@ -3,7 +3,9 @@ import { queryRows } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+
 
 /**
  * Get supplier relationship requests
@@ -15,6 +17,16 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const userId = getAuthenticatedUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(userId, 'purchases', 'read', { businessId: businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
     const type = searchParams.get('type') || 'all'; // 'received', 'sent', or 'all'
 
     if (!businessId) {
