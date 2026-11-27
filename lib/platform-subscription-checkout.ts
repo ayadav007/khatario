@@ -572,15 +572,17 @@ export async function completeSubscriptionCheckoutPayment(params: {
       }
     }
 
-    // The payment row records the period the module row holds now, after the plan change and any
-    // free months (and carried trial days), so it can never disagree with the subscription.
+    // The payment row records the period it bought: for a renewal from the old end date (the days
+    // already paid for are not sold again), otherwise from the module row's start. It ends at the
+    // module row's end now, after free months and carried trial days, so it never disagrees with
+    // the subscription.
     await client.query(
       `UPDATE billing_transactions bt
-       SET period_start = bms.start_date, period_end = bms.end_date
+       SET period_start = COALESCE($4::date, bms.start_date), period_end = bms.end_date
        FROM business_module_subscriptions bms
        WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3
          AND bt.business_id = bms.business_id`,
-      [billingTransactionId, params.businessId, moduleKey],
+      [billingTransactionId, params.businessId, moduleKey, result.paidFrom ?? null],
     );
 
     await client.query('COMMIT');
@@ -606,6 +608,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
       paymentMethod,
       paymentReference,
       trialDaysCarried: committed.result.trial_days_carried ?? 0,
+      periodKind: committed.result.period_kind,
     });
   } catch (err) {
     console.error('[checkout] post-commit plan activation steps failed:', err);

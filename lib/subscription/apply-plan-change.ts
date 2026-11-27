@@ -1,6 +1,3 @@
-import { isProductLineTrialPlanId } from '@/lib/product-lines';
-import { parseLocalDateOnly, startOfLocalToday } from '@/lib/subscription/date-only';
-
 export const BILLING_CYCLES = ['monthly', 'yearly', 'three_year'] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
 
@@ -46,16 +43,4 @@ export function computeSubscriptionPeriodEnd(billingCycle: BillingCycle, bonusDa
   }
   if (bonusDays > 0) start.setDate(start.getDate() + bonusDays);
   return start.toISOString().split('T')[0];
-}
-
-/**
- * Trial days left after today when a business upgrades mid-trial. They are added to the
- * first paid period so paying early never shortens what the customer was promised.
- */
-export function unusedTrialDays(sub: { plan_id?: string | null; trial_end_date?: string | null } | null): number {
-  if (!sub || !isProductLineTrialPlanId(sub.plan_id)) return 0;
-  const end = parseLocalDateOnly(sub.trial_end_date);
-  if (!end) return 0;
-  const days = Math.round((end.getTime() - startOfLocalToday().getTime()) / (24 * 60 * 60 * 1000));
-  return Math.max(0, days);
 }

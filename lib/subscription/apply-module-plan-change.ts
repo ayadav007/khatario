@@ -1,14 +1,16 @@
 import type { PoolClient, QueryResultRow } from 'pg';
-import { queryOne } from '@/lib/db';
+import { getPool, queryOne } from '@/lib/db';
 import { enableBusinessModule } from '@/lib/business-modules';
 import { type PlatformModule } from '@/lib/platform-modules';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
+import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
 import {
-  computeSubscriptionPeriodEnd,
-  unusedTrialDays,
-  type BillingCycle,
-} from '@/lib/subscription/apply-plan-change';
+  planHasPaidPrice,
+  resolveNewPeriod,
+  type CurrentPeriodRow,
+  type PeriodKind,
+} from '@/lib/subscription/period';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
 import { ensureComplimentaryHrForBilling } from '@/lib/subscription/ensure-complimentary-hr';
@@ -25,10 +27,18 @@ export interface ApplyModulePlanChangeResult {
   from_plan_id?: string;
   /** Unused trial days added to the new period. */
   trial_days_carried?: number;
+  /** How the period was decided: renewal (extends the current end), change, or fresh. */
+  period_kind?: PeriodKind;
+  /**
+   * Renewal only: the old end date, where the days bought by this payment begin. The payment row
+   * records its period from here. Absent for a change or a fresh plan (the period starts at start_date).
+   */
+  paidFrom?: string;
 }
 
 export interface PlanChangeCommittedMeta {
   fromPlanId: string | undefined;
+  periodKind?: PeriodKind;
   paymentMethod: string;
   paymentReference: string | null;
   trialDaysCarried: number;
@@ -74,6 +84,7 @@ export async function afterPlanChangeCommitted(
     payment_method: meta.paymentMethod,
     payment_reference: meta.paymentReference,
     trial_days_carried: meta.trialDaysCarried,
+    period_kind: meta.periodKind,
   });
 }
 
@@ -85,33 +96,77 @@ export async function afterPlanChangeCommitted(
  * after its COMMIT. Without `client`, the function runs on the pool and performs those steps itself.
  */
 export async function applyModuleSubscriptionPlanChange(
-  params: {
-    businessId: string;
-    moduleKey: PlatformModule;
-    planId: string;
-    billingCycle: BillingCycle;
-    paymentMethod?: string;
-    paymentReference?: string | null;
-  },
+  params: PlanChangeParams,
   client?: PoolClient,
+): Promise<ApplyModulePlanChangeResult> {
+  if (client) return applyOnClient(params, client);
+
+  // No caller transaction: open one so the lock, the read and the write are atomic.
+  const own = await getPool().connect();
+  let result: ApplyModulePlanChangeResult;
+  try {
+    await own.query('BEGIN');
+    result = await applyOnClient(params, own);
+    await own.query('COMMIT');
+  } catch (err) {
+    await own.query('ROLLBACK').catch(() => undefined);
+    clearSubscriptionCache(params.businessId);
+    clearModuleSubscriptionCache(params.businessId);
+    throw err;
+  } finally {
+    own.release();
+  }
+  await afterPlanChangeCommitted(result, {
+    fromPlanId: result.from_plan_id,
+    paymentMethod: params.paymentMethod ?? 'manual',
+    paymentReference: params.paymentReference?.trim() || null,
+    trialDaysCarried: result.trial_days_carried ?? 0,
+    periodKind: result.period_kind,
+  });
+  return result;
+}
+
+type PlanChangeParams = {
+  businessId: string;
+  moduleKey: PlatformModule;
+  planId: string;
+  billingCycle: BillingCycle;
+  paymentMethod?: string;
+  paymentReference?: string | null;
+};
+
+/** Runs inside a transaction on `client`. Lock order: the caller's checkout row first, then this lock. */
+async function applyOnClient(
+  params: PlanChangeParams,
+  client: PoolClient,
 ): Promise<ApplyModulePlanChangeResult> {
   await assertPlanMatchesModule(params.planId, params.moduleKey, client);
 
-  const paymentMethod = params.paymentMethod ?? 'manual';
-  const paymentReference = params.paymentReference?.trim() || null;
+  // One plan change per (business, module) at a time: two payments completing together must each
+  // read the end date the other wrote. The lock also covers the no-row case (nothing to FOR UPDATE).
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`module_plan_change:${params.businessId}:${params.moduleKey}`]);
 
   const one = async <T extends QueryResultRow>(sql: string, values: unknown[]): Promise<T | null> =>
-    client ? ((await client.query<T>(sql, values)).rows[0] ?? null) : queryOne<T>(sql, values);
+    (await client.query<T>(sql, values)).rows[0] ?? null;
 
-  const existing = await one<{ plan_id: string; trial_end_date: string | null }>(
-    `SELECT plan_id, trial_end_date::text FROM business_module_subscriptions
-     WHERE business_id = $1 AND module_key = $2`,
+  const existing = await one<CurrentPeriodRow>(
+    `SELECT plan_id, status, start_date::text, end_date::text, trial_end_date::text
+     FROM business_module_subscriptions
+     WHERE business_id = $1 AND module_key = $2
+     FOR UPDATE`,
     [params.businessId, params.moduleKey],
   );
 
-  const trialDaysCarried = unusedTrialDays(existing);
-  const startDate = new Date().toISOString().split('T')[0];
-  const endDate = computeSubscriptionPeriodEnd(params.billingCycle, trialDaysCarried);
+  const period = await resolveNewPeriod(
+    {
+      current: existing,
+      targetPlanId: params.planId,
+      billingCycle: params.billingCycle,
+      currentPlanIsPaid: existing ? await planHasPaidPrice(existing.plan_id, client) : false,
+    },
+    client,
+  );
+  const { startDate, endDate, trialDaysCarried } = period;
 
   const row = await one<ApplyModulePlanChangeResult>(
     `INSERT INTO business_module_subscriptions (
@@ -150,28 +205,11 @@ export async function applyModuleSubscriptionPlanChange(
     ...row,
     from_plan_id: existing?.plan_id,
     trial_days_carried: trialDaysCarried,
+    period_kind: period.kind,
+    paidFrom: period.kind === 'renewal' ? (existing?.end_date ?? undefined) : undefined,
   };
 
-  try {
-    await enableModuleForPlanChange(result, client);
-  } catch (err) {
-    // Without a transaction the plan row is already written: make it visible before failing.
-    if (!client) {
-      clearSubscriptionCache(result.business_id);
-      clearModuleSubscriptionCache(result.business_id);
-    }
-    throw err;
-  }
-
-  if (!client) {
-    await afterPlanChangeCommitted(result, {
-      fromPlanId: existing?.plan_id,
-      paymentMethod,
-      paymentReference,
-      trialDaysCarried,
-    });
-  }
-
+  await enableModuleForPlanChange(result, client);
   return result;
 }
 

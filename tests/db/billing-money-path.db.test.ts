@@ -53,7 +53,6 @@ import {
   moveModuleSubscriptionToFree,
 } from '@/lib/subscription/module-plan-lifecycle';
 import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
-import { computeSubscriptionPeriodEnd } from '@/lib/subscription/apply-plan-change';
 import * as planChange from '@/lib/subscription/apply-module-plan-change';
 import * as couponsModule from '@/lib/subscription/coupons';
 import { processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
@@ -169,13 +168,13 @@ run('billing money path (kh_phase2_test)', () => {
   }
 
   /**
-   * End date of a monthly plan payment plus `months` free months, computed the way the code does:
-   * one month added in JS (UTC date), then the free months added in SQL.
+   * End date of a monthly plan payment plus `months` free months, all asked of the database:
+   * one month from CURRENT_DATE, then the free months.
    */
   async function endAfterFreeMonths(months: number): Promise<string> {
     const r = await queryOne<{ d: string }>(
-      `SELECT ($1::date + make_interval(months => $2::int))::date::text AS d`,
-      [computeSubscriptionPeriodEnd('monthly'), months],
+      `SELECT ((CURRENT_DATE + make_interval(months => 1))::date + make_interval(months => $1::int))::date::text AS d`,
+      [months],
     );
     return r!.d;
   }

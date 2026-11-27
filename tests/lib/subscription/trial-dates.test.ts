@@ -11,10 +11,7 @@ jest.mock('@/lib/subscription', () => ({
 
 import { getBusinessSubscription } from '@/lib/subscription';
 import { checkTrialExpiry } from '@/lib/subscription/lifecycle';
-import {
-  computeSubscriptionPeriodEnd,
-  unusedTrialDays,
-} from '@/lib/subscription/apply-plan-change';
+import { computeSubscriptionPeriodEnd } from '@/lib/subscription/apply-plan-change';
 
 const mockGetSub = getBusinessSubscription as jest.Mock;
 
@@ -55,20 +52,6 @@ describe('checkTrialExpiry', () => {
     const info = await checkTrialExpiry('biz');
     expect(info.isExpired).toBe(false);
     expect(info.daysRemaining).toBe(21);
-  });
-});
-
-describe('unusedTrialDays', () => {
-  it('returns days after today for trial plans', () => {
-    expect(unusedTrialDays({ plan_id: 'trial', trial_end_date: localDate(12) })).toBe(12);
-    expect(unusedTrialDays({ plan_id: 'hr_trial', trial_end_date: localDate(3) })).toBe(3);
-  });
-
-  it('returns 0 on the last day, after expiry, or for non-trial plans', () => {
-    expect(unusedTrialDays({ plan_id: 'trial', trial_end_date: localDate(0) })).toBe(0);
-    expect(unusedTrialDays({ plan_id: 'trial', trial_end_date: localDate(-5) })).toBe(0);
-    expect(unusedTrialDays({ plan_id: 'free', trial_end_date: localDate(10) })).toBe(0);
-    expect(unusedTrialDays(null)).toBe(0);
   });
 });
 

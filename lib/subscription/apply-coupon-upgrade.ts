@@ -13,15 +13,20 @@ import { formatModulePlanReceiptLabel } from '@/lib/subscription/billing-labels'
 import type { CheckoutPricingResult } from '@/lib/subscription/checkout-pricing';
 
 /** Period the row paid for = the module row after the plan change and any free months (not transactional here). */
-async function recordPeriodFromModuleRow(txId: string, businessId: string, moduleKey: string): Promise<void> {
+async function recordPeriodFromModuleRow(
+  txId: string,
+  businessId: string,
+  moduleKey: string,
+  paidFrom?: string,
+): Promise<void> {
   try {
     await query(
       `UPDATE billing_transactions bt
-       SET period_start = bms.start_date, period_end = bms.end_date
+       SET period_start = COALESCE($4::date, bms.start_date), period_end = bms.end_date
        FROM business_module_subscriptions bms
        WHERE bt.id = $1 AND bms.business_id = $2 AND bms.module_key = $3
          AND bt.business_id = bms.business_id`,
-      [txId, businessId, moduleKey],
+      [txId, businessId, moduleKey, paidFrom ?? null],
     );
   } catch (err) {
     // Informational column only: never skip coupon redemption or fail the upgrade over it.
@@ -83,7 +88,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       billingTxId,
       params.billingCycle,
     );
-    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey);
+    await recordPeriodFromModuleRow(billingTxId, params.businessId, moduleKey, moduleSub.paidFrom);
   } else if (params.pricing.finalAmount <= 0 && params.pricing.baseAmount <= 0) {
     const { id: zeroTxId } = await recordBillingTransaction({
       businessId: params.businessId,
@@ -100,7 +105,7 @@ export async function applyInstantPlanUpgradeWithCoupon(params: {
       ),
       skipEmails: false,
     });
-    await recordPeriodFromModuleRow(zeroTxId, params.businessId, moduleKey);
+    await recordPeriodFromModuleRow(zeroTxId, params.businessId, moduleKey, moduleSub.paidFrom);
   }
 
   const recipient = await getBusinessPlatformRecipient(params.businessId);

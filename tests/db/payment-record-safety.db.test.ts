@@ -736,18 +736,24 @@ run('payment records the period it paid for (kh_phase2_test)', () => {
     expect(p!.period_end).toBe(expected!.d);
   });
 
-  it('an early renewal records the new period and leaves the first row unchanged', async () => {
+  it('an early renewal records the extension (old end to new end) and leaves the first row unchanged', async () => {
     const price = await planPrice('billing_growth');
     const first = await pending(biz, 'billing_growth', price);
     await pay(first, biz, 'billing_growth', price);
     // Mark the first row with a period no renewal could produce, so any rewrite of it shows.
     await query(`UPDATE billing_transactions SET period_start = '2020-01-01', period_end = '2020-02-01' WHERE id = $1`, [first]);
     const firstPeriod = await period(first);
+    const before = await modRow(biz, 'billing');
     const second = await pending(biz, 'billing_growth', price);
     await pay(second, biz, 'billing_growth', price);
     const m = await modRow(biz, 'billing');
     expect(await period(first)).toEqual(firstPeriod);
-    expect(await period(second)).toEqual({ period_start: m!.start_date, period_end: m!.end_date });
+    // Renewal: the module keeps its start, the end moves out one month, and the second payment
+    // covers only the added month, starting at the old end.
+    expect(m!.start_date).toBe(before!.start_date);
+    const expectedEnd = await queryOne<{ d: string }>(`SELECT ($1::date + make_interval(months => 1))::date::text AS d`, [before!.end_date]);
+    expect(m!.end_date).toBe(expectedEnd!.d);
+    expect(await period(second)).toEqual({ period_start: before!.end_date, period_end: m!.end_date });
     expect(firstPeriod).toEqual({ period_start: '2020-01-01', period_end: '2020-02-01' });
   });
 
