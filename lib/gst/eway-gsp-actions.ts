@@ -2,6 +2,7 @@
 // The provider is called first and never inside an open database transaction; the local
 // record follows. A bill recorded by hand never reaches the provider.
 // Never log credentials, tokens or request bodies.
+import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
 import { EwayBillInputError, istDate } from '@/lib/gst/eway-bills';
 import {
@@ -54,6 +55,7 @@ export async function pushEwayActionToGsp(
   deps: EwayActionDeps = {},
   now = new Date(),
 ): Promise<{ validUntil?: Date | null } | null> {
+  if (!a || typeof a !== 'object') throw new EwayBillInputError('Unknown action');
   if (bill.generated_via === 'manual' || a.action === 'reject') return null;
 
   // Local rules first, so a request the portal would refuse anyway is never sent.
@@ -84,7 +86,10 @@ export async function pushEwayActionToGsp(
   const pincode = text((a as any).from_pincode);
   if (a.action === 'vehicle') {
     if (!place || !stateCode) throw new EwayBillInputError('Enter the place and state the goods are in now');
-    if (!vehicleOf(a.vehicle_number)) throw new EwayBillInputError('Enter the vehicle number');
+    // A road vehicle needs its number; rail, air and ship are identified by the transport document, which the provider call checks.
+    if (pick(MODES, a.transport_mode, 'road', 'a valid transport mode') === 'road' && !vehicleOf(a.vehicle_number)) {
+      throw new EwayBillInputError('Enter the vehicle number');
+    }
   }
   if (a.action === 'extend') {
     if (!place || !stateCode || !pincode) throw new EwayBillInputError('Enter the place, state and PIN code the goods are in now');
@@ -163,6 +168,7 @@ export async function applyEwayBillAction(
   action: EwayBillAction,
   deps: EwayActionDeps = {},
 ): Promise<EwayBillView> {
+  if (!action || typeof action !== 'object') throw new EwayBillInputError('Unknown action');
   const pool = getPool();
   const now = new Date();
   const bill = await getEwayBill(pool, businessId, id);
@@ -170,15 +176,24 @@ export async function applyEwayBillAction(
 
   const pushed = await pushEwayActionToGsp(businessId, bill, action, deps, now);
 
-  const client = await pool.connect();
+  let client: PoolClient | null = null;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     const view = await updateEwayBill(client, businessId, id, action, userId, now, pushed?.validUntil ? { validUntil: pushed.validUntil } : undefined);
     await client.query('COMMIT');
     return view;
   } catch (e: any) {
-    await client.query('ROLLBACK').catch(() => undefined);
+    await client?.query('ROLLBACK').catch(() => undefined);
     if (!pushed) throw e;
+    // The row changed under us (for example a double click): the portal call is already made, but it is not a save failure.
+    if (e instanceof EwayBillInputError && e.status === 409) {
+      throw new EwayBillInputError(
+        'This e-way bill was changed by another request while yours was running. Reload to see its current state.',
+        409,
+        'EWAY_STATE_CHANGED',
+      );
+    }
     console.error('[eway-actions] portal change not saved', { id, action: action.action, error: e?.message });
     throw new EwayBillInputError(
       'The change was made on the e-way bill portal but could not be saved here. Reload and record it manually.',
@@ -186,6 +201,6 @@ export async function applyEwayBillAction(
       'EWAY_NOT_SAVED',
     );
   } finally {
-    client.release();
+    client?.release();
   }
 }

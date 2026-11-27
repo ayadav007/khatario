@@ -199,6 +199,68 @@ d('e-way bill actions through the GSP (kh_phase2_test)', () => {
     });
   });
 
+  describe('Part B by rail', () => {
+    it('does not need a vehicle number for rail, but still does for road', async () => {
+      const b = await seedBill({ via: 'api' });
+      const partB = jest.fn(async () => ({ validUntil: null, printUrl: null }));
+      const rail: EwayBillAction = {
+        action: 'vehicle', transport_mode: 'rail', from_place: 'Hosur', from_state_code: '33',
+        transport_doc_number: 'RR55', transport_doc_date: '2026-11-27', transporter_name: 'Indian Railways',
+      };
+      await patch(b.id, rail, { partB });
+      expect(partB).toHaveBeenCalledTimes(1);
+      const hist = await pool.query('SELECT transport_mode, vehicle_number FROM eway_bill_vehicles WHERE eway_bill_id = $1', [b.id]);
+      expect(hist.rows).toEqual([{ transport_mode: 'rail', vehicle_number: null }]);
+
+      const road = jest.fn();
+      await expect(patch(b.id, { ...rail, transport_mode: 'road' } as EwayBillAction, { partB: road })).rejects.toMatchObject({
+        message: 'Enter the vehicle number',
+      });
+      expect(road).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('after the portal has said yes', () => {
+    // The service logs the unsaved change; keep the test output clean.
+    beforeEach(() => { jest.spyOn(console, 'error').mockImplementation(() => undefined); });
+    afterEach(() => { jest.restoreAllMocks(); });
+    it('reports EWAY_NOT_SAVED (500) when the local save fails for another reason, including a vanished row', async () => {
+      const b = await seedBill({ via: 'api' });
+      const cancel = jest.fn(async () => {
+        await pool.query('DELETE FROM eway_bills WHERE id = $1', [b.id]);
+        return { cancelledAt: new Date() };
+      });
+      await expect(patch(b.id, { action: 'cancel' }, { cancel })).rejects.toMatchObject({ status: 500, code: 'EWAY_NOT_SAVED' });
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
+    it('reports EWAY_STATE_CHANGED (409) when the row changed state during the portal call', async () => {
+      const b = await seedBill({ via: 'api' });
+      const cancel = jest.fn(async () => {
+        await pool.query(`UPDATE eway_bills SET status = 'cancelled' WHERE id = $1`, [b.id]);
+        return { cancelledAt: new Date() };
+      });
+      await expect(patch(b.id, { action: 'cancel' }, { cancel })).rejects.toMatchObject({ status: 409, code: 'EWAY_STATE_CHANGED' });
+    });
+    it('reports EWAY_NOT_SAVED when no database connection can be had to save', async () => {
+      const b = await seedBill({ via: 'api' });
+      const spy = jest.spyOn(pool, 'connect');
+      const cancel = jest.fn(async () => {
+        spy.mockImplementationOnce((() => Promise.reject(new Error('pool exhausted'))) as any);
+        return { cancelledAt: new Date() };
+      });
+      try {
+        await expect(patch(b.id, { action: 'cancel' }, { cancel })).rejects.toMatchObject({ status: 500, code: 'EWAY_NOT_SAVED' });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  it('refuses a missing action body', async () => {
+    const b = await seedBill({ via: 'api' });
+    await expect(patch(b.id, null as unknown as EwayBillAction)).rejects.toMatchObject({ message: 'Unknown action' });
+  });
+
   describe('extend', () => {
     const body: EwayBillAction = {
       action: 'extend', remaining_km: 150, from_place: 'Pune', from_state_code: '27', from_pincode: '411001',
