@@ -33,7 +33,7 @@ import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
 import { isTaxedMode, issueInvoiceNumber } from '@/lib/platform-tax';
 import { GRACE_DAYS } from '@/lib/subscription/effective-plan';
 import { escapeHtml } from '@/lib/platform-receipt';
-import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
+import { assertBillingTransactionTransition, assertCreditReleaseReopen } from '@/lib/platform-billing-transaction-state';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { getBusinessPlatformRecipient, sendPlatformEmail } from '@/lib/platform-email';
 import { getPlatformEasebuzzProvider, getPlatformRazorpayProvider } from '@/lib/platform-subscription-checkout';
@@ -715,11 +715,12 @@ export async function completePlatformRefund(refundId: string, providerRefundId:
     // I3: when a payment that was bought with upgrade credit is fully refunded, the sources it consumed are released
     // (under the module lock, sources locked in id order after it), so what was taken from them can be refunded or
     // used as credit again where the normal source rules allow. A history entry stays on each source.
-    let creditReleased: { id: string; paise: number }[] = [];
+    let creditReleased: { id: string; paise: number; reopened?: boolean }[] = [];
     if (fullyRefunded) {
       const srcs = (
-        await client.query<{ id: string; used: string | null }>(
-          `SELECT id::text AS id, metadata->>'credit_used_paise' AS used
+        await client.query<{ id: string; status: string; total_amount: string; used: string | null; saved: string | null }>(
+          `SELECT id::text AS id, status, total_amount::text AS total_amount, metadata->>'credit_used_paise' AS used,
+                  metadata->>'credit_gross_saving_paise' AS saved
            FROM billing_transactions
            WHERE business_id = $1 AND metadata->>'credit_consumed_by' = $2
            ORDER BY id FOR UPDATE`,
@@ -729,14 +730,34 @@ export async function completePlatformRefund(refundId: string, providerRefundId:
       for (const src of srcs) {
         await client.query(
           `UPDATE billing_transactions
-           SET metadata = (metadata - 'credit_consumed_by' - 'credit_used_paise')
+           SET metadata = (metadata - 'credit_consumed_by' - 'credit_used_paise' - 'credit_gross_saving_paise')
                           || jsonb_build_object('credit_released_by', $2::text, 'credit_released_paise', COALESCE($3::bigint, 0),
+                                                'credit_released_gross_paise', COALESCE($4::bigint, $3::bigint, 0),
                                                 'credit_released_at', CURRENT_TIMESTAMP::text),
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $1 AND metadata->>'credit_consumed_by' = $2`,
-          [src.id, payment.id, src.used],
+          [src.id, payment.id, src.used, src.saved],
         );
-        creditReleased.push({ id: src.id, paise: Number(src.used ?? 0) });
+        // A source refunded only up to its old, credit-capped limit has refundable money again: reopen it so the rest
+        // can be refunded. Release-only transition; nothing is re-activated, renumbered or notified (paid_at is untouched).
+        let reopened = false;
+        if (src.status === 'refunded') {
+          const done = (await refundTotals(client, src.id)).completed;
+          if (done < toPaise(src.total_amount)) {
+            assertCreditReleaseReopen('refunded', 'completed');
+            await client.query(
+              `UPDATE billing_transactions
+               SET status = 'completed',
+                   metadata = COALESCE(metadata, '{}'::jsonb)
+                              || jsonb_build_object('reopened_by_credit_release', $2::text, 'reopened_at', CURRENT_TIMESTAMP::text),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = $1 AND status = 'refunded'`,
+              [src.id, payment.id],
+            );
+            reopened = true;
+          }
+        }
+        creditReleased.push({ id: src.id, paise: Number(src.used ?? 0), ...(reopened ? { reopened: true } : {}) });
       }
     }
 

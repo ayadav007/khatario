@@ -84,7 +84,7 @@ import {
   settlePlatformRefund,
 } from '@/lib/platform-refunds';
 import { updateBillingTransactionStatus } from '@/lib/platform-billing';
-import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
+import { assertBillingTransactionTransition, assertCreditReleaseReopen } from '@/lib/platform-billing-transaction-state';
 import { findRefundsNeedingReview, findUnappliedPayments } from '@/lib/subscription/reconcile-payments';
 import { archiveBusinessBillingTransactions } from '@/lib/platform-billing-archive';
 import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
@@ -2721,6 +2721,21 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
           expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null });
         });
 
+        it('yearly Starter used as credit, later the module is back on Starter with a new payment: refunding that with now moves to Free (the consumed yearly payment does not count)', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -30, endOffset: 335, cycle: 'yearly' });
+          const yearly = await pay(biz, 'billing_starter', 2999, -30, 335);
+          const q = await realUpgrade('billing_growth');
+          expect((await payRow(yearly))!.metadata.credit_consumed_by).toBe(q.tx);
+          // The scheduled downgrade has run: the module is on Starter again and the customer pays for it.
+          await setRow(biz, 'billing_starter', { startOffset: 0, endOffset: 30 });
+          const again = await pay(biz, 'billing_starter', 299, 0, 30);
+          stubGateway(razorpayOk());
+          const res = await refundPlatformPayment(req(biz, again, { endPlan: 'now' }));
+          expect(await planOf(biz)).toMatchObject({ plan_id: 'free', end_date: null });
+          expect(res.message).toContain('free plan');
+          expect((await refundsOf(again))[0].metadata.plan_effect).toBe('ended_now');
+        });
+
         it('what the admin list says each choice would do matches what the refund then does', async () => {
           (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
           await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
@@ -2806,6 +2821,45 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
           expect((await payRow(growth))!.status).toBe('refunded');
         });
 
+        it('reverse order: the old payment\'s remainder is refunded FIRST, then the upgrade; the old payment reopens and the rest can go back (₹598.67 in total)', async () => {
+          const { starter, growth } = await upgradeFromStarter();
+          stubGateway(razorpayOk());
+          const first = await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          expect(first).toMatchObject({ fullyRefunded: true, refundedTotal: 99.67 });
+          expect((await payRow(starter))!.status).toBe('refunded');
+          const paidAtBefore = (await payRow(starter))!.metadata.paid_at;
+          const paidEvents = () => count(`subscription_events WHERE business_id = $1 AND event_type IN ('upgraded', 'payment_succeeded')`, [biz]);
+          const paidEventsBefore = await paidEvents();
+
+          await refundPlatformPayment(req(biz, growth, { endPlan: 'now' }));
+          const reopened = await payRow(starter);
+          expect(reopened!.status).toBe('completed');
+          expect(reopened!.metadata).toMatchObject({ credit_released_by: growth, reopened_by_credit_release: growth });
+          expect(reopened!.metadata.credit_used_paise).toBeUndefined();
+          expect(reopened!.metadata.credit_gross_saving_paise).toBeUndefined();
+          expect(reopened!.metadata.paid_at).toBe(paidAtBefore); // not treated as newly paid
+          expect((await refundsOf(growth))[0].metadata.credit_released).toEqual([{ id: starter, paise: 19933, reopened: true }]);
+          // Nothing re-activated: no plan change from the reopen (the plan went Free with the upgrade refund), no unapplied-payment alert.
+          expect((await planOf(biz))!.plan_id).toBe('free');
+          expect((await findUnappliedPayments()).filter((u) => u.business_id === biz)).toEqual([]);
+          expect(await paidEvents()).toBe(paidEventsBefore); // no second "payment succeeded" or upgrade from the reopen
+
+          const rest = await refundPlatformPayment(req(biz, starter, { endPlan: 'now' }));
+          expect(rest).toMatchObject({ fullyRefunded: true, refundedTotal: 299 });
+          expect(calls.filter((c) => c.method === 'POST').map((c) => c.body.amount)).toEqual([9967, 29967, 19933]);
+          expect((await payRow(starter))!.status).toBe('refunded');
+          expect((await payRow(growth))!.status).toBe('refunded');
+          const total = (await refundsOf(starter)).concat(await refundsOf(growth)).filter((r) => r.status === 'completed').reduce((a, r) => a + Math.round(Number(r.total_amount) * 100), 0);
+          expect(total).toBe(59867); // 299 + 299.67 paid, all of it refunded, exactly
+        });
+
+        it('the reopen is not a general transition: refunded -> completed is still refused everywhere else', () => {
+          expect(() => assertBillingTransactionTransition('refunded', 'completed')).toThrow();
+          expect(() => assertCreditReleaseReopen('refunded', 'completed')).not.toThrow();
+          expect(() => assertCreditReleaseReopen('completed', 'refunded')).toThrow();
+          expect(() => assertCreditReleaseReopen('failed', 'completed')).toThrow();
+        });
+
         it('a partial refund of the credit-bought payment releases nothing', async () => {
           const { starter, growth } = await upgradeFromStarter();
           stubGateway(razorpayOk());
@@ -2825,47 +2879,75 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         });
       });
 
-      describe('I4 tax in the cash cap on a credit source', () => {
-        it('refundableAmountPaise: exclusive and inclusive examples, a row with no breakdown, and a tax-free row', () => {
-          const used = { credit_used_paise: 19933 };
-          // Exclusive 18%: ₹299 + ₹53.82 = ₹352.82; credit 199.33 pre-tax is worth 199.33 x 352.82 / 299 = 235.21 gross.
-          expect(refundableAmountPaise({ total_amount: '352.82', taxable_amount: '299.00', metadata: used })).toBe(11761);
-          // Inclusive 18%: ₹299 paid, taxable 253.39; credit 168.92 pre-tax = 199.33 gross.
-          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: '253.39', metadata: { credit_used_paise: 16892 } })).toBe(9967);
-          // No breakdown, or tax-free: exactly as before.
-          expect(refundableAmountPaise({ total_amount: '299.00', metadata: used })).toBe(9967);
-          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: null, metadata: used })).toBe(9967);
-          expect(refundableAmountPaise({ total_amount: '299.00', taxable_amount: '299.00', metadata: used })).toBe(9967);
-          // Never more than the total, never below zero.
-          expect(refundableAmountPaise({ total_amount: '352.82', taxable_amount: '299.00', metadata: { credit_used_paise: 29900 } })).toBe(0);
-          expect(refundableAmountPaise({ total_amount: '10.00', taxable_amount: '1.00', metadata: { credit_used_paise: 100 } })).toBe(0);
+      describe('I4 the cash cap subtracts what the credit saved the customer, gross', () => {
+        it('refundableAmountPaise: stored gross saving first, credit_used_paise for older rows, floor 0', () => {
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: { credit_used_paise: 19933, credit_gross_saving_paise: 23521 } })).toBe(6379);
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: { credit_used_paise: 19933 } })).toBe(9967); // consumed before the saving was stored
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: { credit_used_paise: 19933, credit_gross_saving_paise: 19933 } })).toBe(9967); // mode none
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: { credit_gross_saving_paise: 0 } })).toBe(29900);
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: {} })).toBe(29900);
+          expect(refundableAmountPaise({ total_amount: '299.00', metadata: { credit_gross_saving_paise: 99999 } })).toBe(0);
         });
 
-        async function realTaxedUpgrade(mode: 'exclusive' | 'inclusive') {
-          await saveTaxSettings({ mode, rate_percent: 18, seller_gstin: SELLER, seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' });
+        const SELLER_GST = SELLER;
+        /**
+         * Starter paid in `sourceMode` (10 of 30 days used), then upgraded to Growth in `upgradeMode`, both through the real
+         * checkout and signed webhook. Returns the rows and what each paid.
+         */
+        async function upgradeWith(sourceMode: 'none' | 'inclusive' | 'exclusive', upgradeMode: 'none' | 'inclusive' | 'exclusive') {
+          const taxOn = (mode: 'inclusive' | 'exclusive') =>
+            saveTaxSettings({ mode, rate_percent: 18, seller_gstin: SELLER_GST, seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' });
+          const spy = jest
+            .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+            .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
           try {
-            const spy = jest
-              .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
-              .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
-            const pay1 = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_starter', billingCycle: 'monthly' });
-            expect(await hook('payment.captured', 'pay_tx_' + sfx(), 'captured', notesFor(biz, pay1.billingTransactionId, 'billing_starter'), Math.round(pay1.amount * 100))).toMatchObject({ ok: true });
-            // 10 of its 30 days used.
-            await query(`UPDATE billing_transactions SET period_start = CURRENT_DATE - 10, period_end = CURRENT_DATE + 20 WHERE id = $1`, [pay1.billingTransactionId]);
+            let starter: string;
+            let starterPaid = 299;
+            if (sourceMode === 'none') {
+              starter = await pay(biz, 'billing_starter', 299, -10, 20);
+            } else {
+              await taxOn(sourceMode);
+              const c1 = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_starter', billingCycle: 'monthly' });
+              expect(await hook('payment.captured', 'pay_tx_' + sfx(), 'captured', notesFor(biz, c1.billingTransactionId, 'billing_starter'), Math.round(c1.amount * 100))).toMatchObject({ ok: true });
+              await query(`UPDATE billing_transactions SET period_start = CURRENT_DATE - 10, period_end = CURRENT_DATE + 20 WHERE id = $1`, [c1.billingTransactionId]);
+              starter = c1.billingTransactionId;
+              starterPaid = c1.amount;
+            }
             await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+            if (upgradeMode === 'none') await query(`UPDATE platform_settings SET subscription_gst_mode = 'none' WHERE id = 'default'`);
+            else await taxOn(upgradeMode);
             const up = await createSubscriptionCheckout({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
             expect(await hook('payment.captured', 'pay_tx_' + sfx(), 'captured', notesFor(biz, up.billingTransactionId, 'billing_growth'), Math.round(up.amount * 100))).toMatchObject({ ok: true });
-            spy.mockRestore();
-            return { starter: pay1.billingTransactionId, growth: up.billingTransactionId, starterPaid: pay1.amount };
+            return { starter, starterPaid, growth: up.billingTransactionId, growthPaid: up.amount };
           } finally {
+            spy.mockRestore();
             await query(`UPDATE platform_settings SET subscription_gst_mode = 'none', subscription_seller_gstin = NULL WHERE id = 'default'`);
           }
         }
+        const capOf = async (id: string) => {
+          const r = (await payRow(id))!;
+          const t = await queryOne<{ total: string }>(`SELECT total_amount::text AS total FROM billing_transactions WHERE id = $1`, [id]);
+          return refundableAmountPaise({ total_amount: t!.total, metadata: r.metadata as any });
+        };
 
-        it('exclusive, through the real flow: the Starter payment can be refunded ₹117.61, not ₹153.49', async () => {
-          const { starter, starterPaid } = await realTaxedUpgrade('exclusive');
-          expect(starterPaid).toBe(352.82);
+        it('a tax-free ₹299 source consumed by an EXCLUSIVE upgrade can be refunded ₹63.79 (the credit saved ₹235.21 with GST), not ₹99.67', async () => {
+          const { starter, starterPaid } = await upgradeWith('none', 'exclusive');
+          expect(starterPaid).toBe(299);
           const meta = (await payRow(starter))!.metadata;
           expect(meta.credit_used_paise).toBe(19933);
+          expect(meta.credit_gross_saving_paise).toBe(23521);
+          expect(await capOf(starter)).toBe(6379);
+          stubGateway(razorpayOk());
+          await expect(refundPlatformPayment(req(biz, starter, { amount: 63.8 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+          await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          expect(calls.filter((c) => c.method === 'POST')[0].body.amount).toBe(6379);
+        });
+
+        it('an exclusive ₹352.82 source consumed by an EXCLUSIVE upgrade can be refunded ₹117.61 (saved ₹235.21), not ₹153.49', async () => {
+          const { starter, starterPaid } = await upgradeWith('exclusive', 'exclusive');
+          expect(starterPaid).toBe(352.82);
+          expect((await payRow(starter))!.metadata.credit_gross_saving_paise).toBe(23521);
+          expect(await capOf(starter)).toBe(11761);
           stubGateway(razorpayOk());
           await expect(refundPlatformPayment(req(biz, starter, { amount: 117.62 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
           const res = await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
@@ -2873,20 +2955,46 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
           expect(res.fullyRefunded).toBe(true);
         });
 
-        it('inclusive, through the real flow: the Starter payment can be refunded ₹99.67 (the mode-none figure)', async () => {
-          const { starter, starterPaid } = await realTaxedUpgrade('inclusive');
+        it('an inclusive ₹299 source consumed by an INCLUSIVE upgrade can be refunded ₹130.08 (the credit saved ₹168.92), not ₹99.67', async () => {
+          const { starter, starterPaid } = await upgradeWith('inclusive', 'inclusive');
           expect(starterPaid).toBe(299);
+          const meta = (await payRow(starter))!.metadata;
+          expect(meta.credit_used_paise).toBe(16892);
+          expect(meta.credit_gross_saving_paise).toBe(16892); // inclusive: the credit is what was taken off
+          expect(await capOf(starter)).toBe(13008);
           stubGateway(razorpayOk());
-          await expect(refundPlatformPayment(req(biz, starter, { amount: 99.68 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+          await expect(refundPlatformPayment(req(biz, starter, { amount: 130.09 }))).rejects.toMatchObject({ code: 'REFUND_EXCEEDS_PAYMENT' });
+          await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
+          expect(calls.filter((c) => c.method === 'POST')[0].body.amount).toBe(13008);
+        });
+
+        it('mode none is unchanged: ₹299 source, ₹199.33 credit, ₹99.67 refundable', async () => {
+          const { starter } = await upgradeWith('none', 'none');
+          const meta = (await payRow(starter))!.metadata;
+          expect(meta).toMatchObject({ credit_used_paise: 19933, credit_gross_saving_paise: 19933 });
+          expect(await capOf(starter)).toBe(9967);
+          stubGateway(razorpayOk());
           await refundPlatformPayment(req(biz, starter, { endPlan: 'period_end' }));
           expect(calls.filter((c) => c.method === 'POST')[0].body.amount).toBe(9967);
         });
 
-        it('mode none is unchanged: ₹299 with 199.33 used is ₹99.67', async () => {
-          const tx = await pay(biz, 'billing_starter', 299, -10, 20, { metadata: { credit_consumed_by: randomUUID(), credit_used_paise: 19933 } });
-          stubGateway(razorpayOk());
-          await refundPlatformPayment(req(biz, tx, { endPlan: 'period_end' }));
-          expect(calls[0].body.amount).toBe(9967);
+        it('with several sources the per-source savings add up exactly to the consuming payment\'s gross saving', async () => {
+          await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 50 });
+          const s1 = await pay(biz, 'billing_starter', 101, -10, 20);
+          const s2 = await pay(biz, 'billing_starter', 101, 20, 50);
+          await saveTaxSettings({ mode: 'exclusive', rate_percent: 18, seller_gstin: SELLER_GST, seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' });
+          try {
+            const q = await realUpgrade('billing_growth');
+            const row = (await queryOne<{ taxable: string; total: string; credit: number }>(
+              `SELECT taxable_amount::text AS taxable, total_amount::text AS total, (metadata->'upgrade_credit'->>'amount')::numeric * 100 AS credit FROM billing_transactions WHERE id = $1`, [q.tx],
+            ))!;
+            const used = (await payRow(s1))!.metadata.credit_used_paise + ((await payRow(s2))!.metadata.credit_used_paise ?? 0);
+            const savings = ((await payRow(s1))!.metadata.credit_gross_saving_paise ?? 0) + ((await payRow(s2))!.metadata.credit_gross_saving_paise ?? 0);
+            expect(used).toBe(Math.round(Number(row.credit)));
+            expect(savings).toBe(Math.round((used * Math.round(Number(row.total) * 100)) / Math.round(Number(row.taxable) * 100)));
+          } finally {
+            await query(`UPDATE platform_settings SET subscription_gst_mode = 'none', subscription_seller_gstin = NULL WHERE id = 'default'`);
+          }
         });
       });
 

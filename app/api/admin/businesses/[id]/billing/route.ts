@@ -86,7 +86,7 @@ export async function GET(
       const mine = refundRows.filter((x) => x.metadata?.refund_of === r.id);
       const sum = (status: string) =>
         mine.filter((x) => x.status === status).reduce((a, x) => a + Math.round(Number(x.total_amount ?? 0) * 100), 0);
-      const refundable = refundableAmountPaise({ total_amount: r.total_amount, taxable_amount: r.taxable_amount, metadata: metadata as { credit_used_paise?: number } | null });
+      const refundable = refundableAmountPaise({ total_amount: r.total_amount, metadata: metadata as { credit_used_paise?: number; credit_gross_saving_paise?: number } | null });
       const remaining = Math.max(0, refundable - sum('completed') - sum('pending'));
       const method = r.payment_method ?? '';
       return {

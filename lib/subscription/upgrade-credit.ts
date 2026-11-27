@@ -71,28 +71,24 @@ export function allocateCredit(sources: CreditSource[], appliedPaise: number): C
 }
 
 /**
- * What a payment can still be refunded in cash, in paise: the amount paid (including any GST) minus the part of it
- * that an upgrade took as credit, never below 0. The refund code calls this.
+ * What a payment can still be refunded in cash, in paise: the amount paid (including any GST) minus what an upgrade
+ * saved the customer by taking this payment's unused time as credit, never below 0. The refund code calls this.
  *
- * `metadata.credit_used_paise` is pre-tax (credit is worked out on the taxable amount). The customer saved the tax on
- * it too, so on a row with a recorded breakdown the credit is taken off at its gross value:
- * credit_used x total / taxable (rounded to paise, never more than the total). A row with no breakdown, or a
- * tax-free one (taxable = total), is unchanged: the gross value is the credit itself.
+ * The saving is `metadata.credit_gross_saving_paise`, stored when the credit is consumed: the credit used, plus its
+ * tax when the consuming payment had GST added on top (credit x total / taxable of the consuming payment, split
+ * across the sources so they add up exactly). Rows consumed before it existed fall back to `credit_used_paise`.
+ * With no GST on the consuming payment the saving is the credit itself, so mode none is exactly as before.
  */
 export function refundableAmountPaise(row: {
   total_amount: string | number | null;
-  taxable_amount?: string | number | null;
-  metadata?: { credit_used_paise?: number | string | null } | null;
+  metadata?: { credit_used_paise?: number | string | null; credit_gross_saving_paise?: number | string | null } | null;
 }): number {
   const paid = Math.round(Number(row.total_amount ?? 0) * 100);
   if (!Number.isFinite(paid)) return 0;
-  let used = Math.round(Number(row.metadata?.credit_used_paise ?? 0));
-  if (!Number.isFinite(used) || used < 0) used = 0;
-  if (used > 0 && row.taxable_amount != null) {
-    const taxable = Math.round(Number(row.taxable_amount) * 100);
-    if (Number.isFinite(taxable) && taxable > 0 && taxable !== paid) used = Math.min(paid, Math.round((used * paid) / taxable));
-  }
-  return Math.max(0, paid - used);
+  const raw = row.metadata?.credit_gross_saving_paise ?? row.metadata?.credit_used_paise ?? 0;
+  let saved = Math.round(Number(raw));
+  if (!Number.isFinite(saved) || saved < 0) saved = 0;
+  return Math.max(0, paid - saved);
 }
 
 type Runner = (sql: string, values: unknown[]) => Promise<{ rows: any[] }>;
@@ -263,15 +259,30 @@ export async function consumeCreditSources(
   businessId: string,
   checkoutId: string,
   allocation: CreditAllocation[],
+  /**
+   * The consuming payment's totals when GST was added on top of its price (exclusive): the credit is pre-tax, so it
+   * also saved the customer its tax. Absent for a tax-free or tax-inclusive consuming payment, where the saving is the
+   * credit itself.
+   */
+  gross?: { totalPaise: number; taxablePaise: number },
 ): Promise<void> {
+  // Each source records `credit_gross_saving_paise`: its credit x total / taxable, allocated by running totals so the
+  // sources add up exactly to the consuming payment's whole gross saving (integer paise).
+  let usedSoFar = 0;
+  let grossSoFar = 0;
   for (const a of allocation) {
+    usedSoFar += a.paise;
+    const grossCum = gross && gross.taxablePaise > 0 ? Math.round((usedSoFar * gross.totalPaise) / gross.taxablePaise) : usedSoFar;
+    const saving = Math.max(0, grossCum - grossSoFar);
+    grossSoFar = grossCum;
     const r = await client.query(
       `UPDATE billing_transactions
        SET metadata = COALESCE(metadata, '{}'::jsonb)
-                      || jsonb_build_object('credit_consumed_by', $3::text, 'credit_used_paise', $4::bigint),
+                      || jsonb_build_object('credit_consumed_by', $3::text, 'credit_used_paise', $4::bigint,
+                                            'credit_gross_saving_paise', $5::bigint),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2 AND (metadata->>'credit_consumed_by') IS NULL`,
-      [a.id, businessId, checkoutId, a.paise],
+      [a.id, businessId, checkoutId, a.paise, saving],
     );
     if (r.rowCount !== 1) throw new Error('CREDIT_SOURCE_UPDATE_FAILED');
   }

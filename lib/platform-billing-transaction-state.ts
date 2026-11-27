@@ -89,6 +89,22 @@ export function assertBillingTransactionTransition(
   );
 }
 
+/**
+ * The one way out of `refunded`: a payment that was refunded only up to what could be refunded while upgrade credit
+ * was spent on it, and whose credit is released because the upgrade that used it was refunded in full (lib/platform-refunds.ts).
+ * It has refundable money again, so it goes back to `completed`. Nothing else may use this: `assertBillingTransactionTransition`
+ * still blocks refunded -> anything, and this does not reactivate, renumber or notify anything.
+ */
+export function assertCreditReleaseReopen(fromStatus: BillingTxStatus, toStatus: BillingTxStatus): void {
+  if (fromStatus === 'refunded' && toStatus === 'completed') return;
+  throw new BillingTransactionStateError(
+    'INVALID_STATUS_TRANSITION',
+    `Cannot reopen a billing transaction from ${fromStatus} to ${toStatus}`,
+    fromStatus,
+    toStatus,
+  );
+}
+
 /** True for the unique violation raised by uq_billing_tx_completed_payment_ref (one gateway payment, one checkout). */
 export function isPaymentReferenceViolation(err: unknown): boolean {
   const e = err as { code?: string; constraint?: string } | null;

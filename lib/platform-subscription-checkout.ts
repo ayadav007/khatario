@@ -676,6 +676,10 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
         params.businessId,
         billingTransactionId,
         credit.allocation ?? [],
+        // What the credit saved the customer, gross: with GST added on top the credit also saved its tax.
+        tx.gst_mode === 'exclusive' && tx.taxable_amount != null
+          ? { totalPaise: expectedPaise, taxablePaise: Math.round(Number(tx.taxable_amount) * 100) }
+          : undefined,
       );
     } else if (credit && creditRejected) {
       await client.query(
