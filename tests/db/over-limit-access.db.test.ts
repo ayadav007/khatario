@@ -40,6 +40,9 @@ jest.mock('@/lib/jwt', () => ({
   setSessionCookies: jest.fn(),
   signAccessToken: jest.fn(async () => 'access-token'),
   signRefreshToken: jest.fn(async () => 'refresh-token'),
+  REFRESH_COOKIE: 'khatario_refresh',
+  // The refresh test puts the token payload as JSON in the cookie.
+  verifyToken: jest.fn(async (token: string) => { try { return JSON.parse(token); } catch { return null; } }),
 }));
 jest.mock('@/lib/platform-push', () => ({ sendPlatformAdminPush: jest.fn(async () => undefined) }));
 
@@ -81,6 +84,7 @@ import { enforceAccess, EnforceAccessError } from '@/lib/enforce-access';
 import { POST as loginRoute } from '@/app/api/auth/login/route';
 import { GET as myBusinessesRoute } from '@/app/api/businesses/my/route';
 import { POST as switchBusinessRoute } from '@/app/api/businesses/switch/route';
+import { POST as refreshRoute } from '@/app/api/auth/refresh/route';
 import { GET as gstStatusRoute } from '@/app/api/gst/status/route';
 import { GET as gstChargesRoute } from '@/app/api/gst/charges/route';
 import { GET as gstr3bExportRoute } from '@/app/api/gst/gstr3b/export/route';
@@ -637,6 +641,22 @@ run('over-limit access and Free web access (kh_phase2_test)', () => {
       void C;
     });
 
+    it('refresh judges the pause by the business the token was issued for', async () => {
+      const { A, B, U } = await threeBusinesses();
+      const sv = Number((await queryOne<{ sv: string }>(`SELECT auth_session_version::text AS sv FROM users WHERE id = $1`, [U.id]))!.sv);
+      const refresh = (businessId: string) => {
+        const req = new NextRequest('http://localhost/api/auth/refresh', { method: 'POST' });
+        req.cookies.set('khatario_refresh', JSON.stringify({ userId: U.id, businessId, type: 'refresh', sv }));
+        return refreshRoute(req);
+      };
+      // The user's stored business is A, where they are paused; a token issued for B (another device) keeps working.
+      expect((await queryOne<{ b: string }>(`SELECT business_id AS b FROM users WHERE id = $1`, [U.id]))!.b).toBe(A.biz);
+      expect((await refresh(B.biz)).status).toBe(200);
+      const inA = await refresh(A.biz);
+      expect(inA.status).toBe(403);
+      expect(await inA.json()).toMatchObject({ code: 'SEAT_PAUSED' });
+    });
+
     it('the business list and the switch never answer 401 because of a pause; switching INTO a pausing business is 403', async () => {
       const { A, B, C, U } = await threeBusinesses();
       // The session acts in A, where U is paused.
@@ -650,7 +670,7 @@ run('over-limit access and Free web access (kh_phase2_test)', () => {
         biz: A.biz, userId: U.id, method: 'POST', path: '/api/businesses/switch', body: { business_id: C.biz },
       });
       expect(intoC.status).toBe(403);
-      expect(await intoC.json()).toMatchObject({ code: 'SEAT_PAUSED', error: SEAT_PAUSED_MESSAGE });
+      expect(await intoC.json()).toMatchObject({ code: 'SEAT_PAUSED_IN_TARGET_BUSINESS', error: SEAT_PAUSED_MESSAGE });
       expect((await queryOne<{ b: string }>(`SELECT business_id AS b FROM users WHERE id = $1`, [U.id]))!.b).toBe(A.biz);
 
       const intoB = await callRoute(switchBusinessRoute as unknown as RouteHandler, {

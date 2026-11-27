@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  if (await isUserSeatPaused(payload.userId, row.business_id)) {
+  // The pause is judged for the business this token was issued for, not the business last stored on the user.
+  if (await isUserSeatPaused(payload.userId, payload.businessId ?? row.business_id)) {
     const res = NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
     clearSessionCookie(res);
     return res;

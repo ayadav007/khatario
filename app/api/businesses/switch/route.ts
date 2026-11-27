@@ -73,7 +73,8 @@ export async function POST(request: NextRequest) {
     // A pause applies only to the business it was decided for: switching INTO a business that would pause this
     // person is refused with the plain message; every other business stays reachable.
     if (await wouldBeSeatPausedIn(userId, businessId)) {
-      return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
+      // Its own code: this login stays valid for the business the person is in now, so clients must not sign them out.
+      return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED_IN_TARGET_BUSINESS' }, { status: 403 });
     }
 
     const svRow = await queryOne<{ auth_session_version: string }>(
