@@ -16,7 +16,7 @@ function fakeDb(opts: { branch: Branch; warehouse?: { address_line1: string; cit
         return { rows: [{ location_id: opts.lineLocation ?? null, hsn_sac: '8471', taxable_value: 100000, igst_amount: 18000, tax_rate: 18, quantity: 1 }] };
       }
       if (sql.includes('FROM customers')) {
-        return { rows: [{ gstin: '33ADVFS4469F1ZJ', name: 'Chennai Buyer', a1: 'Anna Salai', city: 'Chennai', pin: '600002', st: '33' }] };
+        return { rows: [{ gstin: '33ADVFS4469F1ZJ', name: 'Chennai Buyer', billing: 'Anna Salai', city: 'Chennai', pin: '600002', st: '33' }] };
       }
       if (sql.includes('br.gstin AS br_gstin')) {
         // resolveSupplierRegistration

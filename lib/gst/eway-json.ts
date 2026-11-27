@@ -39,6 +39,18 @@ export function challanSubSupply(c: { challan_kind?: string | null; purpose?: st
   return { code, desc: code === 8 ? 'Others' : '' };
 }
 
+/** Collapse whitespace and split at the last space or comma that fits, for the two NIC address lines. */
+export function splitAddress(text: string | null | undefined, max = 120): [string, string] {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return [t, ''];
+  const head = t.slice(0, max + 1);
+  const at = Math.max(head.lastIndexOf(' '), head.lastIndexOf(','));
+  const i = at > 0 ? at : max;
+  return [t.slice(0, i).trim(), t.slice(i).replace(/^[\s,]+/, '').slice(0, max)];
+}
+
+const norm = (s: string | null | undefined) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
 interface Party {
   gstin: string | null;
   name: string;
@@ -50,6 +62,10 @@ interface Party {
   state: number;
   /** State the goods actually leave from or reach, when it differs. */
   actState?: number;
+  /** Seller only: goods leave from a pincode other than the registration's. */
+  dispatchDiffers?: boolean;
+  /** Customer only: goods go to a place other than the billing address. */
+  shipTo?: { gstin: string; tradeName: string } | null;
 }
 
 /**
@@ -90,28 +106,39 @@ async function seller(db: Queryable, businessId: string, branchId: string | null
     pincode: PIN(place.pin),
     state: regState,
     actState: place.st,
+    dispatchDiffers: PIN(place.pin) !== PIN(reg.pincode),
   };
 }
 
-async function party(db: Queryable, businessId: string, kind: 'customer' | 'supplier', id: string | null, shipTo?: string | null): Promise<Party> {
+async function party(
+  db: Queryable, businessId: string, kind: 'customer' | 'supplier', id: string | null, docShipping?: string | null, shipToGstin?: string | null
+): Promise<Party> {
   if (!id) throw new EwayBillInputError('The document has no party to send the goods to');
   const r = await db.query(
     kind === 'customer'
-      ? `SELECT gstin, COALESCE(company_name, name) AS name, COALESCE(shipping_address, address) AS a1, COALESCE(shipping_city, city) AS city,
-                COALESCE(shipping_pincode, pincode) AS pin, state_code AS st FROM customers WHERE id = $1 AND business_id = $2`
-      : `SELECT gstin, name, address AS a1, city, pincode AS pin, state_code AS st FROM suppliers WHERE id = $1 AND business_id = $2`,
+      ? `SELECT gstin, COALESCE(company_name, name) AS name, COALESCE(billing_address, address) AS billing, city, pincode AS pin, state_code AS st,
+                shipping_address AS ship_addr, shipping_city AS ship_city, shipping_state AS ship_state, shipping_pincode AS ship_pin
+           FROM customers WHERE id = $1 AND business_id = $2`
+      : `SELECT gstin, name, address AS billing, city, pincode AS pin, state_code AS st FROM suppliers WHERE id = $1 AND business_id = $2`,
     [id, businessId]
   );
   const x = r.rows[0];
   if (!x) throw new EwayBillInputError('Party not found', 404);
+  const shipAddr = String(docShipping || x.ship_addr || '').trim();
+  const differs = (!!shipAddr && norm(shipAddr) !== norm(x.billing)) || !!shipToGstin;
+  const useShip = differs && !!shipAddr;
+  const [addr1, addr2] = splitAddress(useShip ? shipAddr : x.billing);
+  const state = STATE(x.st);
   return {
     gstin: x.gstin || 'URP',
     name: cut(x.name, 100),
-    addr1: cut(shipTo || x.a1, 120),
-    addr2: '',
-    place: cut(x.city, 50),
-    pincode: PIN(x.pin),
-    state: STATE(x.st),
+    addr1,
+    addr2,
+    place: cut(useShip ? x.ship_city || x.city : x.city, 50),
+    pincode: PIN(useShip ? x.ship_pin || x.pin : x.pin),
+    state,
+    actState: useShip ? STATE(stateCodeFromName(x.ship_state)) || state : undefined,
+    shipTo: differs ? { gstin: shipToGstin || x.gstin || 'URP', tradeName: cut(x.name, 100) } : null,
   };
 }
 
@@ -149,6 +176,8 @@ function bill(p: {
   vehicle?: string | null;
   transporterGstin?: string | null;
   transporterName?: string | null;
+  transactionType: 1 | 2 | 3 | 4;
+  totInvValue?: number;
 }) {
   const sum = (k: string) => r2(p.lines.reduce((s, l) => s + (Number(l[k]) || 0), 0));
   const taxable = sum('taxable_value');
@@ -163,7 +192,7 @@ function bill(p: {
     subSupplyType: p.sub.code,
     subSupplyDesc: p.sub.desc,
     docType: p.docType,
-    docNo: cut(p.docNo, 16),
+    docNo: p.docNo,
     docDate: dmy(p.docDate),
     fromGstin: p.from.gstin,
     fromTrdName: p.from.name,
@@ -181,7 +210,7 @@ function bill(p: {
     toPincode: p.to.pincode,
     actToStateCode: p.to.actState ?? p.to.state,
     toStateCode: p.to.state,
-    transactionType: 1,
+    transactionType: p.transactionType,
     otherValue: 0,
     totalValue: taxable,
     cgstValue: cgst,
@@ -189,7 +218,7 @@ function bill(p: {
     igstValue: igst,
     cessValue: cess,
     cessNonAdvolValue: 0,
-    totInvValue: r2(taxable + cgst + sgst + igst + cess),
+    totInvValue: Math.max(r2(taxable + cgst + sgst + igst + cess), p.totInvValue ?? 0),
     transporterId: p.transporterGstin || '',
     transporterName: cut(p.transporterName, 100),
     transDocNo: '',
@@ -220,17 +249,32 @@ function bill(p: {
   };
 }
 
-/** Bulk-upload file for one document: `{ version, billLists: [bill] }`. */
-export async function ewayBulkJson(
+export type NicEwayBill = ReturnType<typeof bill> & { shipToGstin: string | null; shipToTradeName: string | null };
+
+/** The NIC-shaped bill for one document, plus the ship-to GSTIN and name an API call needs. */
+export async function buildEwayBill(
   db: Queryable,
   businessId: string,
   sourceType: 'delivery_challan' | 'invoice',
   sourceId: string,
-  opts: { distanceKm: number }
-) {
+  opts: { distanceKm: number; shipToGstin?: string | null }
+): Promise<NicEwayBill> {
   if (!Number.isFinite(opts.distanceKm) || opts.distanceKm < 0 || opts.distanceKm > 4000) {
     throw new EwayBillInputError('Enter the distance in km (0 to 4000)');
   }
+  const finish = (p: Omit<Parameters<typeof bill>[0], 'transactionType' | 'distanceKm'>): NicEwayBill => {
+    if (String(p.docNo || '').length > 16) {
+      throw new EwayBillInputError(`Document number ${p.docNo} is longer than 16 characters, the limit for an e-way bill. Use a shorter number series.`);
+    }
+    const ship = !!p.to.shipTo;
+    const disp = !!p.from.dispatchDiffers;
+    const transactionType = ship && disp ? 4 : ship ? 2 : disp ? 3 : 1;
+    return {
+      ...bill({ ...p, distanceKm: opts.distanceKm, transactionType }),
+      shipToGstin: p.to.shipTo?.gstin ?? null,
+      shipToTradeName: p.to.shipTo?.tradeName ?? null,
+    };
+  };
   if (sourceType === 'delivery_challan') {
     const c = (await db.query(`SELECT *, challan_date::text AS challan_date FROM delivery_challans WHERE id = $1 AND business_id = $2`, [sourceId, businessId])).rows[0];
     if (!c) throw new EwayBillInputError('Delivery challan not found', 404);
@@ -247,18 +291,13 @@ export async function ewayBulkJson(
     const to = transferEnds
       ? transferEnds.to
       : c.supplier_id
-        ? await party(db, businessId, 'supplier', c.supplier_id)
-        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address);
-    return {
-      version: '1.0.0621',
-      billLists: [
-        bill({
-          docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
-          from, to, lines, distanceKm: opts.distanceKm,
-          vehicle: c.vehicle_number, transporterGstin: c.transporter_gstin, transporterName: c.transporter_name,
-        }),
-      ],
-    };
+        ? await party(db, businessId, 'supplier', c.supplier_id, null, opts.shipToGstin)
+        : await party(db, businessId, 'customer', c.customer_id, c.shipping_address, opts.shipToGstin);
+    return finish({
+      docType: 'CHL', docNo: c.challan_number, docDate: c.challan_date, sub: challanSubSupply(c),
+      from, to, lines,
+      vehicle: c.vehicle_number, transporterGstin: c.transporter_gstin, transporterName: c.transporter_name,
+    });
   }
   const inv = (await db.query(`SELECT *, invoice_date::text AS invoice_date FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`, [sourceId, businessId])).rows[0];
   if (!inv) throw new EwayBillInputError('Invoice not found', 404);
@@ -271,14 +310,22 @@ export async function ewayBulkJson(
     )
   ).rows;
   if (!lines.length) throw new EwayBillInputError('This invoice has no goods lines');
-  return {
-    version: '1.0.0621',
-    billLists: [
-      bill({
-        docType: inv.document_type === 'bill_of_supply' ? 'BIL' : 'INV', docNo: inv.invoice_number, docDate: inv.invoice_date,
-        sub: { code: inv.export_type ? 3 : 1, desc: '' }, from: await seller(db, businessId, inv.branch_id, lines.find((l: any) => l.location_id)?.location_id),
-        to: await party(db, businessId, 'customer', inv.customer_id, inv.shipping_address), lines, distanceKm: opts.distanceKm,
-      }),
-    ],
-  };
+  return finish({
+    docType: inv.document_type === 'bill_of_supply' ? 'BIL' : 'INV', docNo: inv.invoice_number, docDate: inv.invoice_date,
+    sub: { code: inv.export_type ? 3 : 1, desc: '' }, from: await seller(db, businessId, inv.branch_id, lines.find((l: any) => l.location_id)?.location_id),
+    to: await party(db, businessId, 'customer', inv.customer_id, inv.shipping_address, opts.shipToGstin), lines,
+    totInvValue: Number(inv.grand_total) || 0,
+  });
+}
+
+/** Bulk-upload file for one document: `{ version, billLists: [bill] }`, without the API-only ship-to fields. */
+export async function ewayBulkJson(
+  db: Queryable,
+  businessId: string,
+  sourceType: 'delivery_challan' | 'invoice',
+  sourceId: string,
+  opts: { distanceKm: number }
+) {
+  const { shipToGstin: _g, shipToTradeName: _n, ...b } = await buildEwayBill(db, businessId, sourceType, sourceId, opts);
+  return { version: '1.0.0621', billLists: [b] };
 }
