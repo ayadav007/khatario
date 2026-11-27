@@ -29,6 +29,30 @@ export const CONSOLE_SEAT_COUNT_SQL = `
     )
 `;
 
+export type SeatFields = {
+  is_active: boolean | null;
+  is_primary_admin: boolean | null;
+  role_id: string | null;
+  /** The linked employees row's access_type; null/undefined when there is no employee row. */
+  access_type: string | null;
+  seat_type?: string | null;
+};
+
+/**
+ * True when the user row counts against max_users, by the same rule as CONSOLE_SEAT_COUNT_SQL:
+ * active, not a Connect agent, and (owner, or holds a role, or is not an attendance-only employee).
+ * Keep this and the SQL above in step.
+ */
+export function userOccupiesConsoleSeat(u: SeatFields): boolean {
+  if ((u.is_active ?? true) !== true) return false;
+  if ((u.seat_type ?? 'billing') === 'connect') return false;
+  return (
+    (u.is_primary_admin ?? false) === true ||
+    u.role_id != null ||
+    (u.access_type ?? 'full') !== 'attendance_only'
+  );
+}
+
 /** Active Connect agents, counted against the Connect plan's max_users ($1 = business_id). */
 export const CONNECT_AGENT_SEAT_COUNT_SQL = `
   SELECT COUNT(*)::int AS count

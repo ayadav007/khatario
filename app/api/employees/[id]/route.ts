@@ -16,6 +16,9 @@ import {
   assertPortalOwnResource,
 } from '@/lib/employee-portal/portal-api-guard';
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { checkLimit } from '@/lib/subscription';
+import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
+import { seatLimitMessage, seatLimitType } from '@/lib/users/connect-seats';
 import { resolveEmployeeLoginDecision } from '@/lib/hr/employee-login-options';
 
 export const dynamic = 'force-dynamic';
@@ -235,6 +238,7 @@ export async function PATCH(
     } = body;
 
     let accessTypeToSave = access_type as string | undefined;
+    let roleIdToSave: string | null | undefined;
     if (role_id !== undefined) {
       const currentSeat = await queryOne<{
         role_id: string | null;
@@ -270,8 +274,53 @@ export async function PATCH(
         );
       }
       accessTypeToSave = loginDecision.mode === 'login' ? 'full' : 'attendance_only';
+      roleIdToSave = loginDecision.mode === 'login' ? loginDecision.roleId : null;
+    }
+
+    // Gaining console access (a role, or full access) takes a seat. Checked before any write.
+    if (roleIdToSave !== undefined || accessTypeToSave !== undefined) {
+      const linked = await queryOne<{
+        is_active: boolean | null;
+        is_primary_admin: boolean | null;
+        role_id: string | null;
+        seat_type: string | null;
+        access_type: string | null;
+      }>(
+        `SELECT u.is_active, u.is_primary_admin, u.role_id, u.seat_type, e.access_type
+         FROM users u INNER JOIN employees e ON e.id = u.id
+         WHERE u.id = $1 AND e.business_id = $2`,
+        [employeeId, businessId],
+      );
+      if (linked) {
+        // This route changes employees.is_active, not users.is_active, which is what seats count.
+        const before = userOccupiesConsoleSeat(linked);
+        const after = userOccupiesConsoleSeat({
+          ...linked,
+          role_id: roleIdToSave !== undefined ? roleIdToSave : linked.role_id,
+          access_type: accessTypeToSave ?? linked.access_type,
+        });
+        if (!before && after) {
+          const limitCheck = await checkLimit(businessId, seatLimitType('billing'));
+          if (!limitCheck.allowed) {
+            return NextResponse.json(
+              {
+                error: seatLimitMessage('billing', limitCheck),
+                limit: limitCheck.limit,
+                current: limitCheck.current,
+                seat_type: 'billing',
+                limit_type: seatLimitType('billing'),
+                code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+              },
+              { status: 403 },
+            );
+          }
+        }
+      }
+    }
+
+    if (roleIdToSave !== undefined) {
       await query('UPDATE users SET role_id = $1 WHERE id = $2 AND business_id = $3', [
-        loginDecision.mode === 'login' ? loginDecision.roleId : null,
+        roleIdToSave,
         employeeId,
         businessId,
       ]);

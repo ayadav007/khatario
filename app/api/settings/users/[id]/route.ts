@@ -5,6 +5,7 @@ import { requireStrictSession } from '@/lib/auth-helpers';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { checkLimit, hasWhatsAppBotAddon } from '@/lib/subscription';
+import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import {
   checkRoleForConnectSeat,
   connectSeatRoleMessage,
@@ -128,10 +129,12 @@ export async function PATCH(
       is_active: boolean | null;
       role_id: string | null;
       seat_type: SeatType | null;
+      access_type: string | null;
     }>(
-      `SELECT id, business_id, is_primary_admin, phone, email, allow_multidevice_sync, is_active,
-              role_id, seat_type
-         FROM users WHERE id = $1 AND business_id = $2`,
+      `SELECT u.id, u.business_id, u.is_primary_admin, u.phone, u.email, u.allow_multidevice_sync,
+              u.is_active, u.role_id, u.seat_type,
+              (SELECT e.access_type FROM employees e WHERE e.id = u.id) AS access_type
+         FROM users u WHERE u.id = $1 AND u.business_id = $2`,
       [userId, businessId]
     );
 
@@ -213,7 +216,17 @@ export async function PATCH(
 
     const willBeActive = is_active !== undefined ? is_active === true : existingUser.is_active !== false;
     const reactivating = is_active === true && existingUser.is_active === false;
-    if (willBeActive && (movingSeat || reactivating)) {
+    // A role or reactivation can turn an attendance-only user into a console user without a seat move.
+    const clearingRole = is_active === false && !existingUser.is_primary_admin;
+    const seatBefore = userOccupiesConsoleSeat(existingUser);
+    const seatAfter = userOccupiesConsoleSeat({
+      ...existingUser,
+      is_active: willBeActive,
+      role_id: clearingRole ? null : role_id !== undefined ? role_id : existingUser.role_id,
+      seat_type: targetSeat,
+    });
+    const gainingSeat = !seatBefore && seatAfter;
+    if (willBeActive && (movingSeat || reactivating || gainingSeat)) {
       const limitCheck = await checkLimit(businessId, seatLimitType(targetSeat));
       if (!limitCheck.allowed) {
         return NextResponse.json(
