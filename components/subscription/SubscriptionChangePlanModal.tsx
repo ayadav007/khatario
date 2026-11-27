@@ -15,6 +15,7 @@ import { getPlanChangeAction } from '@/lib/subscription/trial-plan';
 import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
 import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
 import { CheckoutPreviewBox, useCheckoutPreview } from '@/components/subscription/CheckoutPreviewBox';
+import type { PlanOffer } from '@/lib/subscription/plan-offer-rules';
 
 export interface SubscriptionPlanFeatures {
   limits: {
@@ -37,6 +38,8 @@ export interface SubscriptionAvailablePlan {
   price_3year?: number | null;
   sort_order: number;
   product_line?: string;
+  /** From the server (`/api/subscriptions/plans`): on sale, current, renewable, selectable. */
+  offer?: PlanOffer;
   features: SubscriptionPlanFeatures;
 }
 
@@ -145,7 +148,8 @@ export function SubscriptionChangePlanModal({
       { id: currentPlanId, sort_order: currentPlanSortOrder },
       { id: plan.id, sort_order: plan.sort_order },
     );
-    return action === 'current' && renewable ? 'renew' : action;
+    // Renewing is buying the same plan again: only when the server lets this plan be chosen.
+    return action === 'current' && renewable && plan.offer?.selectable !== false ? 'renew' : action;
   }
 
   function formatDate(dateStr: string | null): string {
@@ -331,6 +335,11 @@ export function SubscriptionChangePlanModal({
                       <h3 className="text-base font-bold text-text-primary md:text-lg">
                         {plan.display_name}
                       </h3>
+                      {isCurrent && plan.offer && !plan.offer.on_sale ? (
+                        <p className="mt-0.5 text-caption text-text-muted">
+                          No longer sold to new customers. You can keep it and renew it.
+                        </p>
+                      ) : null}
                       <p className="type-body-sm mb-3 flex-grow text-text-secondary">
                         {plan.description}
                       </p>

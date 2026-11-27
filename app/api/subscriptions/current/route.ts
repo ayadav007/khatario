@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { userCanMutateSubscription } from '@/lib/security/require-subscription-mutation';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import {
   getDisplayPlanId,
@@ -39,6 +40,7 @@ async function loadPrimarySubscriptionRow(businessId: string) {
       CURRENT_DATE::text AS db_today,
       bs.downgraded_from,
       bs.scheduled_plan_id,
+      (SELECT display_name FROM subscription_plans WHERE id = bs.scheduled_plan_id) AS scheduled_plan_display_name,
       bs.billing_cycle,
       COALESCE(bs.trial_extension_granted, false) AS trial_extension_granted,
       bs.trial_extension_declined_at,
@@ -74,6 +76,10 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+
+    // Whether this user may see billing and change plans (the permission the plan-change routes require).
+    const userId = getUserIdFromRequest(request);
+    const canManageBilling = !!userId && (await userCanMutateSubscription(userId, businessId));
 
     const subscription = await loadPrimarySubscriptionRow(businessId);
 
@@ -253,7 +259,7 @@ export async function GET(request: NextRequest) {
     }
 
     const displayName =
-      planRow.plan_display_name || (displayPlanId === 'free' ? 'Free / Starter' : displayPlanId);
+      planRow.plan_display_name || (displayPlanId === 'free' ? 'Free / Starter' : 'Your plan');
 
     return NextResponse.json({
       subscription: {
@@ -270,6 +276,7 @@ export async function GET(request: NextRequest) {
         grace_ends_on: graceEndsOn,
         in_grace: isGracePeriodActive,
         can_renew: canRenew,
+        can_manage_billing: canManageBilling,
         grace_days_remaining: graceDaysRemaining,
         stored_plan_id: subscription.plan_id,
         entitlement_plan_id: entitlementPlanId,

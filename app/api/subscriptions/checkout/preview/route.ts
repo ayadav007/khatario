@@ -7,6 +7,7 @@ import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { planOpenToBusiness } from '@/lib/subscription/public-plans';
+import { PLAN_NOT_ON_SALE_MESSAGE } from '@/lib/subscription/plan-offer-rules';
 import { planHasPaidPrice, resolveNewPeriod, type CurrentPeriodRow } from '@/lib/subscription/period';
 
 export const dynamic = 'force-dynamic';
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
     }
     if (!(await planOpenToBusiness(tenant.businessId, planId))) {
       return NextResponse.json(
-        { error: 'This plan is no longer offered. Choose one of the current plans.', code: 'PLAN_NOT_OFFERED' },
+        { error: PLAN_NOT_ON_SALE_MESSAGE, code: 'PLAN_NOT_OFFERED' },
         { status: 400 },
       );
     }

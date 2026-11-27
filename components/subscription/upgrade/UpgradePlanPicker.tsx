@@ -7,6 +7,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
 import { CheckoutPreviewBox, useCheckoutPreview } from '@/components/subscription/CheckoutPreviewBox';
 import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
+import type { PlanOffer } from '@/lib/subscription/plan-offer-rules';
 import { productLineForModule, type PlatformModule } from '@/lib/platform-modules';
 import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
 import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
@@ -33,6 +34,8 @@ export interface UpgradePlanRow {
   };
   sort_order: number;
   product_line?: string | null;
+  /** From the server: what this business may do with the plan. */
+  offer?: PlanOffer;
 }
 
 export interface UpgradePlanPickerProps {
@@ -95,6 +98,7 @@ export function UpgradePlanPicker({
     let cancelled = false;
     (async () => {
       try {
+        // The server lists plans on sale plus the plan this business is on now.
         const response = await fetch('/api/subscriptions/plans');
         if (!response.ok) return;
         const data = await response.json();
@@ -106,7 +110,7 @@ export function UpgradePlanPicker({
             ? initialPlan.product_line ?? 'billing'
             : null;
         const available = all
-          .filter((p) => isPurchasableUpgradePlan(p.id) && p.is_public !== false)
+          .filter((p) => isPurchasableUpgradePlan(p.id) && p.offer?.selectable !== false)
           .filter((p) => !productLine || (p.product_line ?? 'billing') === productLine);
         if (cancelled) return;
         setPlans(available);
@@ -309,6 +313,9 @@ export function UpgradePlanPicker({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold text-primary-600">{plan.display_name}</p>
+                          {plan.offer?.current ? (
+                            <p className="text-[11px] font-medium text-[#1f7a55]">Your plan: choose it to renew</p>
+                          ) : null}
                           <p className="mt-0.5 line-clamp-2 text-xs text-[#7a6c5d]">{plan.description}</p>
                         </div>
                         <div className="shrink-0 text-right">

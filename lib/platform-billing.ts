@@ -911,6 +911,8 @@ export type PlatformEasebuzzOutcome = {
   checkoutType?: 'subscription' | 'whatsapp_addon';
   addonType?: string;
   planId?: string | null;
+  /** The payment's id: the browser return carries it so the screen can ask what happened. */
+  billingTransactionId?: string;
   error?: string;
   httpStatus?: number;
 };
@@ -951,7 +953,7 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
   const gw = tx.gateway_response ?? {};
   const checkoutType = gw.checkout_type === 'whatsapp_addon' ? 'whatsapp_addon' : 'subscription';
   const addonType = typeof gw.addon_type === 'string' ? gw.addon_type : undefined;
-  const base = { checkoutType, addonType, planId: tx.plan_id } as const;
+  const base = { checkoutType, addonType, planId: tx.plan_id, billingTransactionId: tx.id } as const;
 
   const idemKey = createHash('sha256')
     .update(`platform|easebuzz|${txnid}|${verified.status}`)

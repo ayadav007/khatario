@@ -360,9 +360,10 @@ export async function createSubscriptionCheckout(
 
 
 
-  const returnUrl = `${appBaseUrl()}/settings/subscription?payment=success&plan=${encodeURIComponent(plan.display_name)}`;
+  // The screen never trusts this URL: it carries the payment id and asks the server what happened.
+  const returnUrl = `${appBaseUrl()}/settings/subscription?payment=success&tx=${encodeURIComponent(pending.id)}`;
 
-  const cancelUrl = `${appBaseUrl()}/settings/subscription?payment=cancelled`;
+  const cancelUrl = `${appBaseUrl()}/settings/subscription?payment=cancelled&tx=${encodeURIComponent(pending.id)}`;
 
 
 

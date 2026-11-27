@@ -1,6 +1,8 @@
 import * as db from '../db';
 import { formatPlanLabel } from '../format-plan-label';
 import { resolveRegistryFeatureId } from './feature-access';
+import { planHasAnyPrice, isPlanOnSale } from './plan-offer-rules';
+import { comparePlanTier, planTierRank, type TierPlan } from './plan-tier';
 
 export interface FeatureAccessPlanRow {
   planId: string;
@@ -10,6 +12,8 @@ export interface FeatureAccessPlanRow {
   planLabel: string;
   priceMonthly: number;
   sortOrder: number;
+  /** Tier order is `planTierRank` (sort_order and the free-tier set), never price. */
+  productLine?: string;
 }
 
 export interface FeatureAccessInfo {
@@ -22,6 +26,59 @@ export interface FeatureAccessInfo {
   allPlans: FeatureAccessPlanRow[];
 }
 
+type CatalogueRow = {
+  plan_id: string;
+  display_name: string;
+  price_monthly: string | number | null;
+  price_yearly?: string | number | null;
+  price_3year?: string | number | null;
+  sort_order: number | null;
+  is_public?: boolean | null;
+  product_line?: string | null;
+};
+
+export type UpgradePlanFilter = {
+  /** Only plans on sale (active and public, not signup-only), and never one with no price. */
+  onSaleOnly: true;
+  /** Only plans of this product (`billing`, `hr`, `connect`). Null for a feature shared by products. */
+  productLine?: string | null;
+  /** The plans the business is on now: the answer must be a higher tier than the current plan of its product. */
+  current?: Array<TierPlan & { product_line?: string | null }>;
+};
+
+/**
+ * The plans an upgrade prompt may name for a feature: on sale, with a price (a free plan is never the
+ * answer), of the feature's product, and above the plan the business is on. Tier order, then price.
+ * Pure.
+ */
+export function pickUpgradePlansForFeature(rows: readonly CatalogueRow[], filter: UpgradePlanFilter): CatalogueRow[] {
+  return rows
+    .filter((r) => {
+      const plan = {
+        id: r.plan_id,
+        is_active: true,
+        is_public: r.is_public,
+        price_monthly: r.price_monthly,
+        price_yearly: r.price_yearly,
+        price_3year: r.price_3year,
+      };
+      if (!isPlanOnSale(plan) || !planHasAnyPrice(plan)) return false;
+      const line = r.product_line ?? 'billing';
+      if (filter.productLine && line !== filter.productLine) return false;
+      const candidate = { id: r.plan_id, sort_order: r.sort_order ?? 0 };
+      return !(filter.current ?? []).some(
+        (c) => (c.product_line ?? 'billing') === line && comparePlanTier(candidate, c) <= 0,
+      );
+    })
+    .sort(
+      (a, b) =>
+        planTierRank({ id: a.plan_id, sort_order: a.sort_order ?? 0 }) -
+          planTierRank({ id: b.plan_id, sort_order: b.sort_order ?? 0 }) ||
+        (Number(a.price_monthly) || 0) - (Number(b.price_monthly) || 0) ||
+        a.plan_id.localeCompare(b.plan_id),
+    );
+}
+
 /**
  * Reads the feature matrix (`subscription_plan_features` + `subscription_plans`).
  * Excludes the trial plan. Ordered by plan priority (`sort_order`, then monthly price).
@@ -29,20 +86,20 @@ export interface FeatureAccessInfo {
  * @param featureKey Canonical or legacy key (same resolution as {@link resolveRegistryFeatureId})
  */
 export async function getFeatureAccessInfo(
-  featureKey: string
+  featureKey: string,
+  /** With a filter the result is what an upgrade prompt may name; without, every active non-trial plan with the feature. */
+  upgradeFilter?: UpgradePlanFilter,
 ): Promise<FeatureAccessInfo> {
   const registryFeatureId = resolveRegistryFeatureId(featureKey);
 
-  const rows = await db.queryRows<{
-    plan_id: string;
-    display_name: string;
-    price_monthly: string | number | null;
-    sort_order: number | null;
-  }>(
-    `SELECT sp.id AS plan_id,
+  const select = (publicCol: string) => `SELECT sp.id AS plan_id,
             sp.display_name,
             sp.price_monthly,
-            sp.sort_order
+            sp.price_yearly,
+            sp.price_3year,
+            sp.sort_order,
+            ${publicCol}
+            sp.product_line
      FROM subscription_plan_features spf
      INNER JOIN subscription_plans sp
        ON sp.id = spf.plan_id AND sp.is_active = true
@@ -51,9 +108,15 @@ export async function getFeatureAccessInfo(
        AND lower(sp.id) <> 'trial'
      ORDER BY sp.sort_order ASC NULLS LAST,
               (sp.price_monthly IS NULL) ASC,
-              sp.price_monthly ASC NULLS LAST`,
-    [registryFeatureId]
-  );
+              sp.price_monthly ASC NULLS LAST`;
+  let rows: CatalogueRow[];
+  try {
+    rows = await db.queryRows<CatalogueRow>(select('sp.is_public,'), [registryFeatureId]);
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42703') throw error;
+    rows = await db.queryRows<CatalogueRow>(select('true AS is_public,'), [registryFeatureId]);
+  }
+  if (upgradeFilter) rows = pickUpgradePlansForFeature(rows, upgradeFilter);
 
   const allPlans: FeatureAccessPlanRow[] = rows.map((r) => ({
     planId: r.plan_id,
@@ -64,6 +127,7 @@ export async function getFeatureAccessInfo(
         ? r.price_monthly
         : parseFloat(String(r.price_monthly ?? '0')) || 0,
     sortOrder: r.sort_order ?? 0,
+    productLine: r.product_line ?? 'billing',
   }));
 
   const lowestPlan = allPlans.length > 0 ? allPlans[0] : null;

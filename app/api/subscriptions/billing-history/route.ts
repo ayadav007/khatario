@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { queryRows } from '@/lib/db';
 import { documentKind, type GstMode } from '@/lib/platform-tax';
 import {
@@ -44,6 +45,10 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request);
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+
+    // Billing history is for the people who may change the plan (owner or primary admin), not every staff user.
+    const guard = await applySubscriptionMutationGuard(request, businessId);
+    if (guard) return guard;
 
     let transactions: BillingTxRow[] = [];
     try {
@@ -113,7 +118,7 @@ export async function GET(request: NextRequest) {
     const history = transactions.map((tx) => {
       const moduleKey =
         tx.module_key ?? productLineToModuleKey(tx.product_line ?? 'billing');
-      const planName = tx.plan_display_name ?? tx.plan_id ?? 'Plan';
+      const planName = tx.plan_display_name ?? 'Plan';
       const isRefund = tx.type === 'refund';
       // A refund is shown as money going back: negative, with a plain label (never the internal row id).
       const amount = (isRefund ? -1 : 1) * Number(tx.total_amount ?? tx.amount ?? 0);

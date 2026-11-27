@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { userCanMutateSubscription } from '@/lib/security/require-subscription-mutation';
+import { computePlanAmount, normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { PLATFORM_MODULE_LABELS, type PlatformModule } from '@/lib/platform-modules';
 import { getModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
@@ -56,6 +58,10 @@ export async function GET(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
+    // The same permission the plan-change routes require. Staff without it see the plan name only.
+    const userId = getUserIdFromRequest(request);
+    const canManageBilling = !!userId && (await userCanMutateSubscription(userId, businessId));
+
     const [ctx, moduleSubs] = await Promise.all([
       getBusinessPlatformContext(businessId),
       getModuleSubscriptions(businessId, true),
@@ -105,11 +111,13 @@ export async function GET(request: NextRequest) {
           price_3year: number | null;
           currency: string;
           features: unknown;
+          scheduled_plan_display_name: string | null;
         }>(
           `SELECT display_name AS plan_display_name, description AS plan_description,
-                  price_monthly, price_yearly, price_3year, currency, features
+                  price_monthly, price_yearly, price_3year, currency, features,
+                  (SELECT display_name FROM subscription_plans WHERE id = $2) AS scheduled_plan_display_name
            FROM subscription_plans WHERE id = $1`,
-          [limitsPlanId],
+          [limitsPlanId, sub.scheduled_plan_id ?? null],
         );
 
         let features =
@@ -142,6 +150,7 @@ export async function GET(request: NextRequest) {
           usability.operational;
 
         const usageTypes = USAGE_TYPES_BY_MODULE[moduleKey] ?? [];
+        const planDisplayName = planRow?.plan_display_name ?? 'Your plan';
         const usage = await Promise.all(
           usageTypes.map(async (limitType) => {
             const check = await checkLimit(businessId, limitType as Parameters<typeof checkLimit>[1]);
@@ -153,6 +162,21 @@ export async function GET(request: NextRequest) {
             };
           }),
         );
+
+        if (!canManageBilling) {
+          return {
+            module_key: moduleKey,
+            label: PLATFORM_MODULE_LABELS[moduleKey],
+            enabled: true,
+            subscription: {
+              plan_id: displayPlanId,
+              status: sub.status,
+              plan_display_name: planDisplayName,
+              can_manage_billing: false,
+            },
+            usage,
+          };
+        }
 
         return {
           module_key: moduleKey,
@@ -168,10 +192,16 @@ export async function GET(request: NextRequest) {
             scheduled_plan_id: sub.scheduled_plan_id ?? null,
             cancel_at_period_end: sub.cancel_at_period_end ?? false,
             billing_cycle: sub.billing_cycle ?? 'monthly',
-            plan_display_name: planRow?.plan_display_name ?? displayPlanId,
+            plan_display_name: planDisplayName,
             plan_description: planRow?.plan_description ?? '',
             price_monthly: planRow?.price_monthly ?? 0,
             price_yearly: planRow?.price_yearly ?? 0,
+            price_3year: planRow?.price_3year ?? null,
+            // The plan's list price for the cycle the customer is on: the card shows this, not always the monthly price.
+            price_for_cycle: planRow
+              ? computePlanAmount(planRow as Parameters<typeof computePlanAmount>[0], normalizeBillingCycle(sub.billing_cycle))
+              : 0,
+            scheduled_plan_display_name: planRow?.scheduled_plan_display_name ?? null,
             currency: planRow?.currency ?? 'INR',
             features,
             trial_days_remaining: trialDaysRemaining,
@@ -199,6 +229,7 @@ export async function GET(request: NextRequest) {
         allowed: consoleSeats.allowed,
       },
       primary_module: ctx.primaryModule,
+      can_manage_billing: canManageBilling,
     });
   } catch (error) {
     console.error('[GET /api/subscriptions/modules/current]', error);

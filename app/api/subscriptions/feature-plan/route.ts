@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { getFeatureAccessInfo } from '@/lib/subscription/feature-access-info';
+import { getFeatureRequiredModule } from '@/lib/subscription/module-entitlements';
+import { productLineForModule } from '@/lib/subscription/plan-module';
+import { currentTierPlans } from '@/lib/subscription/plan-offers';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/subscriptions/feature-plan
- * Get which plan(s) have a specific feature enabled (via subscription_plan_features).
+ * Which plan(s) an upgrade prompt may name for a feature (via subscription_plan_features): plans on sale
+ * (never a hidden plan), with a price (never a free plan), of the feature's product, and above the plan the
+ * business is on now. The first is the lowest tier, the cheapest of those on equal tier.
  *
  * Query params:
  * - feature_key: The feature key to check (e.g. 'template_customization', 'party_pricing')
@@ -22,7 +28,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const info = await getFeatureAccessInfo(featureKey);
+    const owner = getFeatureRequiredModule(featureKey);
+    const productLine = owner ? productLineForModule(owner) : null;
+    const current = await currentTierPlans(getSessionScopedBusinessId(request), productLine);
+    const info = await getFeatureAccessInfo(featureKey, { onSaleOnly: true, productLine, current });
 
     if (!info.lowestPlan || info.allPlans.length === 0) {
       return NextResponse.json({

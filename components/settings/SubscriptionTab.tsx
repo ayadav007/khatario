@@ -19,6 +19,15 @@ import {
 import type { PlatformModule } from '@/lib/platform-modules';
 import Link from 'next/link';
 import { anyTax, formatPlanDate, formatSignedRupees, historyView } from '@/lib/subscription/renewal-view';
+import {
+  PAYMENT_POLL_INTERVAL_MS,
+  PAYMENT_RETURN_PARAMS,
+  nextPollStep,
+  parsePaymentReturn,
+  paymentScreen,
+  type PaymentReturn,
+  type ServerCheckoutStatus,
+} from '@/lib/subscription/payment-return';
 
 interface CurrentSubscription {
   subscription_id: string;
@@ -52,6 +61,7 @@ interface CurrentSubscription {
   is_operational?: boolean;
   is_grace_period_active?: boolean;
   grace_days_remaining?: number | null;
+  scheduled_plan_display_name?: string | null;
   enabled_features: { id: string; label: string; category: string; description: string | null }[];
 }
 
@@ -119,19 +129,19 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponResult, setCouponResult] = useState<{ valid: boolean; message?: string } | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  // False when the server says this user may not see billing or change plans (staff without the owner/admin role).
+  const [canManageBilling, setCanManageBilling] = useState(true);
+
+  // Coming back from the payment page: what the server says about the payment, never the URL alone.
+  const [paymentReturn, setPaymentReturn] = useState<PaymentReturn | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<ServerCheckoutStatus | null>(null);
+  const [paymentTimedOut, setPaymentTimedOut] = useState(false);
+  const [paymentMissing, setPaymentMissing] = useState(false);
 
   const authFetchOpts: RequestInit = { credentials: 'include' };
 
-  /** Trial is signup-only; only show the Trial card when it is the current plan. */
-  const plansForChangeModal = useMemo(
-    () =>
-      availablePlans.filter(
-        (p) =>
-          p.id === subscription?.plan_id ||
-          (p.id !== TRIAL_PLAN_ID && (p as { is_public?: boolean }).is_public !== false)
-      ),
-    [availablePlans, subscription?.plan_id]
-  );
+  /** The server lists only plans on sale plus the plan the business is on now (`/api/subscriptions/plans`). */
+  const plansForChangeModal = availablePlans;
 
   const currentPlanSortOrder = useMemo(
     () => availablePlans.find((p) => p.id === subscription?.plan_id)?.sort_order ?? 0,
@@ -145,29 +155,74 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     fetchBillingHistory();
   }, [businessId]);
 
+  // Read the return once, then clear the address bar so a reload does not repeat it.
   useEffect(() => {
-    const payment = searchParams.get('payment');
-    if (!payment) return;
-
-    if (payment === 'success') {
-      const planLabel = searchParams.get('plan');
-      toast.success(
-        planLabel
-          ? `Payment received! Welcome to ${decodeURIComponent(planLabel)}.`
-          : 'Payment received! Your plan will update shortly.',
-      );
-      setCelebrationPlan(planLabel ? decodeURIComponent(planLabel) : 'your new plan');
-      fetchSubscription();
-      fetchBillingHistory();
-    } else if (payment === 'cancelled') {
-      toast.error('Payment was cancelled. You can try again anytime.');
-    }
-
+    const ret = parsePaymentReturn(searchParams);
+    if (!ret) return;
+    setPaymentReturn(ret);
+    setPaymentStatus(null);
+    setPaymentTimedOut(false);
+    setPaymentMissing(false);
     const url = new URL(window.location.href);
-    url.searchParams.delete('payment');
-    url.searchParams.delete('plan');
+    for (const name of PAYMENT_RETURN_PARAMS) url.searchParams.delete(name);
     window.history.replaceState({}, '', url.pathname + url.search);
   }, [searchParams]);
+
+  // Ask the server every few seconds, for up to two minutes, until it says the payment is settled.
+  useEffect(() => {
+    if (!paymentReturn?.tx || paymentReturn.hint === 'cancelled') return;
+    const tx = paymentReturn.tx;
+    const startedAt = Date.now();
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const check = async () => {
+      let result: ServerCheckoutStatus | null = null;
+      try {
+        const response = await fetch(
+          `/api/subscriptions/checkout/status?tx=${encodeURIComponent(tx)}`,
+          authFetchOpts,
+        );
+        if (stopped) return;
+        if (response.status === 401) {
+          setSessionExpired(true);
+          return;
+        }
+        if (response.status === 404) {
+          setPaymentMissing(true);
+          return;
+        }
+        if (response.ok) result = (await response.json()) as ServerCheckoutStatus;
+      } catch {
+        // A failed call is retried like a pending answer.
+      }
+      if (stopped) return;
+      if (result) setPaymentStatus(result);
+      const step = nextPollStep(Date.now() - startedAt, result);
+      if (step === 'again') {
+        timer = setTimeout(check, PAYMENT_POLL_INTERVAL_MS);
+        return;
+      }
+      if (step === 'timeout') {
+        setPaymentTimedOut(true);
+        return;
+      }
+      if (result?.status === 'completed') {
+        fetchSubscription();
+        fetchModulePlans();
+        fetchBillingHistory();
+        fetchUsageData();
+        if (result.kind === 'subscription' && result.plan_name) setCelebrationPlan(result.plan_name);
+      }
+    };
+
+    void check();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per return
+  }, [paymentReturn]);
 
   async function fetchModulePlans() {
     setModulePlansLoading(true);
@@ -179,6 +234,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       }
       if (response.ok) {
         const data = await response.json();
+        if (data.can_manage_billing === false) setCanManageBilling(false);
         setModulePlans(data.modules ?? []);
         if (data.console_seats) {
           setConsoleSeats({ current: data.console_seats.current, max: data.console_seats.max });
@@ -276,6 +332,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       }
       if (response.ok) {
         const data = await response.json();
+        if (data.subscription?.can_manage_billing === false) setCanManageBilling(false);
         setSubscription(data.subscription);
       }
     } catch (error) {
@@ -362,6 +419,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       const response = await fetch('/api/subscriptions/billing-history', {
         credentials: 'include',
       });
+      if (response.status === 403) {
+        setCanManageBilling(false);
+        setBillingHistory([]);
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         const rows = data.history || data.transactions || [];
@@ -459,6 +521,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       // Coupons are redeemed at checkout for the plan being bought, so check the current plan
       // (if paid) and then each paid plan, rather than only the current (often trial/free) plan.
       const paidPlans = availablePlans
+        .filter((p) => p.offer?.selectable !== false)
         .filter((p) => Number(p.price_monthly) > 0 || Number(p.price_yearly) > 0)
         .sort((a, b) => a.sort_order - b.sort_order);
       const current = subscription ? paidPlans.find((p) => p.id === subscription.plan_id) : undefined;
@@ -577,8 +640,55 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   const useModulePlans = modulePlans.length > 0;
   const showTaxColumn = anyTax(billingHistory);
 
+  const screen = paymentReturn
+    ? paymentScreen(paymentReturn, paymentStatus, paymentTimedOut, paymentMissing)
+    : null;
+  const screenStyle = {
+    neutral: 'border-border bg-surface text-text-primary',
+    success: 'border-green-200 bg-green-50 text-green-900 dark:border-green-800/60 dark:bg-green-950/30 dark:text-green-200',
+    warning: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200',
+    danger: 'border-red-200 bg-red-50 text-red-900 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-200',
+  } as const;
+
   return (
     <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
+      {screen && paymentReturn && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`flex items-start gap-3 rounded-xl border p-4 ${screenStyle[screen.tone]}`}
+        >
+          {screen.phase === 'checking' ? (
+            <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" />
+          ) : screen.phase === 'done' ? (
+            <Check className="mt-0.5 h-5 w-5 shrink-0" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{screen.title}</p>
+            <p className="mt-1 text-sm">{screen.body}</p>
+          </div>
+          {screen.phase !== 'checking' ? (
+            <button
+              type="button"
+              onClick={() => setPaymentReturn(null)}
+              className="shrink-0 rounded-lg p-1 opacity-60 hover:opacity-100"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {!canManageBilling && (
+        <div className="rounded-xl border border-border bg-gray-50 p-4 text-sm text-text-secondary dark:bg-slate-800/40">
+          Only the business owner or an admin can see billing details and change plans. Ask them if the
+          plan needs to change.
+        </div>
+      )}
+
       {isExpiredOrInactive && subscription && (
         <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-4 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -587,8 +697,10 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
               Subscription {subscription.status === 'expired' ? 'expired' : 'inactive'}
             </p>
             <p className="text-sm text-amber-700 mt-1">
-              Renew or change your plan to restore full access. You are currently on{' '}
-              {subscription.plan_display_name}.
+              {canManageBilling
+                ? 'Renew or change your plan to restore full access. '
+                : 'Ask the business owner or an admin to renew the plan. '}
+              You are currently on {subscription.plan_display_name}.
             </p>
           </div>
         </div>
@@ -641,6 +753,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                 usage={mod.usage}
                 availablePlans={availablePlans}
                 businessId={businessId}
+                readOnly={!canManageBilling}
                 onPlanChanged={() => {
                   fetchModulePlans();
                   fetchSubscription();
@@ -665,9 +778,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                 <h2 className="settings-section-title mb-0">{subscription.plan_display_name}</h2>
                 <p className="text-sm text-text-secondary">{subscription.plan_description}</p>
               </div>
-              <Button size="sm" variant="primary" onClick={() => setShowUpgradeModal(true)}>
-                Change plan
-              </Button>
+              {canManageBilling ? (
+                <Button size="sm" variant="primary" onClick={() => setShowUpgradeModal(true)}>
+                  Change plan
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -807,7 +922,8 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
         </div>
       </div>
 
-      {/* Bottom row: Billing + Coupon & Add-ons side by side */}
+      {/* Bottom row: Billing + Coupon & Add-ons side by side (owner and admins only) */}
+      {canManageBilling ? (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Billing History — wider */}
         <div className="lg:col-span-2 bg-surface dark:bg-slate-900/80 rounded-xl shadow-sm border border-border p-6">
@@ -941,9 +1057,10 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
           )}
         </div>
       </div>
+      ) : null}
 
       {/* Cancel Subscription — legacy single-plan UI only */}
-      {!useModulePlans && subscription && !isFreePlan && !isCancelled && (
+      {canManageBilling && !useModulePlans && subscription && !isFreePlan && !isCancelled && (
         <div className="bg-surface dark:bg-slate-900/80 rounded-xl shadow-sm border border-border p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -1005,7 +1122,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
       )}
 
       {/* Upgrade Modal */}
-      {showUpgradeModal && subscription && !useModulePlans && (
+      {canManageBilling && showUpgradeModal && subscription && !useModulePlans && (
         <SubscriptionChangePlanModal
           currentPlanId={subscription.plan_id}
           scheduledPlanId={subscription.scheduled_plan_id}

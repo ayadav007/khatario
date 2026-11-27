@@ -143,8 +143,8 @@ export async function createAddonCheckout(
     },
   });
 
-  const returnUrl = `${appBaseUrl()}/settings/subscription?addon=success&type=${encodeURIComponent(input.addonType)}`;
-  const cancelUrl = `${appBaseUrl()}/settings/subscription?addon=cancelled`;
+  const returnUrl = `${appBaseUrl()}/settings/subscription?addon=success&tx=${encodeURIComponent(pending.id)}`;
+  const cancelUrl = `${appBaseUrl()}/settings/subscription?addon=cancelled&tx=${encodeURIComponent(pending.id)}`;
 
   const link = await provider.createHostedPaymentLink({
     businessId: input.businessId,

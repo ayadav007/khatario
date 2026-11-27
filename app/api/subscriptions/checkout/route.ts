@@ -13,6 +13,7 @@ import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { normalizePlatformModule } from '@/lib/platform-modules';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { planOpenToBusiness } from '@/lib/subscription/public-plans';
+import { PLAN_NOT_ON_SALE_MESSAGE } from '@/lib/subscription/plan-offer-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Plans kept only for existing customers (is_public = false) can be renewed, not newly bought.
     if (!(await planOpenToBusiness(tenant.businessId, plan_id))) {
       return NextResponse.json(
-        { error: 'This plan is no longer offered. Choose one of the current plans.', code: 'PLAN_NOT_OFFERED' },
+        { error: PLAN_NOT_ON_SALE_MESSAGE, code: 'PLAN_NOT_OFFERED' },
         { status: 400 },
       );
     }

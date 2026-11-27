@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import * as db from '@/lib/db';
 import { hasWhatsAppBotAddon, getBusinessAddons } from '@/lib/subscription';
 
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
+
+    // Never for a customer: only a signed-in platform admin, and only outside production.
+    const admin = await requirePlatformRequest(request, 'viewer');
+    if (!admin.ok) return admin.response;
 
     const searchParams = request.nextUrl.searchParams;
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));

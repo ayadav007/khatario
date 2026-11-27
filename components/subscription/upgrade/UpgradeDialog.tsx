@@ -47,7 +47,7 @@ function maskPhone(phone?: string | null): string | null {
 function cheapestPaidPlan(plans: UpgradePlanRow[], line: string): UpgradePlanRow | null {
   return (
     plans
-      .filter((p) => isPurchasableUpgradePlan(p.id) && p.is_public !== false && (p.product_line ?? 'billing') === line)
+      .filter((p) => isPurchasableUpgradePlan(p.id) && p.offer?.on_sale !== false && !p.offer?.current && (p.product_line ?? 'billing') === line)
       .filter((p) => Number(p.price_monthly) > 0)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0] ?? null
   );

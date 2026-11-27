@@ -15,6 +15,8 @@ import { getModuleSubscription, upsertModuleSubscription } from '@/lib/subscript
 import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lifecycle';
 import { decideZeroPriceChange } from '@/lib/subscription/zero-price-change';
 import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
+import { planOpenToBusiness } from '@/lib/subscription/public-plans';
+import { PLAN_NOT_ON_SALE_MESSAGE } from '@/lib/subscription/plan-offer-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +80,13 @@ export async function POST(request: NextRequest) {
     const cycle = 'monthly' as const;
 
     if (amount > 0) {
+      // A priced plan that is not on sale can only be renewed by a business already on it (through checkout).
+      if (!(await planOpenToBusiness(business_id, plan_id))) {
+        return NextResponse.json(
+          { error: PLAN_NOT_ON_SALE_MESSAGE, code: 'PLAN_NOT_OFFERED' },
+          { status: 400 },
+        );
+      }
       if (await isPlatformPaymentConfigured()) {
         return NextResponse.json(
           {

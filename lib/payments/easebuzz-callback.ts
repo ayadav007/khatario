@@ -54,14 +54,12 @@ export async function handleEasebuzzCallback(
     if (r.outcome) {
       // Only a settled payment is success; `duplicate`/`pending`/`ignored` never read as paid.
       const done = r.outcome === 'paid';
+      // The return carries the payment id and nothing else about the plan: the screen asks the server.
+      const tx = r.billingTransactionId ? `&tx=${encodeURIComponent(r.billingTransactionId)}` : '';
       if (r.checkoutType === 'whatsapp_addon') {
-        redirectPath = done
-          ? `/settings/subscription?addon=success&type=${encodeURIComponent(r.addonType ?? '')}`
-          : `/settings/subscription?addon=${r.outcome === 'failed' ? 'cancelled' : 'pending'}`;
+        redirectPath = `/settings/subscription?addon=${done ? 'success' : r.outcome === 'failed' ? 'cancelled' : 'pending'}${tx}`;
       } else {
-        redirectPath = done
-          ? `/settings/subscription?payment=success&plan=${encodeURIComponent(r.planId ?? '')}`
-          : `/settings/subscription?payment=${r.outcome === 'failed' ? 'cancelled' : 'pending'}`;
+        redirectPath = `/settings/subscription?payment=${done ? 'success' : r.outcome === 'failed' ? 'cancelled' : 'pending'}${tx}`;
       }
     }
     return { httpStatus: status, body: { ...r }, redirectPath };

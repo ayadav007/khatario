@@ -13,6 +13,7 @@ import {
   startOfLocalToday,
 } from '@/lib/subscription/date-only';
 import { isConnectAgentSeat } from '@/lib/users/connect-seats';
+import { bannerCompactMessage, bannerCta, bannerMessage } from '@/lib/subscription/banner-view';
 
 interface SubscriptionStatus {
   plan_id: string;
@@ -21,6 +22,12 @@ interface SubscriptionStatus {
   end_date: string | null;
   cancel_at_period_end: boolean;
   grace_period_end: string | null;
+  /** From the server: the plan ended and the grace days are running. */
+  in_grace?: boolean;
+  grace_days_remaining?: number | null;
+  ends_on?: string | null;
+  grace_ends_on?: string | null;
+  can_manage_billing?: boolean;
 }
 
 type BannerType = 'trial_ending' | 'trial_expired' | 'grace_expiring' | 'grace_expired' | 'cancelled' | null;
@@ -34,6 +41,10 @@ export function SubscriptionBanner() {
   const [bannerType, setBannerType] = useState<BannerType>(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
   const [cancelDate, setCancelDate] = useState('');
+  const [endsOn, setEndsOn] = useState<string | null>(null);
+  const [graceEndsOn, setGraceEndsOn] = useState<string | null>(null);
+  // Staff without the owner/admin role are told to ask; the buttons would fail for them.
+  const [canManage, setCanManage] = useState(true);
   const hideForConnectAgent = isConnectAgentSeat(user);
 
   useEffect(() => {
@@ -45,6 +56,9 @@ export function SubscriptionBanner() {
       .then((data) => {
         const sub = data.subscription;
         if (!sub) return;
+        setCanManage(sub.can_manage_billing !== false);
+        setEndsOn(sub.ends_on ?? null);
+        setGraceEndsOn(sub.grace_ends_on ?? null);
 
         const now = new Date();
 
@@ -63,9 +77,16 @@ export function SubscriptionBanner() {
           return;
         }
 
+        // The server decides who is in grace (the same answer entitlement uses).
+        if (sub.in_grace === true) {
+          setDaysRemaining(Number(sub.grace_days_remaining ?? 0));
+          setBannerType('grace_expiring');
+          return;
+        }
+
         if (sub.grace_period_end) {
           const graceEnd = new Date(sub.grace_period_end);
-          if (graceEnd > now) {
+          if (sub.in_grace === undefined && graceEnd > now) {
             setDaysRemaining(Math.ceil((graceEnd.getTime() - now.getTime()) / 86400000));
             setBannerType('grace_expiring');
             return;
@@ -125,44 +146,40 @@ export function SubscriptionBanner() {
       border: 'border-yellow-300',
       text: 'text-yellow-800',
       icon: <Clock className="w-4 h-4" />,
-      message:
-        daysRemaining === 0
-          ? 'Today is the last day of your trial. Upgrade to keep full access.'
-          : `Your trial ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Upgrade to keep full access.`,
-      cta: 'Choose a plan',
+      message: bannerMessage({ kind: 'trial_ending', daysRemaining }),
+      cta: bannerCta('trial_ending'),
     },
     trial_expired: {
       bg: 'bg-orange-50',
       border: 'border-orange-300',
       text: 'text-orange-800',
       icon: <AlertTriangle className="w-4 h-4" />,
-      message:
-        'Your trial has expired. You are on the Free plan — upgrade anytime to restore full access.',
-      cta: 'Choose a plan',
+      message: bannerMessage({ kind: 'trial_expired', daysRemaining }),
+      cta: bannerCta('trial_expired'),
     },
     grace_expiring: {
       bg: 'bg-orange-50',
       border: 'border-orange-400',
       text: 'text-orange-900',
       icon: <AlertTriangle className="w-4 h-4" />,
-      message: `Grace period: ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining. After this, your account will be restricted to the free plan.`,
-      cta: 'Upgrade now',
+      message: bannerMessage({ kind: 'grace_expiring', daysRemaining, endsOn, graceEndsOn }),
+      cta: bannerCta('grace_expiring'),
     },
     grace_expired: {
       bg: 'bg-red-50',
       border: 'border-red-300',
       text: 'text-red-800',
       icon: <Shield className="w-4 h-4" />,
-      message: 'Your account has been restricted to the free plan. Upgrade to restore full access.',
-      cta: 'Upgrade',
+      message: bannerMessage({ kind: 'grace_expired', daysRemaining }),
+      cta: bannerCta('grace_expired'),
     },
     cancelled: {
       bg: 'bg-blue-50',
       border: 'border-blue-300',
       text: 'text-blue-800',
       icon: <Clock className="w-4 h-4" />,
-      message: `Your subscription will end on ${cancelDate}. You have full access until then.`,
-      cta: 'Reactivate',
+      message: bannerMessage({ kind: 'cancelled', daysRemaining, cancelDate }),
+      cta: bannerCta('cancelled'),
     },
   };
 
@@ -188,13 +205,12 @@ export function SubscriptionBanner() {
         >
           {config.icon}
           <span className="font-medium truncate">
-            {isCompact
-              ? `Trial ends in ${daysRemaining}d — upgrade to keep access`
-              : config.message}
+            {isCompact ? bannerCompactMessage({ kind: bannerType, daysRemaining }) : config.message}
+            {!canManage ? ' Ask the business owner or an admin.' : ''}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {upgradeModal && (bannerType === 'trial_ending' || bannerType === 'trial_expired') ? (
+          {!canManage ? null : upgradeModal && (bannerType === 'trial_ending' || bannerType === 'trial_expired') ? (
             <button
               type="button"
               onClick={() =>

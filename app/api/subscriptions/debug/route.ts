@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { queryOne, queryRows } from '@/lib/db';
 import { checkLimit } from '@/lib/subscription';
 
@@ -7,13 +8,17 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/subscriptions/debug
- * Debug endpoint — development only; uses authenticated business from session (no cross-tenant query param).
+ * Debug endpoint — development only (never in production) and platform admins only; uses authenticated business from session (no cross-tenant query param).
  */
 export async function GET(request: NextRequest) {
   try {
     if (process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
+
+    // Never for a customer: only a signed-in platform admin, and only outside production.
+    const admin = await requirePlatformRequest(request, 'viewer');
+    if (!admin.ok) return admin.response;
 
     const tenant = requireTenantBusinessId(request);
     if (!tenant.ok) return tenant.response;

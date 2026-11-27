@@ -15,10 +15,9 @@ import {
   SubscriptionChangePlanModal,
   type SubscriptionAvailablePlan,
 } from '@/components/subscription/SubscriptionChangePlanModal';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { productLineForModule } from '@/lib/platform-modules';
-import { formatPlanDate, renewalView } from '@/lib/subscription/renewal-view';
+import { formatPlanDate, formatRupees, renewalView } from '@/lib/subscription/renewal-view';
 import type { PlatformModule } from '@/lib/platform-modules';
 
 export type ModuleSubscriptionDetail = {
@@ -33,6 +32,10 @@ export type ModuleSubscriptionDetail = {
   plan_description: string;
   price_monthly: number;
   price_yearly: number;
+  /** The plan's list price for the cycle the customer is on, from the server. */
+  price_for_cycle?: number | null;
+  /** The scheduled downgrade's plan name, from the server (never its id). */
+  scheduled_plan_display_name?: string | null;
   features: {
     limits: Record<string, number>;
   };
@@ -77,6 +80,7 @@ export function ModuleSubscriptionCard({
   cancellingDowngrade,
   cancellingSubscription,
   undoingCancel,
+  readOnly = false,
 }: {
   moduleKey: PlatformModule;
   label: string;
@@ -91,6 +95,8 @@ export function ModuleSubscriptionCard({
   cancellingDowngrade: boolean;
   cancellingSubscription: boolean;
   undoingCancel: boolean;
+  /** The user may not manage billing: the card shows the plan name only, with no buttons. */
+  readOnly?: boolean;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [startWithRenew, setStartWithRenew] = useState(false);
@@ -98,21 +104,11 @@ export function ModuleSubscriptionCard({
 
   const productLine = productLineForModule(moduleKey);
 
-  const plansForModule = useMemo(() => {
-    return availablePlans.filter((p) => {
-      const line = p.product_line ?? 'billing';
-      if (line !== productLine) return false;
-      if (p.id === TRIAL_PLAN_ID || p.id === 'hr_trial') {
-        return subscription?.plan_id === p.id;
-      }
-      // Complimentary with Billing — not a purchasable SKU (only show if current).
-      if (p.id === HR_STAFF_LITE_PLAN_ID) {
-        return subscription?.plan_id === HR_STAFF_LITE_PLAN_ID;
-      }
-      if (p.id === 'connect_free') return subscription?.plan_id === 'connect_free';
-      return true;
-    });
-  }, [availablePlans, productLine, subscription?.plan_id]);
+  // The server decides what is offered: plans on sale, plus the plan the business is on now.
+  const plansForModule = useMemo(
+    () => availablePlans.filter((p) => (p.product_line ?? 'billing') === productLine),
+    [availablePlans, productLine],
+  );
 
   const currentPlanSortOrder = useMemo(
     () => plansForModule.find((p) => p.id === subscription?.plan_id)?.sort_order ?? 0,
@@ -127,6 +123,15 @@ export function ModuleSubscriptionCard({
         <Link href="/settings/products" className="link-primary mt-3 inline-block text-sm">
           Manage products
         </Link>
+      </div>
+    );
+  }
+
+  if (readOnly) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-text-muted">{label}</p>
+        <h2 className="settings-section-title mb-0">{subscription.plan_display_name}</h2>
       </div>
     );
   }
@@ -199,8 +204,16 @@ export function ModuleSubscriptionCard({
             </div>
           ) : (
             <div className="flex items-baseline gap-2">
-              <span className="type-kpi-value">₹{subscription.price_monthly}</span>
-              <span className="text-text-secondary">/month</span>
+              <span className="type-kpi-value">
+                {formatRupees(Number(subscription.price_for_cycle ?? subscription.price_monthly))}
+              </span>
+              <span className="text-text-secondary">
+                {subscription.billing_cycle === 'three_year'
+                  ? ' for 3 years'
+                  : subscription.billing_cycle === 'yearly'
+                    ? '/year'
+                    : '/month'}
+              </span>
             </div>
           )}
         </div>
@@ -271,8 +284,9 @@ export function ModuleSubscriptionCard({
               <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
                 Downgrade to{' '}
                 <strong>
-                  {plansForModule.find((p) => p.id === subscription.scheduled_plan_id)
-                    ?.display_name || subscription.scheduled_plan_id}
+                  {subscription.scheduled_plan_display_name ??
+                    plansForModule.find((p) => p.id === subscription.scheduled_plan_id)?.display_name ??
+                    'a different plan'}
                 </strong>{' '}
                 on {formatDate(subscription.end_date)}
               </p>
