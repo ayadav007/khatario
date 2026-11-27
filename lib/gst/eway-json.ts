@@ -27,6 +27,7 @@ const dmy = (d: string) => {
   return `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
 };
 const cut = (s: string | null | undefined, n: number) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+export { STATE, PIN, r2, dmy, cut };
 
 /** Challan purpose or reason for transport → sub-supply type. */
 export function challanSubSupply(c: { challan_kind?: string | null; purpose?: string | null; reason_for_transportation?: string | null }): { code: number; desc: string } {
@@ -178,6 +179,8 @@ async function transferParties(db: Queryable, businessId: string, transferId: st
   };
   return { from: await end(t.from_location_id), to: await end(t.to_location_id) };
 }
+
+export { seller as sellerParty, party as customerParty };
 
 function bill(p: {
   docType: 'INV' | 'CHL' | 'BIL';
