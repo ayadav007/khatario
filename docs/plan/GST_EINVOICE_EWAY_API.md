@@ -49,147 +49,105 @@ Not present: any IRN, ack or signed-QR column; any outbound GSP call; enforcemen
 - New since 15/06/2026: `ship_to_gstin` mandatory for transaction types 2 (Bill To – Ship To) and
   4; `URP` when unregistered. Voluntary closure endpoint `ewayBillClosure/`.
 
-## Decisions
+## Decisions (revised 27 Nov 2026 after Masters India's reply)
 
-1. **One Khatario enterprise account at Masters India** (owner, 27 Nov 2026). Khatario's own
-   Masters India username and password live in server env, never in the database. Customers never
-   see a Masters India login.
-2. **Khatario pays Masters India; customers pay Khatario through their plan.** The customer's
-   only step outside Khatario is creating a free API user on the government portal. The cost per
-   IRN or e-way bill has to be covered by plan prices and limits (see "Billing and limits").
-3. **Per-GSTIN API credentials, entered by the customer** (the Vyapar pattern, seen in its
-   "GSP Login" popup). For each GSTIN the customer logs in to the government portal and creates an
-   API user for the GSP "Masters India Private Limited":
-   - e-way bill portal: Registration → For GSP → Add/New (username gets a fixed prefix like
-     `xxxx_API_`, password at most 15 characters);
-   - e-invoice portal: API Registration → create API user through GSP (believed to offer reusing
-     the e-way bill API credentials when the same GSP is registered; confirm before saying so in
-     the help text).
-   The customer types that API username and password into Khatario; Khatario passes them to
-   Masters India for that GSTIN and verifies at once. No pending state, no admin queue.
-4. **When the option appears.** "Generate e-invoice" on every B2B / SEZ / export / deemed export
-   invoice, credit note and debit note of a GSTIN the business has marked as covered by
-   e-invoicing (from a start date). E-invoicing depends on aggregate turnover, not invoice value;
-   the existing ₹5 crore compliance alert asks the business to turn it on. "Generate e-way bill"
-   when goods value is over ₹50,000, or whenever the user asks. The GSP login is asked at the
-   moment of need (first click) and from Settings → Integrations.
-5. **Production access.** Sandbox only until Masters India issues production credentials; the
-   base URL is a per-environment setting, never hard-coded.
+Masters India confirmed the PDFs are complete. They define one way in: `token-auth/` with a
+**Masters India account** login, then `user_gstin` on each call. A taxpayer's government-portal
+API credentials are never sent through the API; they are linked to the GSTIN inside Masters
+India when the GSTIN is added to an account. An earlier draft of this section said Khatario would
+pass those portal credentials through the API. That was wrong.
 
-## Questions for Masters India (before Phase 1)
+1. **Each business connects its own Masters India account** (the Vyapar pattern: its "GSP Login"
+   popup asks for the Masters India username and password, "different from e-way bill / e-invoice
+   / GST portal credentials"). The owner first chose "one Khatario account"; that model has no
+   documented way to add a customer's GSTIN except by hand in Masters India's dashboard, so the
+   plans build the per-business model. **Confirmed by the owner, 27 Nov 2026.** Switching later is one function:
+   `loadGspCredentials` (Plan 1, Task 2) returns the env login instead of the stored one.
+2. **Who pays.** With per-business accounts the customer's commercial relationship is with
+   Masters India unless a partner deal says otherwise; Khatario gates the feature by plan.
+   Pricing, partner terms and production go-live are not in the PDFs and are still open with
+   Masters India.
+3. **What the customer does once, outside Khatario.** Sign up with Masters India, add the GSTIN
+   there, and on the government portals create an API user for the GSP "Masters India Private
+   Limited" (e-way bill portal: Registration → For GSP; e-invoice portal: API Registration).
+   Then enter the Masters India login in Khatario; Khatario verifies it with `token-auth/`.
+4. **When the options appear.** "Generate e-invoice" on every B2B / SEZ / export / deemed-export
+   tax invoice of a GSTIN the business has marked as covered by e-invoicing from a start date
+   (turnover rule, not invoice value). "Generate e-way bill" on final invoices and delivery
+   challans with goods; the UI suggests it when goods value is over ₹50,000. The connection is
+   asked for at the first click and from Settings → Integrations.
+5. **Environment.** `MASTERSINDIA_BASE_URL` per environment; production refuses to start a call
+   without it, so a production server can never talk to the sandbox by accident.
 
-1. How does an enterprise account pass a client GSTIN's NIC API username and password (extra
-   endpoint, headers or body fields)? The PDFs only show `user_gstin`. How do we verify them?
-2. Pricing: per IRN, per e-way bill, per GSTIN, per API call (are GET, cancel and lookups billed?),
-   or annual slabs? Minimum commitment?
-3. Is one set of client credentials enough for both e-invoice and e-way bill APIs?
-4. Production go-live steps, rate limits, uptime commitment, support contact.
-5. Is the client password stored by Masters India after the first link, or must we send it on
-   every call (decides whether Khatario stores it at all)?
+## Limits
 
-## Billing and limits
+- Enforce `max_eway_bills_per_month` (exists, never checked) and add `max_einvoices_per_month`.
+  Count only successful API generations.
+- No polling, no repeated lookups: a call is made only on a user action.
 
-- Khatario is billed by Masters India, so every billable call is a cost. Avoid needless calls: no
-  polling, cache GSTIN lookups, verify credentials only on connect and reconnect.
-- Add a `max_einvoices_per_month` limit beside the existing `max_eway_bills_per_month`, count only
-  successful generations, and revisit "unlimited" on the business plan once the per-call price is
-  known. Consider top-up packs for heavy users.
-- Record each billable call (business, GSTIN, endpoint, result) in a small usage table so the
-  Masters India invoice can be reconciled and abuse spotted.
+## Implementation plans
 
-## Phase 1: Masters India client and connection
+| Plan | Scope | File |
+| --- | --- | --- |
+| 1 | Masters India client, connection page, e-way bills generated and managed through the API, monthly limit | `docs/superpowers/plans/2026-11-27-gsp-connection-eway-bills.md` |
+| 2 | E-invoice for sales invoices: IRN generate and cancel, invoice lock, e-way bill through the IRN, IRN and QR on the printed invoice | `docs/superpowers/plans/2026-11-27-e-invoice-irn.md` |
+| 3 (not written) | IRN for credit and debit notes, IRN block audited on every template and thermal print, phone app, "generate on finalise" setting, stock-transfer e-way bills through the API | to be planned after 1 and 2 are on staging |
 
-- `lib/gsp/mastersindia/client.ts`: base URL from env (`MASTERSINDIA_BASE_URL`), login, token cache
-  (in-process, keyed by credential, refresh before `exp`), `request()` that unwraps
-  `results`, maps `code !== 200` to a typed `GspError { nicCode, message, retryable }`, and logs
-  request ids without bodies (bodies carry party data).
-- Khatario's enterprise credentials: server env only (`MASTERSINDIA_USERNAME`,
-  `MASTERSINDIA_PASSWORD`).
-- Customer credentials: `business_integrations` provider `gst_gsp`, one row per business;
-  `config.gstins` lists each GSTIN with its NIC API username, status (`connected` | `failed`),
-  e-invoicing start date and last verified time; passwords in `secrets_enc` keyed by GSTIN, same
-  encryption as courier plugins (or not stored at all, per question 5). Never returned to the
-  browser.
-- Connect flow: GSTIN (picked from the business's registrations), API username, API password,
-  Connect → verify through Masters India → Connected, or a plain reason (wrong password, API user
-  not created, another GSP chosen). Reconnect when the password changes on the portal.
-- Help panel with the two portal steps (see Decisions 3), linked from "Haven't created the API
-  user?".
-- Settings → Integrations → "GST e-invoice & e-way bill" page (connect, reconnect, disconnect,
-  GSTIN cards, start dates), and the same connect popup shown on first "Generate" click.
-- Tests: client unit tests against recorded sandbox responses (success, NIC error, auth expiry).
+## Known gaps in the data (accepted for now)
 
-## Phase 2: e-way bills through the API
-
-Fix `lib/gst/eway-json.ts` first (these bugs also affect today's bulk-upload JSON):
-1. `transactionType` always 1. Work it out: Bill To ≠ Ship To → 2, Dispatch From ≠ Bill From → 3,
-   both → 4; send `ship_to_gstin` / `ship_to_tradename` for 2 and 4.
-2. Ship-to state comes from the customer's billing state; use the shipping state when the invoice
-   ships elsewhere (customers have `shipping_state` but no shipping state code: add or derive).
-3. Customer address is one text field, `addr2` always empty: split long addresses across both.
-4. `cessNonAdvolValue` and `otherValue` hard-coded to 0: take them from the invoice (other charges,
-   non-ad-valorem cess when present).
-5. `docNo` silently cut to 16 characters: refuse instead, with a message naming the limit.
-
-Then:
-- `lib/gsp/mastersindia/eway.ts`: map the parsed bill to the Masters India generate payload; wrap
-  cancel, Part B (`updateVehicleNumber/`), extend, transporter update, reject, closure, get.
-- Migration: on `eway_bills` add `generated_via` (`manual` | `api` | `irn`), `gsp_request_id`,
-  `print_url`, `last_synced_at`; nothing else changes shape.
-- `createEwayBill` / `updateEwayBill`: when the business is connected and the user picks
-  "Generate", call the API first, then write the register in the same transaction only on
-  success; manual entry stays as today.
-- Routing guard: refuse API generation for B2B or export tax invoices of an e-invoicing GSTIN and
-  send the user to "Generate IRN with e-way bill" (Phase 3).
-- Enforce `max_eway_bills_per_month` on generation (`lib/subscription/limit-registry.ts`), counting
-  API-generated bills only.
-- Distance: offer the Distance API (`distance/`) and allow 0 ("use the portal's distance").
-- UI: Generate button on invoice, challan and transfer pages and on `/eway-bills`; show NIC errors
-  in plain words; print link.
-
-## Phase 3: e-invoice (IRN)
-
-- Migration on `invoices`, `credit_notes`, `debit_notes`: `irn`, `irn_ack_no`, `irn_ack_date`,
-  `irn_signed_qr`, `irn_signed_invoice` (text), `irn_status` (`active` | `cancelled`),
-  `irn_cancelled_at`, `irn_cancel_reason`. Unique `(business_id, irn)`.
-- `lib/gsp/mastersindia/einvoice.ts`: payload builder (sharing seller, party and line helpers
-  with `eway-json.ts`), generate, cancel, get by IRN, get by document, generate EWB by IRN.
-- Pre-checks with clear messages: B2B / SEZ / export / deemed export only (never B2C); document
-  number ≤ 16 characters, not starting with `0`, `/` or `-`; HSN on every line; UQC on goods;
-  totals within the ₹1 tolerance and round-off within ±99.99; at most 1000 lines.
-- Lifecycle:
-  - Generate from a final invoice; optional transport details create the e-way bill in the same
-    call (`generated_via = 'irn'`).
-  - With an active IRN the invoice cannot be edited or amended
-    (`app/api/invoices/[id]/amend/route.ts`); the only way out is cancel within 24 hours, refused
-    while an active e-way bill exists.
-  - Cancelling the IRN offers to cancel the Khatario invoice too (existing cancel path,
-    `lib/invoices/cancel-invoice-accounting.ts`); cancelling the invoice cancels the IRN first.
-  - A cancelled IRN's document number cannot be reused: numbering must never hand it out again.
-- Replace the "Khatario does not create the IRN" notes (`ComposerDetails.tsx:374`,
-  `EwayBillField.tsx:121`) and update the compliance alert.
-
-## Phase 4: printing and phone app
-
-- IRN, ack number and date, and the signed QR (rendered as a QR image) on every A4 and thermal
-  template, credit and debit notes included; template field audit test extended.
-- Phone app: show IRN status and e-way bill details; generate actions after the web version is
-  proven on staging.
+- Non-ad-valorem cess is not stored on invoice lines; `cessNonAdvol` stays 0.
+- An invoice has one customer and a free-text shipping address, so a "ship to" party is the same
+  customer at another address unless the user types a different ship-to GSTIN when generating.
 
 ## Testing
 
-- Unit: payload builders against fixtures (intra-state, inter-state, export, SEZ, Bill To – Ship To,
-  CESS, bill of supply, challan, stock transfer), tolerance checks, routing guard.
-- DB tests on `kh_phase2_test`: register writes only after a successful (mocked) GSP call; IRN lock on
-  amend; limit enforcement.
-- Sandbox: a manual checklist on staging with the sandbox credentials from the owner (kept in
-  `.env`, never committed).
+- Unit tests with a fake `fetch` and fixtures recorded from the sandbox.
+- DB tests only on `kh_phase2_test`, with the GSP call injected.
+- A manual staging checklist at the end of each plan, run against the sandbox.
 
 ## Risks
 
-- PDF and sandbox disagree: keep fixtures from real sandbox responses and test against those.
-- GSP outage or slow NIC: generation must never leave a half-written invoice; the API call happens
-  before the database write, and a timeout shows "check status" (get by document) instead of
-  retrying blindly, since a retry can create a duplicate.
-- Party data quality (missing pincode, state code, HSN) will surface as NIC errors: validate
-  before calling and say which master record to fix.
+- PDF and sandbox disagree (schema typos, enum spellings): Plan 1 Task 1 records real sandbox
+  responses first and every later task tests against those.
+- Slow or failed GSP call: the API call happens outside any database transaction; on a timeout
+  the code looks the document up once (by document number) before reporting failure, because a
+  blind retry can create a duplicate.
+- Party data quality (missing pincode, state code, HSN): checked before calling, with a message
+  naming the record to fix.
+
+## Plan 1 status (27 Nov 2026): built, reviewed, not deployed
+
+18 commits on main, `64345163` to `19b7713a`, not pushed. Migration `477_eway_bills_gsp.sql` written and applied to
+the disposable test database only. Staging steps:
+`docs/superpowers/plans/2026-11-27-gsp-connection-eway-bills-staging-checklist.md`. **Deploy order: migration 477
+before the code**, because even a hand-typed e-way bill now writes the new columns.
+
+What the sandbox showed (recorded in `tests/fixtures/gsp/`):
+- A second generate for the same document number is not rejected: it returns the existing bill with an alert.
+  Khatario checks that bill's document number, date and status before recording it.
+- After a cancel, generating again on the same document number returns a new bill number.
+- The sandbox is lenient about spellings, so acceptance there does not prove the live system agrees.
+
+### Before production (open)
+
+1. Double clicks: two quick clicks on an action can send two portal requests. For cancel and close the second is
+   refused; for extend it may be accepted. Needs a row claim (a `pending_action` column, so a migration).
+2. Confirm on the live service: whether a repeated document number is rejected (NIC 604) or returns the existing bill;
+   whether a cancelled document number can be reused; the cancel reasons other than "Others"; the over-dimensional
+   vehicle type; the Part B request shape; extend (never run against the sandbox).
+3. Close recovery treats a blank or unknown portal status as closed (`lib/gst/eway-gsp-actions.ts`); treat it as
+   unknown and pass the portal's refusal on.
+4. `otherValue` should carry the difference between the invoice total and its lines; the plan limit check and the
+   insert are not atomic (concurrent generates can go one over); BH-series vehicle plates are refused by the form;
+   date displays do not pin `Asia/Kolkata`.
+5. Tests still missing: HTTP-level tests of the two routes; `buildEwayBill` on challan, supplier and transfer paths;
+   the 16-character refusal for challans. Screens were type-checked only, never seen in a browser before staging.
+6. A broken connection can be returned to the pool after a failed ROLLBACK (`release()` without the error); this
+   pattern predates this work.
+7. Masters India: pricing, partner terms, production URL and go-live.
+
+### Unrelated failures seen during the build (not caused by this work, not fixed)
+
+`tests/lib/gst/return-helpers.test.ts` (3 tests on `balance_amount`), a `capability-normalizer` test, and
+`invoice-audit-coverage` flagging `app/api/stock-transfers/[id]/dispatch/route.ts`. The final review confirmed by
+reading imports that nothing in this range can cause them; nobody ran them on the commit before this work.
