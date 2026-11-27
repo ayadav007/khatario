@@ -9,7 +9,14 @@ Run on `https://staging.khatario.com` by the owner, against the Masters India SA
 3. Make sure the staging plan you test with includes the `eway_bill` feature. Expected: Generate e-way bill is visible on a final invoice.
 4. Use the sandbox login from Masters India (the one in your `.env.local` notes). Do not paste it anywhere except the connect page.
 5. The sandbox knows two GSTINs for e-way bills: `05AAABB0639G1Z8` and `05AAABC0181E1ZE`. Set the staging test business's GSTIN to one of them and give the test customer the other. Expected: invoices from this business to this customer can be accepted by the portal. Any other GSTIN is rejected (see step 6.3).
-6. Have these test documents ready: a final invoice over 50,000, a final invoice under 50,000, a draft invoice, a sent delivery challan, a second final invoice to ship to an address that is not the customer's saved one.
+6. Have these test documents ready (each bill uses up one document, so make them all before you start):
+   - 8 ordinary final invoices: one over 50,000 (3.1 to 3.3), one under 50,000 (3.1), one each for 3.4 (Part A only), 3.6 (rail), 3.10 (distance 0), 5.2 (rail change of vehicle), 5.3 (extend) and 5.4 (close);
+   - 1 final invoice whose number is longer than 16 characters (3.7);
+   - 1 final invoice shipped to the customer's saved shipping address, which differs from the billing address (3.8);
+   - 1 final invoice with a typed shipping address that is not saved on the customer (3.9);
+   - 1 draft invoice (3.1, no Generate button);
+   - 1 sent delivery challan (3.5).
+   The bill from 3.3 is reused for 4.1 to 4.3 and cancelled in 5.1.
 
 ## 2. Connect
 
@@ -28,7 +35,7 @@ Run on `https://staging.khatario.com` by the owner, against the Masters India SA
 7. Try an invoice whose number is longer than 16 characters. Expected: refused with the 16-character limit named.
 8. On the invoice with a shipping address different from the billing address (Bill To Ship To), generate and open the portal print. Expected: transaction type 2.
 9. On the invoice whose typed shipping address is not the customer's saved one, press Generate. Expected: a message asking for ship-to city, PIN code and state, and three extra fields. Fill only the city: "Enter the ship-to city, PIN code and state together". PIN `5700`: "Enter a 6-digit PIN code". Fill all three: the bill is generated.
-10. Generate with distance 0. Expected: accepted, and the portal's own distance is used.
+10. Generate with distance 0. Expected: accepted.
 11. "Download portal file instead" shows only once a valid distance is typed. Expected: it downloads a JSON file.
 
 ## 4. After generating
@@ -39,18 +46,19 @@ Run on `https://staging.khatario.com` by the owner, against the Masters India SA
 
 ## 5. Actions
 
-1. Cancel a bill within 24 hours of generating it, pick a reason. Expected: the row shows cancelled; open that invoice and Generate is offered again.
-2. Change vehicle on a road bill: place and state are needed, and a vehicle number. Expected: the row updates. On a rail, air or ship bill a transport document is needed instead of a vehicle number. The button is not offered on an expired row.
-3. Extend: only possible in the 8 hours before or after the bill expires, so this needs a bill close to its expiry (a short-distance bill expires after a day). It asks for place, state, PIN code, distance left and a reason. Expected: the validity date moves out. Outside that window you should get a clear message.
+1. Cancel a bill within 24 hours of generating it, pick a reason. Expected: the row shows cancelled, and the e-way bill number is gone from the invoice's own e-way bill field and its print. Open that invoice: Generate is offered again, and generating again works and gives a NEW e-way bill number (the sandbox allows a new bill on a cancelled document number).
+2. Change vehicle on a road bill: place and state are needed, and a vehicle number. Expected: the row updates. The button is not offered on an expired row.
+   Rail case: on the bill from the rail invoice (3.6, or any bill), open Change vehicle and choose Rail. Expected: the vehicle number field goes away and "Transport document number" and "Transport document date" show instead, next to the reason, place, state and remarks. Leave the document number empty: "Enter the transport document number and date". Fill both and save: the change is saved with no error (before this fix it said the change was made on the portal but not saved).
+3. Extend: offered only while the register allows it (from 8 hours before the bill expires to 8 hours after), so this needs a bill close to its expiry. It asks for place, state, PIN code, distance left and a reason. For rail, air or ship it also asks for the transport document number and date. With "Where the goods are" set to in transit or in a warehouse, the vehicle number is optional. Expected: the validity date moves out. Outside that window you should get a clear message.
 4. Close a bill: remarks are needed. Expected: the row shows closed.
 5. A hand-typed bill (recorded with a number from the portal) has no action buttons in the register, and still saves as before.
 6. A bill past its validity that was never closed: open its invoice. Expected: the bill line shows, with a note "This e-way bill has expired. Extend it within 8 hours of expiry from the e-way bills page, or close it there." and a link; no Generate button. Close is still offered on its row.
 
 ## 6. Limits and errors
 
-1. On a plan limited to 10 e-way bills a month, generate bills until the limit. Expected: the eleventh is stopped with the plain limit message.
+1. If a limited plan is available on staging (the Growth plan allows 10 e-way bills a month), put the test business on it and generate bills until the limit. Expected: the eleventh is stopped with the plain limit message. Skip this step if no limited plan is set up.
 2. Disconnect Masters India, then press Generate. Expected: a message asking you to connect, with a Connect Masters India button that opens the connect page; typed values are still there when you come back.
-3. Use a business whose GSTIN is not in the Masters India account. Expected: the portal's rejection, with the GSTIN named.
+3. Use a business whose GSTIN is not in the Masters India account. Expected: the portal's own rejection text, followed by "(GSTIN ...)" naming your GSTIN; Khatario adds the GSTIN part, not the portal.
 
 ## 7. Not confirmed by the sandbox: check before production
 
@@ -59,12 +67,13 @@ The sandbox accepts many spellings that the live portal may not, so a clean run 
 1. Cancel reasons other than "Others" (Duplicate, Order Cancelled, Data Entry Mistake): they were never accepted on a fresh bill in the sandbox.
 2. The vehicle type for over-dimensional cargo: the app sends `ODC`; the sandbox accepted both `ODC` and `Over Dimensional Cargo`.
 3. Change vehicle (Part B): the app sends the data source and the mode as text; the sandbox test sent them differently. Confirm a change vehicle works with a real mode.
-4. A repeated document number: the sandbox returns the existing bill instead of a rejection, and the app treats that as success. Check that the production portal does the same, or that a rejection is handled cleanly.
+4. A repeated document number: the sandbox returns the existing bill instead of a rejection, and the app treats that as success. Check whether the live portal rejects it (NIC 604) or returns the existing bill. The app handles both, but only the sandbox behaviour has been seen.
 5. Extend was never exercised against the sandbox at all.
+6. Whether the live portal lets a cancelled document number get a new e-way bill. The sandbox gives a new number (probe of 2026-11-27); if the live portal refuses, Generate after a cancel will show the portal's message.
 
 ## 8. Known limits
 
-1. A cancelled bill's number stays printed on the invoice or challan until you clear it by hand.
-2. A double click on an action can send two requests to the portal; the second is refused with a clear message.
+1. Cancelling a bill clears its number from the invoice or challan's own e-way bill field. A different number typed there by hand is left alone.
+2. A double click on an action button can send two requests to the portal. For cancel and close the second is refused by the portal. For extend the second may be accepted, extending the bill twice, so do not double click Extend. This stays open until before production.
 3. These screens were type-checked and their logic tested, but they have not been seen in a browser before this checklist. Hand-typed bills cannot be cancelled or extended from the register.
 4. Pricing and production go-live terms with Masters India are still open.
