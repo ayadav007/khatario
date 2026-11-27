@@ -8,7 +8,11 @@ import {
 import type { InvoiceChargeInput } from '@/lib/invoices/invoice-charges';
 import { calendarDateOnly } from '@/lib/closing-stock-period-lock';
 import { isPeriodLocked } from '@/lib/period-lock-utils';
-import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import * as db from '@/lib/db';
+import { assertFeatureAccess, FeatureAccessDeniedError, resolveRegistryFeatureId } from '@/lib/subscription/feature-access';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
+import { getEntitlementPlanIdForModuleSub, getOperationalModuleSubscriptions } from '@/lib/subscription/module-subscriptions';
+import { isTrialEntitlementActive } from '@/lib/subscription/effective-plan';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { addDays, dueRunDates, isRecurringFrequency, nextRunDate } from '@/lib/invoices/recurring-schedule';
 
@@ -37,6 +41,38 @@ export interface RecurringRunSummary {
   droppedThrough?: string;
   message?: string;
   error?: string;
+}
+
+/**
+ * FEATURE_NOT_ENABLED is also thrown when the billing module is switched off (a customer can do that themselves)
+ * and when a registry query error is swallowed into an empty feature set. Neither is "the plan lacks recurring
+ * invoices", and dropping periods is irreversible, so a drop needs positive confirmation: Billing is enabled, an
+ * operational billing subscription exists, its plan matrix is readable and non-empty, and it has no enabled row
+ * for the recurring-invoices feature. Anything else (including an error) returns false: the schedule is left alone.
+ */
+async function planConfirmedWithoutRecurring(businessId: string): Promise<boolean> {
+  try {
+    const ctx = await getBusinessPlatformContext(businessId);
+    if (!ctx.enabledModules.includes('billing')) return false;
+    const sub = (await getOperationalModuleSubscriptions(businessId, true)).find((r) => r.module_key === 'billing');
+    if (!sub) return false;
+    // Same plan choice as assertFeatureAccess: a running trial uses its trial plan, otherwise the entitlement plan.
+    const planId = isTrialEntitlementActive(sub) ? sub.plan_id : getEntitlementPlanIdForModuleSub(sub);
+    const rows = (
+      await db.query(
+        `SELECT pf.id
+           FROM subscription_plan_features spf
+           JOIN platform_features pf ON pf.id = spf.feature_id
+          WHERE spf.plan_id = $1 AND spf.enabled = true AND pf.is_active = true`,
+        [planId]
+      )
+    ).rows as Array<{ id: string }>;
+    if (rows.length === 0) return false; // matrix unreadable or empty: not proof
+    return !rows.some((r) => r.id === resolveRegistryFeatureId(FeatureKeys.RECURRING_INVOICES));
+  } catch (e) {
+    console.error(`[recurring-invoices] could not confirm plan for business ${businessId}:`, e);
+    return false;
+  }
 }
 
 /**
@@ -77,7 +113,10 @@ export async function runRecurringInvoices(
         if (e instanceof FeatureAccessDeniedError) {
           // Only "the plan does not include the feature" is a real no. An expired/inactive row may just be
           // waiting for the nightly job to stamp its grace period, so those never drop periods.
-          decision = e.reason === 'FEATURE_NOT_ENABLED' ? 'no_feature' : 'inactive';
+          decision =
+            e.reason === 'FEATURE_NOT_ENABLED' && (await planConfirmedWithoutRecurring(rec.business_id))
+              ? 'no_feature'
+              : 'inactive';
         } else {
           console.error(`[recurring-invoices] plan check failed for business ${rec.business_id}:`, e);
           decision = 'failed';

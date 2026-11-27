@@ -1685,6 +1685,60 @@ run('plan enforcement (kh_phase2_test)', () => {
         expect(await count(`invoices WHERE business_id = $1`, [biz])).toBe(1);
       });
 
+      it('a disabled billing module (plan has the feature) never drops periods', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'recModOff' }); // another product must stay enabled, as /api/modules/disable requires
+        const sched = await makeDueSchedule(biz);
+        await query(`UPDATE business_modules SET enabled = false WHERE business_id = $1 AND module_key = 'billing'`, [biz]);
+        clearSubscriptionCache(biz);
+        clearModuleSubscriptionCache(biz);
+        const before = await scheduleRow(sched);
+        const s1 = (await runRecurring()).summaries.find((x) => x.recurring_invoice_id === sched)!;
+        expect(s1).toMatchObject({ skippedSubscriptionInactive: true, skippedNoPlan: false, created: [] });
+        expect(await scheduleRow(sched)).toEqual(before);
+      });
+
+      it('a calendar-expired trial (entitlement falls to free) is still dropped', async () => {
+        const { biz } = await newBusinessWithOwner('trial', { label: 'recTrialExp' });
+        const sched = await makeDueSchedule(biz);
+        await query(
+          `UPDATE business_module_subscriptions SET status = 'trial', trial_end_date = CURRENT_DATE - 3
+            WHERE business_id = $1 AND module_key = 'billing'`, [biz]);
+        clearSubscriptionCache(biz);
+        clearModuleSubscriptionCache(biz);
+        const s1 = (await runRecurring()).summaries.find((x) => x.recurring_invoice_id === sched)!;
+        expect(s1.skippedNoPlan).toBe(true);
+        expect((await scheduleRow(sched))!.next_run_date).toBe('2026-07-01');
+      });
+
+      it('an operational plan whose feature matrix is empty is not proof: schedule untouched', async () => {
+        const planId = `tmp_empty_${randomUUID().slice(0, 8)}`;
+        const tmpl = await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM subscription_plans WHERE id = 'billing_starter'`);
+        expect(tmpl!.n).toBe('1');
+        // A throwaway plan row copied from Starter, with no subscription_plan_features rows. Removed in finally.
+        await query(
+          `INSERT INTO subscription_plans SELECT (json_populate_record(null::subscription_plans,
+             (to_jsonb(p) || jsonb_build_object('id', $1::text))::json)).* FROM subscription_plans p WHERE p.id = 'billing_starter'`,
+          [planId]);
+        try {
+          const { biz } = await newBusinessWithOwner('billing_starter', { label: 'recEmpty' });
+          await setPlan(biz, 'billing', planId);
+          const sched = await makeDueSchedule(biz);
+          const before = await scheduleRow(sched);
+          const errLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+          let s1;
+          try {
+            s1 = (await runRecurring()).summaries.find((x) => x.recurring_invoice_id === sched)!;
+          } finally {
+            errLog.mockRestore();
+          }
+          expect(s1.skippedNoPlan).toBe(false);
+          expect(await scheduleRow(sched)).toEqual(before);
+        } finally {
+          await query(`DELETE FROM business_module_subscriptions WHERE plan_id = $1`, [planId]);
+          await query(`DELETE FROM subscription_plans WHERE id = $1`, [planId]);
+        }
+      });
+
       it('a monthly schedule six months overdue on a plan without the feature jumps to the first date after today', async () => {
         const { biz } = await newBusinessWithOwner('billing_starter', { label: 'rec1b' });
         const sched = await makeDueSchedule(biz, { start: '2025-12-01' });

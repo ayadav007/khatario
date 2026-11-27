@@ -12,6 +12,9 @@ The first fix plan, `docs/superpowers/plans/2026-11-26-billing-money-path-fixes.
 | --- | --- |
 | SUB-01, 02, 03, 04, 05, 16, 26, 27, 28, 31 | Fixed, with tests in `tests/db/billing-money-path.db.test.ts` (83 tests on local `kh_phase2_test`). Not verified on staging or against a real gateway. |
 | SUB-29 | Partly fixed: upgrade and downgrade are now judged by an explicit tier rank, not `sort_order` alone. The pickers still list plans that are not on sale (SUB-30). |
+| SUB-08, 09, 12, 18, 21, 22, 23 | Fixed by the second plan, `docs/superpowers/plans/2026-11-27-plan-enforcement-gaps.md`, with tests in `tests/db/plan-enforcement.db.test.ts` (174 tests on local `kh_phase2_test`). Not verified on staging. Migration 478 written, not applied. |
+| SUB-20 | Partly fixed: recurring invoices and campaigns now check the plan when they run. Bot auto-replies, flows, follow-ups and reminders still check neither the Connect plan nor the daily WhatsApp cap. |
+| SUB-23 | Employee and attendance limits now cover every write path, and monthly counts use the entry time. `max_designations`, `max_departments`, `max_commissions_per_month` and `max_performance_reviews_per_month` still have no enforcing call site. |
 | All other findings | Open. |
 
 Found by the whole-change review and fixed in the same branch: the Razorpay add-on path trusted webhook notes for what was bought and did not check the amount; an Easebuzz failure could redirect the browser to the success page; an expired link sent a "payment failed" message.
