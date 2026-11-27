@@ -20,6 +20,7 @@ import { normalizeProductLine, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { productLineToModule, type PlatformModule } from '@/lib/platform-modules';
 import { getBusinessPlatformRecipient, notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
+import { archiveBusinessBillingTransactions, ARCHIVE_MISSING_MESSAGE } from '@/lib/platform-billing-archive';
 import {
   computePlanAmount,
   computeSubscriptionPeriodEnd,
@@ -153,6 +154,9 @@ export async function deleteBusinessCompletely(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
+    // Payment records are Khatario's revenue records: copy them out before anything is deleted.
+    // Refuses the whole delete (and rolls back) when migration 479 has not been applied.
+    await archiveBusinessBillingTransactions(client, businessId, 'business_deleted');
     await withLedgerDelete(client, 'tenant_purge', null, async () => {
       await client.query(`DELETE FROM ledger_entry_deletions WHERE business_id = $1`, [businessId]);
       await purgeTenantRows(client, businessId, { table: 'businesses', where: 'id = $1' });
@@ -160,6 +164,7 @@ export async function deleteBusinessCompletely(
     await client.query('COMMIT');
   } catch (error: unknown) {
     await client.query('ROLLBACK').catch(() => {});
+    if ((error as Error)?.message === ARCHIVE_MISSING_MESSAGE) throw error;
     const code = (error as { code?: string })?.code;
     const detail = (error as { detail?: string; message?: string })?.detail
       || (error as { message?: string })?.message

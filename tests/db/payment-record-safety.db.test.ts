@@ -50,6 +50,13 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { processPlatformRazorpayWebhook, recordBillingTransaction } from '@/lib/platform-billing';
 import { completeAddonCheckoutPayment } from '@/lib/platform-addon-checkout';
+import { getPool } from '@/lib/db';
+import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
+import {
+  archiveBusinessBillingTransactions,
+  listArchivedBillingTransactions,
+  ARCHIVE_MISSING_MESSAGE,
+} from '@/lib/platform-billing-archive';
 
 const run = enabled ? describe : describe.skip;
 
@@ -345,5 +352,167 @@ run('payment record safety (kh_phase2_test)', () => {
       `SELECT COUNT(*)::text AS n FROM pg_constraint WHERE conrelid = 'billing_transactions_archive'::regclass AND contype IN ('f','c')`,
     );
     expect(Number(cons!.n)).toBe(0);
+  });
+});
+
+
+run('business deletion keeps payment rows (kh_phase2_test)', () => {
+  jest.setTimeout(60000);
+  const created: string[] = [];
+  const ADMIN = randomUUID(); // logAdminAction is mocked, so no platform_admins row is needed
+
+  async function biz(label: string): Promise<{ id: string; userId: string; name: string }> {
+    const id = randomUUID();
+    const userId = randomUUID();
+    const name = `Del safety ${label} ${id.slice(0, 6)}`;
+    created.push(id);
+    await query(
+      `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type, primary_module)
+       VALUES ($1, $2, '27AAAPA1234A1Z5', '27', 'regular', 'billing')`,
+      [id, name],
+    );
+    await query(`INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'billing', true, 'test')`, [id]);
+    await query(
+      `INSERT INTO users (id, business_id, name, phone, is_primary_admin) VALUES ($1, $2, 'Owner', $3, true)`,
+      [userId, id, `9${Math.floor(Math.random() * 1e9).toString().padStart(9, '0')}`],
+    );
+    return { id, userId, name };
+  }
+
+  async function paidTx(businessId: string): Promise<string> {
+    const { id } = await recordBillingTransaction({
+      businessId, planId: 'billing_growth', amount: 499, billingCycle: 'monthly',
+      paymentMethod: 'razorpay', status: 'completed', skipEmails: true,
+    });
+    await query(`UPDATE billing_transactions SET payment_reference = $2 WHERE id = $1`, [id, 'pay_del_' + randomUUID().slice(0, 8)]);
+    return id;
+  }
+
+  const cnt = async (sql: string, p: unknown[]) => Number((await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM ${sql}`, p))!.n);
+
+  beforeAll(async () => {
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network disabled in tests'));
+    const sql = readFileSync(join(process.cwd(), 'database/migrations/479_billing_record_constraints.sql'), 'utf8');
+    await query(sql);
+  });
+
+  afterAll(async () => {
+    jest.restoreAllMocks();
+    if (enabled) {
+      await query(`DELETE FROM period_locks WHERE business_id = ANY($1)`, [created]).catch(() => undefined);
+      for (const id of created) {
+        await query(`DELETE FROM billing_transactions_archive WHERE business_id = $1`, [id]).catch(() => undefined);
+        await query(`DELETE FROM businesses WHERE id = $1`, [id]).catch(() => undefined);
+      }
+    }
+  });
+
+  it('deleting a business keeps its payment rows in the archive', async () => {
+    const b = await biz('keep');
+    const tx = await paidTx(b.id);
+    await deleteBusinessCompletely(b.id, ADMIN);
+    expect(await cnt(`billing_transactions WHERE id = $1`, [tx])).toBe(0);
+    expect(await cnt(`businesses WHERE id = $1`, [b.id])).toBe(0);
+    const a = await queryOne<Record<string, string>>(
+      `SELECT status, total_amount::text, business_name, business_gstin, archive_reason FROM billing_transactions_archive WHERE id = $1`,
+      [tx],
+    );
+    expect(a).toMatchObject({
+      status: 'completed', total_amount: '499.00', archive_reason: 'business_deleted',
+      business_name: b.name, business_gstin: '27AAAPA1234A1Z5',
+    });
+  });
+
+  it('archiving twice does not duplicate', async () => {
+    const b = await biz('twice');
+    await paidTx(b.id);
+    const c = await getPool().connect();
+    try {
+      expect(await archiveBusinessBillingTransactions(c, b.id, 'test')).toBe(1);
+      expect(await archiveBusinessBillingTransactions(c, b.id, 'test')).toBe(0);
+    } finally {
+      c.release();
+    }
+    expect(await cnt(`billing_transactions_archive WHERE business_id = $1`, [b.id])).toBe(1);
+  });
+
+  it('a business with a partner commission on its payment still archives the payment', async () => {
+    const b = await biz('partner');
+    const tx = await paidTx(b.id);
+    const partnerId = randomUUID();
+    await query(
+      `INSERT INTO platform_partners (id, name, email, password_hash, referral_code)
+       VALUES ($1, 'Test partner', $2, 'x', $3)`,
+      [partnerId, `p_${partnerId.slice(0, 8)}@example.test`, 'REF' + partnerId.slice(0, 8)],
+    );
+    try {
+      await query(
+        `INSERT INTO partner_commissions (partner_id, business_id, billing_transaction_id, sale_amount, commission_type, commission_rate, commission_amount, eligible_at)
+         VALUES ($1, $2, $3, 499, 'percentage', 20, 99.8, NOW())`,
+        [partnerId, b.id, tx],
+      );
+      await deleteBusinessCompletely(b.id, ADMIN);
+      expect(await cnt(`billing_transactions_archive WHERE id = $1`, [tx])).toBe(1);
+      expect(await cnt(`partner_commissions WHERE billing_transaction_id = $1`, [tx])).toBe(0);
+    } finally {
+      await query(`DELETE FROM platform_partners WHERE id = $1`, [partnerId]);
+    }
+  });
+
+  it('a failed delete leaves no archive rows behind', async () => {
+    // Real blocker, no mocks: another tenant's period_locks row points at a user of the business
+    // (locked_by, NO ACTION). purgeTenantRows only deletes blockers that belong to the business being
+    // purged, so it cannot clear this one and the delete fails after the archive step has run.
+    const a = await biz('failA');
+    const other = await biz('failOther');
+    const tx = await paidTx(a.id);
+    await query(
+      `INSERT INTO period_locks (business_id, financial_year, period_start, period_end, is_locked, locked_by)
+       VALUES ($1, '2024-2025', '2024-04-01', '2025-03-31', false, $2)`,
+      [other.id, a.userId],
+    );
+    await expect(deleteBusinessCompletely(a.id, ADMIN)).rejects.toThrow(/Cannot delete tenant|Failed to delete tenant/);
+    expect(await cnt(`businesses WHERE id = $1`, [a.id])).toBe(1);
+    expect(await cnt(`billing_transactions WHERE id = $1`, [tx])).toBe(1);
+    expect(await cnt(`billing_transactions_archive WHERE business_id = $1`, [a.id])).toBe(0);
+  });
+
+  it('refuses to archive when the archive table does not exist, without touching anything', async () => {
+    const b = await biz('noarch');
+    const tx = await paidTx(b.id);
+    const c = await getPool().connect();
+    try {
+      await c.query('BEGIN');
+      await expect(
+        archiveBusinessBillingTransactions(c, b.id, 'x', { archiveTable: 'no_such_table_xyz' }),
+      ).rejects.toThrow(ARCHIVE_MISSING_MESSAGE);
+      await c.query('ROLLBACK');
+    } finally {
+      c.release();
+    }
+    expect(await cnt(`billing_transactions WHERE id = $1`, [tx])).toBe(1);
+    expect(await cnt(`billing_transactions_archive WHERE business_id = $1`, [b.id])).toBe(0);
+  });
+
+  it('lists archived rows newest first and clamps the limit', async () => {
+    const b = await biz('list');
+    const t1 = await paidTx(b.id);
+    const t2 = await paidTx(b.id);
+    const c = await getPool().connect();
+    try {
+      await archiveBusinessBillingTransactions(c, b.id, 'test');
+    } finally {
+      c.release();
+    }
+    await query(`UPDATE billing_transactions_archive SET archived_at = NOW() + interval '1 day' WHERE id = $1`, [t2]);
+    const rows = await listArchivedBillingTransactions(200, 0);
+    const ids = rows.map((r) => r.id);
+    expect(ids.indexOf(t2)).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf(t2)).toBeLessThan(ids.indexOf(t1) === -1 ? Infinity : ids.indexOf(t1));
+    for (let i = 1; i < rows.length; i++) {
+      expect(new Date(rows[i - 1].archived_at).getTime()).toBeGreaterThanOrEqual(new Date(rows[i].archived_at).getTime());
+    }
+    expect((await listArchivedBillingTransactions(0, 0)).length).toBe(1);
+    expect((await listArchivedBillingTransactions(100000, 0)).length).toBeLessThanOrEqual(200);
   });
 });
