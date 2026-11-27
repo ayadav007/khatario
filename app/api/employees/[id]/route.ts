@@ -17,6 +17,7 @@ import {
 } from '@/lib/employee-portal/portal-api-guard';
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { checkLimit } from '@/lib/subscription';
+import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import { seatLimitMessage, seatLimitType } from '@/lib/users/connect-seats';
 import { resolveEmployeeLoginDecision } from '@/lib/hr/employee-login-options';
@@ -315,6 +316,19 @@ export async function PATCH(
             );
           }
         }
+      }
+    }
+
+    // Reactivating an inactive employee takes an employee slot again (the limit counts active ones).
+    // Editing an active employee or deactivating one never reaches the limit.
+    if (is_active === true) {
+      const current = await queryOne<{ is_active: boolean | null }>(
+        'SELECT is_active FROM employees WHERE id = $1 AND business_id = $2',
+        [employeeId, businessId],
+      );
+      if (current && current.is_active === false) {
+        const employeeLimit = await limitExceededResponse(businessId, 'employees');
+        if (employeeLimit) return employeeLimit;
       }
     }
 

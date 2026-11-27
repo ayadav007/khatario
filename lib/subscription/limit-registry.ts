@@ -112,9 +112,11 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       return { sql: ACTIVE_EMPLOYEE_COUNT_SQL, params: p };
     case 'attendance':
       return {
+        // By server entry time (created_at defaults on insert), never the client's attendance date,
+        // so backdating a record does not dodge the monthly quota.
         sql: `SELECT COUNT(*)::int AS count FROM employee_attendance ea
               INNER JOIN employees e ON e.id = ea.employee_id
-              WHERE e.business_id = $1 AND ea.date >= ${monthStart}::date`,
+              WHERE e.business_id = $1 AND ea.created_at >= ${monthStart}`,
         params: p,
       };
     case 'leave_requests':
@@ -126,7 +128,7 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       };
     case 'payroll':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM salary_payments WHERE business_id = $1 AND payment_date >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM salary_payments WHERE business_id = $1 AND created_at >= ${monthStart}`,
         params: p,
       };
     case 'suppliers':

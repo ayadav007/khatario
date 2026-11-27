@@ -3,6 +3,7 @@
  * Callers decide who may punch and whether the location is good enough; this only records it.
  */
 import { query, queryOne } from '@/lib/db';
+import { checkLimit } from '@/lib/subscription';
 import type { EmployeeAttendance } from '@/types/database';
 import { applyLateFieldsOnCheckIn } from '@/lib/hr/attendance-policy';
 import { attendanceDateYmd } from '@/lib/hr/attendance-date';
@@ -12,6 +13,16 @@ import { getRosterEntryForDate } from '@/lib/hr/shift-overtime/shift-roster';
 export class AttendancePunchError extends Error {
   constructor(message: string, readonly code: string, readonly status = 400) {
     super(message);
+  }
+}
+
+/**
+ * The business is at its monthly attendance-record limit and this punch would add a new row.
+ * HTTP callers answer with limitExceededReply('attendance', error.check).
+ */
+export class AttendanceLimitError extends AttendancePunchError {
+  constructor(readonly check: { limit: number; current: number; message?: string }) {
+    super(check.message ?? 'Attendance limit reached', 'limit_exceeded', 403);
   }
 }
 
@@ -103,6 +114,9 @@ export async function recordCheckIn(p: PunchParams): Promise<EmployeeAttendance>
       attendance.id,
     ]);
   } else {
+    // Only a new row for the day counts; updating an existing row (above) is never refused.
+    const attendanceLimit = await checkLimit(p.businessId, 'attendance');
+    if (!attendanceLimit.allowed) throw new AttendanceLimitError(attendanceLimit);
     attendance = await queryOne<EmployeeAttendance>(
       `INSERT INTO employee_attendance (
         employee_id, date, check_in_time, check_in_method,

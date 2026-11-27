@@ -1,4 +1,5 @@
 import { query, queryOne, queryRows } from '@/lib/db';
+import { checkLimit } from '@/lib/subscription';
 import { attendanceDateYmd } from '@/lib/hr/attendance-date';
 import { applyLateFieldsOnCheckIn } from '@/lib/hr/attendance-policy';
 import { resolveShiftForEmployeeOnDate } from '@/lib/hr/shift-overtime/shift-assignment';
@@ -474,7 +475,10 @@ async function recomputeAttendanceHours(attendanceId: string): Promise<void> {
   ]);
 }
 
-async function applyApprovedRegularization(requestId: string): Promise<void> {
+type LimitCheckResult = { limit: number; current: number; message?: string };
+
+/** Returns the failed check when approving would add a new attendance row the plan does not allow. */
+async function applyApprovedRegularization(requestId: string): Promise<{ limitExceeded: LimitCheckResult } | null> {
   const req = await queryOne<{
     id: string;
     business_id: string;
@@ -498,6 +502,15 @@ async function applyApprovedRegularization(requestId: string): Promise<void> {
   const noteSuffix = ` [Regularized: ${req.reason.slice(0, 120)}]`;
 
   if (!attendanceId) {
+    // A row may already exist for the day; only a genuinely new row counts against the limit.
+    const existingDay = await queryOne<{ id: string }>(
+      `SELECT id FROM employee_attendance WHERE employee_id = $1 AND date = $2::date`,
+      [req.employee_id, dateYmd],
+    );
+    if (!existingDay) {
+      const attendanceLimit = await checkLimit(req.business_id, 'attendance');
+      if (!attendanceLimit.allowed) return { limitExceeded: attendanceLimit };
+    }
     const shiftId = await resolveShiftForEmployeeOnDate(req.business_id, req.employee_id, dateYmd);
     const created = await queryOne<{ id: string }>(
       `INSERT INTO employee_attendance (employee_id, date, shift_id, status)
@@ -588,6 +601,7 @@ async function applyApprovedRegularization(requestId: string): Promise<void> {
   }
 
   await recomputeAttendanceHours(attendanceId);
+  return null;
 }
 
 export async function decideRegularizationRequest(input: {
@@ -596,7 +610,10 @@ export async function decideRegularizationRequest(input: {
   managerEmployeeId: string;
   action: 'approve' | 'reject';
   rejection_reason?: string;
-}): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; status: string }
+  | { ok: false; error: string; limit_exceeded?: LimitCheckResult }
+> {
   const req = await queryOne<{ id: string; status: string; approver_user_id: string | null }>(
     `SELECT id, status, approver_user_id FROM attendance_regularization_requests
      WHERE id = $1 AND business_id = $2`,
@@ -609,7 +626,15 @@ export async function decideRegularizationRequest(input: {
   }
 
   if (input.action === 'approve') {
-    await applyApprovedRegularization(input.requestId);
+    const applied = await applyApprovedRegularization(input.requestId);
+    if (applied) {
+      // The request stays pending; nothing was written.
+      return {
+        ok: false,
+        error: applied.limitExceeded.message ?? 'Attendance limit reached',
+        limit_exceeded: applied.limitExceeded,
+      };
+    }
     await query(
       `UPDATE attendance_regularization_requests
        SET status = 'approved', approved_by = $2, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP

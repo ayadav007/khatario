@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIp } from '@/lib/rate-limit';
 import { resolveAttendanceActor } from '@/lib/hr/attendance-actor';
-import { AttendancePunchError, recordCheckIn } from '@/lib/hr/attendance-punch';
+import { AttendanceLimitError, AttendancePunchError, recordCheckIn } from '@/lib/hr/attendance-punch';
+import { limitExceededReply } from '@/lib/subscription/limit-response';
 import { validateSelfServiceLocation } from '@/lib/hr/staff-app/sites';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, attendance, message: 'Checked in successfully' });
   } catch (error) {
+    if (error instanceof AttendanceLimitError) return limitExceededReply('attendance', error.check);
     if (error instanceof AttendancePunchError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

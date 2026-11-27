@@ -78,6 +78,14 @@ import { PATCH as patchEwayBillRoute } from '@/app/api/eway-bills/[id]/route';
 import { POST as postBusinessRoute } from '@/app/api/businesses/route';
 import { authorize } from '@/lib/authorization';
 import { getPool } from '@/lib/db';
+import { readFileSync } from 'fs';
+import { POST as convertCandidateRoute } from '@/app/api/hr/recruitment/candidates/[id]/convert/route';
+import { POST as checkInRoute } from '@/app/api/employees/attendance/check-in/route';
+import { POST as checkOutRoute } from '@/app/api/employees/attendance/check-out/route';
+import { POST as faceRoute } from '@/app/api/employees/attendance/face-recognition/route';
+import { AttendanceLimitError, recordCheckIn } from '@/lib/hr/attendance-punch';
+import { decideRegularizationRequest } from '@/lib/hr/attendance-regularization';
+import { serializeFaceEncoding } from '@/lib/face-recognition';
 import { ownerHasOtherBusiness, provisionBusiness } from '@/lib/businesses/provision-business';
 
 const run = enabled ? describe : describe.skip;
@@ -826,6 +834,265 @@ run('plan enforcement (kh_phase2_test)', () => {
         } finally {
           client.release();
         }
+      });
+    });
+  });
+  describe('SUB-22/23: employee and attendance limits on every write path; HR structure limits', () => {
+    const startOfMonthDates = (n: number) =>
+      `SELECT (CURRENT_DATE - (g || ' days')::interval)::date FROM generate_series(1, ${n}) g`;
+
+    /** n attendance rows (created now, dated in the past) for one employee: fills the monthly quota. */
+    async function fillAttendance(employeeId: string, n: number) {
+      await query(
+        `INSERT INTO employee_attendance (employee_id, date, status)
+         SELECT $1, d, 'present' FROM (${startOfMonthDates(n)}) t(d)`,
+        [employeeId],
+      );
+    }
+
+    /** n further active employees in one statement (users first, then employees). */
+    async function fillEmployees(biz: string, n: number) {
+      await query(
+        `WITH u AS (
+           INSERT INTO users (id, business_id, name, phone, auth_session_version)
+           SELECT uuid_generate_v4(), $1, 'Bulk ' || g, '8' || LPAD((floor(random()*1e9))::text, 9, '0') || g, 1
+           FROM generate_series(1, $2) g RETURNING id
+         )
+         INSERT INTO employees (id, business_id, employee_code, access_type, is_active)
+         SELECT id, $1, 'B-' || substr(id::text, 1, 8), 'attendance_only', true FROM u`,
+        [biz, n],
+      );
+    }
+
+    describe('employee limit', () => {
+      let biz: string, owner: string, inactiveId: string, activeId: string;
+      beforeAll(async () => {
+        ({ biz, owner } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'emp-limit' }));
+        activeId = await addEmployee(biz);
+        inactiveId = await addEmployee(biz, { isActive: false });
+        await fillEmployees(biz, 29); // 30 active in total: HR Lite limit
+        clearSubscriptionCache(biz);
+      });
+
+      it('reactivating an employee is refused at the limit', async () => {
+        const res = await patchEmployee(biz, owner, inactiveId, { is_active: true });
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        const e = await queryOne<{ is_active: boolean }>(`SELECT is_active FROM employees WHERE id = $1`, [inactiveId]);
+        expect(e!.is_active).toBe(false);
+      });
+
+      it('editing an active employee still works at the limit', async () => {
+        const res = await patchEmployee(biz, owner, activeId, { designation: 'Senior' });
+        expect(res.status).toBe(200);
+      });
+
+      it('re-sending is_active:true for an active employee is not refused', async () => {
+        const res = await patchEmployee(biz, owner, activeId, { is_active: true });
+        expect(res.status).toBe(200);
+      });
+
+      it('deactivating works at the limit, and then reactivating another succeeds', async () => {
+        expect((await patchEmployee(biz, owner, activeId, { is_active: false })).status).toBe(200);
+        clearSubscriptionCache(biz);
+        const res = await patchEmployee(biz, owner, inactiveId, { is_active: true });
+        expect(res.status).toBe(200);
+      });
+    });
+
+    describe('candidate conversion', () => {
+      let biz: string, owner: string, candidateId: string;
+      beforeAll(async () => {
+        ({ biz, owner } = await newBusinessWithOwner('billing_growth', { label: 'convert' }));
+        await query(
+          `INSERT INTO business_modules (business_id, module_key, enabled, source) VALUES ($1, 'hr', true, 'test')`,
+          [biz],
+        );
+        await setPlan(biz, 'hr', 'hr_pro');
+        const job = randomUUID();
+        await query(`INSERT INTO recruitment_jobs (id, business_id, title) VALUES ($1, $2, 'Clerk')`, [job, biz]);
+        candidateId = randomUUID();
+        await query(
+          `INSERT INTO recruitment_candidates (id, business_id, job_id, full_name, email, phone, status)
+           VALUES ($1, $2, $3, 'Cand Idate', 'cand@example.com', '9123456780', 'offer_accepted')`,
+          [candidateId, biz, job],
+        );
+        await query(
+          `INSERT INTO recruitment_offer_letters (business_id, candidate_id, designation, joining_date, status, accepted_at, basic_salary)
+           VALUES ($1, $2, 'Clerk', CURRENT_DATE, 'accepted', CURRENT_TIMESTAMP, 20000)`,
+          [biz, candidateId],
+        );
+        await addEmployee(biz);
+        await fillEmployees(biz, 199); // 200 active: HR Pro limit (one INSERT ... SELECT generate_series)
+        clearSubscriptionCache(biz);
+      });
+
+      it('converting a candidate is refused at the employee limit and writes nothing', async () => {
+        const usersBefore = await count('users WHERE business_id = $1', [biz]);
+        const res = await callRoute(convertCandidateRoute as unknown as RouteHandler, {
+          biz, userId: owner, method: 'POST', path: `/api/hr/recruitment/candidates/${candidateId}/convert`,
+          body: { physical_documents_verified: true }, params: { id: candidateId },
+        });
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        expect(body.code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(body.limit_type).toBe('employees');
+        expect(await count('users WHERE business_id = $1', [biz])).toBe(usersBefore);
+        const c = await queryOne<{ employee_id: string | null }>(`SELECT employee_id FROM recruitment_candidates WHERE id = $1`, [candidateId]);
+        expect(c!.employee_id).toBeNull();
+      });
+
+      it('converting is no longer stopped by the limit once a slot is free', async () => {
+        await query(`UPDATE employees SET is_active = false WHERE id = (SELECT id FROM employees WHERE business_id = $1 LIMIT 1)`, [biz]);
+        clearSubscriptionCache(biz);
+        const res = await callRoute(convertCandidateRoute as unknown as RouteHandler, {
+          biz, userId: owner, method: 'POST', path: `/api/hr/recruitment/candidates/${candidateId}/convert`,
+          body: { physical_documents_verified: true }, params: { id: candidateId },
+        });
+        // Past the limit check. (The conversion itself can still fail further on for other reasons, so
+        // this asserts only that the limit is not what stops it.)
+        expect((await res.json()).code).not.toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+      });
+    });
+
+    describe('attendance limit on punch, face recognition and regularisation', () => {
+      let biz: string, owner: string, filler: string, newcomer: string;
+      beforeAll(async () => {
+        ({ biz, owner } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'att-limit' }));
+        await setPlan(biz, 'hr', 'hr_starter'); // face recognition needs the staff app feature; Starter: 1,600 per month
+        filler = await addEmployee(biz);
+        newcomer = await addEmployee(biz);
+        await fillAttendance(filler, 1600);
+        clearSubscriptionCache(biz);
+      });
+
+      it('a backdated attendance row counts this month (by created_at)', async () => {
+        const b = await newBusinessWithOwner('billing_growth', { hr: true, label: 'att-backdate' });
+        const emp = await addEmployee(b.biz);
+        await query(`INSERT INTO employee_attendance (employee_id, date, status) VALUES ($1, '2020-01-01', 'present')`, [emp]);
+        clearSubscriptionCache(b.biz);
+        expect((await checkLimit(b.biz, 'attendance')).current).toBe(1);
+      });
+
+      it('the new-row check-in via the route is refused with the standard reply', async () => {
+        const res = await callRoute(checkInRoute as unknown as RouteHandler, {
+          biz, userId: newcomer, method: 'POST', path: '/api/employees/attendance/check-in', body: {},
+        });
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        expect(body.code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(body.limit_type).toBe('attendance');
+        expect(await count('employee_attendance WHERE employee_id = $1', [newcomer])).toBe(0);
+      });
+
+      it('recordCheckIn (kiosk / staff app) throws the typed limit error for a new row', async () => {
+        await expect(
+          recordCheckIn({ employeeId: newcomer, businessId: biz, method: 'staff_app' }),
+        ).rejects.toBeInstanceOf(AttendanceLimitError);
+      });
+
+      it('face recognition does not insert a new row at the limit', async () => {
+        const enc = new Float32Array(128).fill(0.5);
+        await query(`INSERT INTO employee_face_data (employee_id, face_encoding) VALUES ($1, $2)`, [newcomer, serializeFaceEncoding(enc)]);
+        const res = await callRoute(faceRoute as unknown as RouteHandler, {
+          biz, userId: owner, method: 'POST', path: '/api/employees/attendance/face-recognition',
+          body: { face_encoding: serializeFaceEncoding(enc), action: 'check_in' },
+        });
+        expect(res.status).toBe(403);
+        expect((await res.json()).code).toBe('SUBSCRIPTION_LIMIT_EXCEEDED');
+        expect(await count('employee_attendance WHERE employee_id = $1', [newcomer])).toBe(0);
+      });
+
+      it('regularisation approval that would add a row is refused and stays pending', async () => {
+        const manager = await addEmployee(biz);
+        const reqId = randomUUID();
+        await query(
+          `INSERT INTO attendance_regularization_requests
+             (id, business_id, employee_id, attendance_date, request_type, reason, requested_check_in, approver_user_id)
+           VALUES ($1, $2, $3, CURRENT_DATE - 2000, 'missing_check_in', 'forgot', (CURRENT_DATE - 2000) + TIME '09:00', $4)`,
+          [reqId, biz, newcomer, manager],
+        );
+        const r = await decideRegularizationRequest({
+          requestId: reqId, businessId: biz, managerEmployeeId: manager, action: 'approve',
+        });
+        expect(r.ok).toBe(false);
+        expect((r as { limit_exceeded?: unknown }).limit_exceeded).toBeDefined();
+        const row = await queryOne<{ status: string }>(`SELECT status FROM attendance_regularization_requests WHERE id = $1`, [reqId]);
+        expect(row!.status).toBe('pending');
+        expect(await count('employee_attendance WHERE employee_id = $1', [newcomer])).toBe(0);
+      });
+
+      it('a check-in that updates the existing row for the day, and a check-out, are never refused', async () => {
+        await query(`INSERT INTO employee_attendance (employee_id, date, status) VALUES ($1, CURRENT_DATE, 'absent')`, [newcomer]);
+        const inRes = await callRoute(checkInRoute as unknown as RouteHandler, {
+          biz, userId: newcomer, method: 'POST', path: '/api/employees/attendance/check-in', body: {},
+        });
+        expect(inRes.status).toBe(200);
+        const outRes = await callRoute(checkOutRoute as unknown as RouteHandler, {
+          biz, userId: newcomer, method: 'POST', path: '/api/employees/attendance/check-out', body: {},
+        });
+        expect(outRes.status).toBe(200);
+      });
+
+      it('regularisation onto an existing row for the day is not refused at the limit', async () => {
+        const manager = await addEmployee(biz);
+        const reqId = randomUUID();
+        await query(
+          `INSERT INTO attendance_regularization_requests
+             (id, business_id, employee_id, attendance_date, request_type, reason, requested_check_in, approver_user_id)
+           VALUES ($1, $2, $3, CURRENT_DATE, 'override_check_in', 'fix', CURRENT_DATE + TIME '09:00', $4)`,
+          [reqId, biz, newcomer, manager],
+        );
+        const r = await decideRegularizationRequest({
+          requestId: reqId, businessId: biz, managerEmployeeId: manager, action: 'approve',
+        });
+        expect(r.ok).toBe(true);
+      });
+    });
+
+    describe('payroll monthly count by entry time', () => {
+      it('a backdated salary payment counts this month (by created_at)', async () => {
+        const { biz } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'payroll-backdate' });
+        const emp = await addEmployee(biz);
+        await query(
+          `INSERT INTO salary_payments (business_id, employee_id, salary_month, from_date, to_date, payment_date,
+             basic_salary, total_earnings, gross_salary, net_salary)
+           VALUES ($1, $2, '2020-01', '2020-01-01', '2020-01-31', '2020-01-31', 1, 1, 1, 1)`,
+          [biz, emp],
+        );
+        clearSubscriptionCache(biz);
+        expect((await checkLimit(biz, 'payroll')).current).toBe(1);
+      });
+    });
+
+    describe('migration 478: HR plan structure limits', () => {
+      const sql = () => readFileSync('database/migrations/478_hr_plan_structure_limits.sql', 'utf8');
+      const limitFor = async (planId: string, key: string) =>
+        (await queryOne<{ limit_value: number }>(
+          `SELECT limit_value FROM subscription_plan_limits WHERE plan_id = $1 AND limit_key = $2`, [planId, key],
+        ))?.limit_value;
+
+      it('gives HR Pro and HR Trial unlimited, Starter and Lite the stated caps, and is idempotent', async () => {
+        await query(sql());
+        await query(sql());
+        for (const k of ['max_holidays', 'max_shifts', 'max_designations', 'max_departments']) {
+          expect(await limitFor('hr_pro', k)).toBe(-1);
+          expect(await limitFor('hr_trial', k)).toBe(-1);
+        }
+        for (const plan of ['hr_starter', 'hr_staff_lite']) {
+          expect(await limitFor(plan, 'max_holidays')).toBe(30);
+          expect(await limitFor(plan, 'max_shifts')).toBe(10);
+          expect(await limitFor(plan, 'max_designations')).toBe(20);
+          expect(await limitFor(plan, 'max_departments')).toBe(10);
+        }
+      });
+
+      it('HR Pro has unlimited shifts after the migration', async () => {
+        await query(sql());
+        const { biz } = await newBusinessWithOwner('billing_growth', { hr: true, label: 'mig478' });
+        await setPlan(biz, 'hr', 'hr_pro');
+        expect((await checkLimit(biz, 'shifts')).limit).toBe(-1);
+        expect((await checkLimit(biz, 'departments')).limit).toBe(-1);
       });
     });
   });

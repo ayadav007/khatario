@@ -3,6 +3,14 @@ import { query, queryOne, queryRows } from '@/lib/db';
 import { createSalaryStructure, salaryStructureFromOffer } from '@/lib/hr/salary-structure';
 import { getEmployeePrefillFromOnboarding } from '@/lib/hr/recruitment/onboarding/task-service';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { checkLimit } from '@/lib/subscription';
+
+/** The business is at its employee limit; the route answers with the standard limit reply. */
+export class EmployeeLimitError extends Error {
+  constructor(readonly check: { limit: number; current: number; message?: string }) {
+    super(check.message ?? 'Employee limit reached');
+  }
+}
 
 export type ConvertCandidateParams = {
   businessId: string;
@@ -56,6 +64,10 @@ export async function convertCandidateToEmployee(
   );
 
   if (!offer) throw new Error('No accepted offer letter found');
+
+  // Before any insert: the new employee takes a slot on the roster.
+  const employeeLimit = await checkLimit(params.businessId, 'employees');
+  if (!employeeLimit.allowed) throw new EmployeeLimitError(employeeLimit);
 
   const phoneNorm = normalizePhoneOrNull(candidate.phone ?? '') ?? candidate.phone;
 

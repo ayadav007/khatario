@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { parseFaceEncoding, matchFace, serializeFaceEncoding } from '@/lib/face-recognition';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { limitExceededResponse } from '@/lib/subscription/limit-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,7 +141,9 @@ export async function POST(request: NextRequest) {
           [checkInTime, location_lat || null, location_lng || null, existing.id]
         );
       } else {
-        // Create new record
+        // Create new record: only a new row for the day counts against the monthly limit.
+        const attendanceLimit = await limitExceededResponse(business_id, 'attendance');
+        if (attendanceLimit) return attendanceLimit;
         await query(
           `INSERT INTO employee_attendance (
             employee_id, date, check_in_time, check_in_method,

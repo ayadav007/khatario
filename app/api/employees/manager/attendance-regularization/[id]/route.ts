@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveActorContext } from '@/lib/employee-portal/portal-api-guard';
+import { limitExceededReply } from '@/lib/subscription/limit-response';
 import { decideRegularizationRequest } from '@/lib/hr/attendance-regularization';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,7 @@ export async function PATCH(
       rejection_reason: body.rejection_reason ? String(body.rejection_reason) : undefined,
     });
 
+    if (!result.ok && result.limit_exceeded) return limitExceededReply('attendance', result.limit_exceeded);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
