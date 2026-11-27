@@ -2,6 +2,7 @@
  * Centralized access enforcement for API routes (subscription + feature + limits + branch).
  */
 
+import { BRANCH_READ_ONLY_MESSAGE, isBranchReadOnly } from '@/lib/subscription/over-limit-access';
 import type { PoolClient } from 'pg';
 import { NextResponse } from 'next/server';
 import {
@@ -151,6 +152,10 @@ export async function enforceAccess(opts: EnforceAccessInput): Promise<void> {
     const ok = await checkUserBranchPermission(userId, branchId, branchPermission);
     if (!ok) {
       throw new EnforceAccessError(403, 'BRANCH_ACCESS_DENIED', 'No permission for this branch.');
+    }
+    // A branch beyond the plan's branch limit is read-only (SUB-24): writes are refused, viewing works.
+    if (branchPermission !== 'view' && (await isBranchReadOnly(businessId, branchId))) {
+      throw new EnforceAccessError(403, 'BRANCH_READ_ONLY', BRANCH_READ_ONLY_MESSAGE, { branch_id: branchId });
     }
   }
 }

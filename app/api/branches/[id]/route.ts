@@ -13,6 +13,9 @@ import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { panFromGstin } from '@/lib/tax/pan';
 import { checkBranchPlace, stateCodeFromName } from '@/lib/gst/registration';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { withLimitedCreate } from '@/lib/subscription/limit-lock';
+import { limitRefusedResponse } from '@/lib/subscription/limit-response';
+import type { PoolClient } from 'pg';
 import { FeatureKeys } from '@/lib/featureKeys';
 
 export const dynamic = 'force-dynamic';
@@ -183,6 +186,8 @@ export async function PATCH(
           userId,
           feature: FeatureKeys.MULTI_BRANCH,
           limitType: 'branches',
+          // Early answer only: the authoritative count is taken under the branch-limit lock with the write below.
+          limitCountedByCaller: true,
         });
       } catch (e) {
         const res = enforceAccessErrorResponse(e);
@@ -259,13 +264,7 @@ export async function PATCH(
 
     // If setting as default, unset other default branches
     // CRITICAL: Ensure exactly one default branch per business
-    if (is_default === true) {
-      await db.query(`
-        UPDATE branches 
-        SET is_default = false 
-        WHERE business_id = $1 AND id != $2 AND is_default = true
-      `, [business_id, params.id]);
-    } else if (is_default === false && currentBranch.is_default) {
+    if (is_default === false && currentBranch.is_default) {
       // Prevent unsetting default if it's the only default
       const otherDefaultCount = await db.queryOne<{ count: number }>(`
         SELECT COUNT(*) as count
@@ -285,18 +284,30 @@ export async function PATCH(
       }
     }
 
-    // If setting as primary, unset other primary branches
-    if (is_primary) {
-      await db.query(`
-        UPDATE branches 
-        SET is_primary = false 
-        WHERE business_id = $1 AND id != $2
-      `, [business_id, params.id]);
-    }
-
     const phoneNorm = phone !== undefined ? normalizePhoneOrNull(phone) : undefined;
 
-    const branch = await db.queryOne(`
+    // Reactivating a branch takes one of the plan's branch slots: the count and the write are one step under the
+    // branch-limit lock (SUB-25), together with the default/primary switches, so a refusal changes nothing.
+    const reactivating = is_active === true && !currentBranch.is_active;
+    type Runner = { exec: (sql: string, params: unknown[]) => Promise<unknown>; one: (sql: string, params: unknown[]) => Promise<any> };
+    const writeBranch = async (client: Runner) => {
+      // If setting as default, unset other default branches
+      if (is_default === true) {
+        await client.exec(`
+          UPDATE branches
+          SET is_default = false
+          WHERE business_id = $1 AND id != $2 AND is_default = true
+        `, [business_id, params.id]);
+      }
+      // If setting as primary, unset other primary branches
+      if (is_primary) {
+        await client.exec(`
+          UPDATE branches
+          SET is_primary = false
+          WHERE business_id = $1 AND id != $2
+        `, [business_id, params.id]);
+      }
+      return client.one(`
       UPDATE branches SET
         name = COALESCE($3, name),
         branch_code = COALESCE($4, branch_code),
@@ -339,6 +350,19 @@ export async function PATCH(
       invoice_prefix,
       is_active,
     ]);
+    };
+
+    const branch = reactivating
+      ? await withLimitedCreate(business_id, 'branches', (client: PoolClient) =>
+          writeBranch({
+            exec: (sql, params) => client.query(sql, params as unknown[]),
+            one: async (sql, params) => (await client.query(sql, params as unknown[])).rows[0] ?? null,
+          }),
+        )
+      : await writeBranch({
+          exec: (sql, params) => db.query(sql, params),
+          one: (sql, params) => db.queryOne(sql, params),
+        });
 
     if (!branch) {
       return NextResponse.json(
@@ -349,6 +373,8 @@ export async function PATCH(
 
     return NextResponse.json({ branch });
   } catch (error: any) {
+    const limitRefused = limitRefusedResponse(error);
+    if (limitRefused) return limitRefused;
     console.error('Error updating branch:', error);
     return NextResponse.json(
       { error: 'Failed to update branch', details: error.message },

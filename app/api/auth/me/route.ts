@@ -1,3 +1,4 @@
+import { SEAT_PAUSED_MESSAGE } from '@/lib/subscription/over-limit-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { getUserBranches } from '@/lib/branch-access';
@@ -25,7 +26,9 @@ export async function GET(request: NextRequest) {
     const svCheck = await assertUserSessionVersionMatches(request, userId);
     if (!svCheck.ok) {
       const res = NextResponse.json(
-        { error: 'Session revoked', code: 'SESSION_REVOKED' },
+        svCheck.reason === 'paused'
+          ? { error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }
+          : { error: 'Session revoked', code: 'SESSION_REVOKED' },
         { status: 401 }
       );
       clearSessionCookie(res);

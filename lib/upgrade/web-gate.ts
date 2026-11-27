@@ -10,3 +10,20 @@ export function shouldBlockWeb(opts: { allowed: boolean | null; inPhoneApp: bool
   const path = opts.pathname ?? '';
   return !WEB_GATE_OPEN_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
+
+/**
+ * What the browser gate shows. `failed` is a plan check that errored (server error, or a network error while
+ * online): the gate fails closed with a retry instead of showing the app.
+ */
+export function webGateView(opts: {
+  allowed: boolean | null;
+  failed: boolean;
+  inPhoneApp: boolean;
+  pathname: string | null;
+}): 'app' | 'wall' | 'retry' {
+  if (opts.inPhoneApp) return 'app';
+  const path = opts.pathname ?? '';
+  if (WEB_GATE_OPEN_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) return 'app';
+  if (opts.failed) return 'retry';
+  return opts.allowed === false ? 'wall' : 'app';
+}

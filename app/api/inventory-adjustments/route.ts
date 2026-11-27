@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { assertBranchWritable, branchReadOnlyResponse } from '@/lib/subscription/over-limit-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import {
@@ -259,6 +260,15 @@ export async function POST(request: NextRequest) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
+      throw error;
+    }
+
+    // A branch beyond the plan's branch limit is read-only (SUB-24): no stock changes under it.
+    try {
+      await assertBranchWritable(business_id, branch_id || null);
+    } catch (error) {
+      const readOnly = branchReadOnlyResponse(error);
+      if (readOnly) return readOnly;
       throw error;
     }
 

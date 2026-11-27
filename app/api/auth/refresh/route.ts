@@ -11,6 +11,7 @@ import {
 } from '@/lib/jwt';
 import { queryOne } from '@/lib/db';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { isUserSeatPaused, SEAT_PAUSED_MESSAGE } from '@/lib/subscription/over-limit-access';
 import { CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 function sessionRevokedResponse(): NextResponse {
@@ -63,6 +64,12 @@ export async function POST(request: NextRequest) {
       { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' },
       { status: 403 }
     );
+    clearSessionCookie(res);
+    return res;
+  }
+
+  if (await isUserSeatPaused(payload.userId, row.business_id)) {
+    const res = NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
     clearSessionCookie(res);
     return res;
   }

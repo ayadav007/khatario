@@ -132,12 +132,12 @@ export function getSessionVersionFromRequest(request: NextRequest): number | nul
 export async function assertUserSessionVersionMatches(
   request: NextRequest,
   userId: string
-): Promise<{ ok: true } | { ok: false; reason: 'header' | 'db' }> {
+): Promise<{ ok: true } | { ok: false; reason: 'header' | 'db' | 'paused' }> {
   const v = getSessionVersionFromRequest(request);
   if (v === null) return { ok: false, reason: 'header' };
 
-  const row = await queryOne<{ auth_session_version: string }>(
-    `SELECT auth_session_version::text AS auth_session_version
+  const row = await queryOne<{ auth_session_version: string; business_id: string | null }>(
+    `SELECT auth_session_version::text AS auth_session_version, business_id
      FROM users WHERE id = $1 AND is_active = true`,
     [userId]
   );
@@ -145,6 +145,10 @@ export async function assertUserSessionVersionMatches(
   if (!row || Number(row.auth_session_version) !== v) {
     return { ok: false, reason: 'db' };
   }
+
+  // Seats over the plan after a downgrade (SUB-24): refused on the next request, nothing deleted.
+  const { isUserSeatPaused } = await import('./subscription/over-limit-access');
+  if (await isUserSeatPaused(userId, row.business_id)) return { ok: false, reason: 'paused' };
 
   return { ok: true };
 }
@@ -188,8 +192,8 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
     throw new AuthorizationError('Session revoked', 'SESSION_REVOKED', undefined, 401);
   }
 
-  const row = await queryOne<{ auth_session_version: string }>(
-    `SELECT auth_session_version::text AS auth_session_version
+  const row = await queryOne<{ auth_session_version: string; business_id: string | null }>(
+    `SELECT auth_session_version::text AS auth_session_version, business_id
      FROM users WHERE id = $1 AND is_active = true`,
     [userId]
   );
@@ -198,9 +202,22 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
     const { AuthorizationError } = await import('./authorization');
     throw new AuthorizationError('Session revoked', 'SESSION_REVOKED', undefined, 401);
   }
+
+  // Seats over the plan after a downgrade (SUB-24): refused on the next request, nothing deleted.
+  const { isUserSeatPaused, SEAT_PAUSED_MESSAGE } = await import('./subscription/over-limit-access');
+  if (await isUserSeatPaused(userId, row.business_id)) {
+    const { AuthorizationError } = await import('./authorization');
+    throw new AuthorizationError(SEAT_PAUSED_MESSAGE, 'SEAT_PAUSED', undefined, 403);
+  }
 }
 
 const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** The plain refusal for a user whose seat is paused (plan has fewer seats than users). */
+export async function seatPausedResponse(): Promise<NextResponse> {
+  const { SEAT_PAUSED_MESSAGE } = await import('./subscription/over-limit-access');
+  return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
+}
 
 export type StrictSessionResult =
   | { ok: true; userId: string; businessId: string }
@@ -223,6 +240,7 @@ export async function requireStrictSession(request: NextRequest): Promise<Strict
   }
   const version = await assertUserSessionVersionMatches(request, userId);
   if (!version.ok) {
+    if (version.reason === 'paused') return { ok: false, response: await seatPausedResponse() };
     return {
       ok: false,
       response: NextResponse.json({ error: 'Session revoked', code: 'SESSION_REVOKED' }, { status: 401 }),

@@ -1,3 +1,4 @@
+import { SEAT_PAUSED_MESSAGE } from '@/lib/subscription/over-limit-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { getUserBranches, BranchWithDetails } from '@/lib/branch-access';
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
 
     const svCheck = await assertUserSessionVersionMatches(request, userId);
     if (!svCheck.ok) {
+      if (svCheck.reason === 'paused') {
+        // The plan has fewer seats than users and this user is beyond them (SUB-24). Plain message, sign out.
+        return jsonSessionInvalid(401, { error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' });
+      }
       return jsonSessionInvalid(401, {
         error: 'Session revoked',
         code: 'SESSION_REVOKED',

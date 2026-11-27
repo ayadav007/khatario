@@ -490,6 +490,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               body?.code === 'BUSINESS_NOT_FOUND' ||
               body?.code === 'USER_NOT_FOUND' ||
               body?.code === 'SESSION_REVOKED' ||
+              body?.code === 'SEAT_PAUSED' ||
               body?.code === 'UNAUTHENTICATED';
           } catch {
             if (onPublicSurface) {

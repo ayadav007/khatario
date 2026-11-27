@@ -13,7 +13,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ allowed });
   } catch (error) {
     console.error('Error checking web access:', error);
-    // Never lock a business out of the website because the check failed.
-    return NextResponse.json({ allowed: true });
+    // Fail closed (SUB-19): an unreadable plan is "could not check", never "allowed". The page shows a retry.
+    return NextResponse.json(
+      { error: 'We could not check your plan just now. Please try again.', code: 'PLAN_CHECK_UNAVAILABLE' },
+      { status: 503 },
+    );
   }
 }

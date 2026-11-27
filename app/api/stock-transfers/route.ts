@@ -1,3 +1,4 @@
+import { assertBranchWritable, branchReadOnlyResponse } from '@/lib/subscription/over-limit-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
 import * as db from '@/lib/db';
@@ -183,6 +184,19 @@ export async function POST(request: NextRequest) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
+      throw error;
+    }
+
+    // A branch beyond the plan's branch limit is read-only (SUB-24): no stock moves out of or into it.
+    try {
+      const transferBranches = await db.queryRows<{ branch_id: string | null }>(
+        `SELECT DISTINCT branch_id FROM warehouses WHERE business_id = $1 AND id = ANY($2::uuid[]) AND branch_id IS NOT NULL`,
+        [business_id, [from_location_id, to_location_id]]
+      );
+      for (const row of transferBranches) await assertBranchWritable(business_id, row.branch_id);
+    } catch (error) {
+      const readOnly = branchReadOnlyResponse(error);
+      if (readOnly) return readOnly;
       throw error;
     }
 

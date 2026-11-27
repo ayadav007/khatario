@@ -5,6 +5,7 @@
  * and whether they have exceeded their usage limits.
  */
 
+import { clearOverLimitCache } from '@/lib/subscription/over-limit-cache';
 import * as db from './db';
 import { normalizeFeatureKey, FeatureKey } from './featureKeys';
 import { getEntitlementPlanId, type SubscriptionForEffectivePlan } from './subscription/effective-plan';
@@ -212,6 +213,8 @@ export function clearSubscriptionCache(businessId: string) {
     if (key.startsWith(`${businessId}:`)) addonCache.delete(key);
   }
   clearModuleSubscriptionCache(businessId);
+  // The plan's seat / branch allowance used by the over-limit checks (an upgrade restores access at once).
+  clearOverLimitCache(businessId);
 }
 
 /**
@@ -220,6 +223,7 @@ export function clearSubscriptionCache(businessId: string) {
 export function clearAllSubscriptionCaches() {
   subscriptionCache.clear();
   addonCache.clear();
+  clearOverLimitCache();
 }
 
 /**

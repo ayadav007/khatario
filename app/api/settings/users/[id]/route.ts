@@ -5,7 +5,8 @@ import { requireStrictSession } from '@/lib/auth-helpers';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { parseBooleanFlag } from '@/lib/utils/boolean-flag';
-import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { limitExceededResponse, limitRefusedResponse } from '@/lib/subscription/limit-response';
+import { LimitRefusedError, withLimitedCreate, type LimitSpec } from '@/lib/subscription/limit-lock';
 import { checkLimit, hasWhatsAppBotAddon } from '@/lib/subscription';
 import { userOccupiesConsoleSeat } from '@/lib/subscription/seat-counting';
 import {
@@ -228,9 +229,10 @@ export async function PATCH(
       seat_type: targetSeat,
     });
     const gainingSeat = !seatBefore && seatAfter;
+    const seatCheckNeeded = willBeActive && (movingSeat || (reactivating && targetSeat === 'connect') || gainingSeat);
     // Billing/HR console seats: only a real seat gain is checked (an attendance-only user takes none, even when
     // reactivated). Connect seats are a separate pool with no seat-counting rule here, so reactivating one is checked.
-    if (willBeActive && (movingSeat || (reactivating && targetSeat === 'connect') || gainingSeat)) {
+    if (seatCheckNeeded) {
       const limitCheck = await checkLimit(businessId, seatLimitType(targetSeat));
       if (!limitCheck.allowed) {
         return NextResponse.json(
@@ -249,12 +251,14 @@ export async function PATCH(
 
     // Reactivating a user also reactivates the linked employee row, which takes an employee slot.
     // Checked here, before users.is_active is written, so a refusal leaves both rows untouched.
+    let employeeSlotNeeded = false;
     if (is_active === true) {
       const linkedEmployee = await queryOne<{ is_active: boolean | null }>(
         'SELECT is_active FROM employees WHERE id = $1 AND business_id = $2',
         [userId, businessId],
       );
       if (linkedEmployee && linkedEmployee.is_active === false) {
+        employeeSlotNeeded = true;
         const employeeLimit = await limitExceededResponse(businessId, 'employees');
         if (employeeLimit) return employeeLimit;
       }
@@ -388,25 +392,55 @@ export async function PATCH(
 
     values.push(userId, businessId);
 
-    const updatedUser = await queryOne(`
-      UPDATE users
-      SET ${updates.join(', ')}
-      WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
-      RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
-                is_active, allow_multidevice_sync, seat_type, updated_at
-    `, values);
+    // The advisory checks above answer early with a clear message; the authoritative count is here, under the
+    // (business, limit) lock and in the same transaction as the writes, so two requests at the limit cannot both
+    // take the last seat or employee slot (SUB-25). The linked employee row changes in the same transaction.
+    const lockedLimits: LimitSpec[] = [];
+    if (seatCheckNeeded) lockedLimits.push({ limitType: seatLimitType(targetSeat) });
+    if (employeeSlotNeeded) lockedLimits.push({ limitType: 'employees' });
 
-    if (is_active === false && !existingUser.is_primary_admin) {
-      await query(
-        'UPDATE employees SET is_active = false WHERE id = $1 AND business_id = $2',
-        [userId, businessId]
-      );
-    }
-    if (is_active === true) {
-      await query(
-        'UPDATE employees SET is_active = true WHERE id = $1 AND business_id = $2',
-        [userId, businessId]
-      );
+    let updatedUser: Record<string, unknown> | null;
+    try {
+      updatedUser = await withLimitedCreate(businessId, lockedLimits, async (client) => {
+        const result = await client.query(`
+          UPDATE users
+          SET ${updates.join(', ')}
+          WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
+          RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
+                    is_active, allow_multidevice_sync, seat_type, updated_at
+        `, values);
+
+        if (is_active === false && !existingUser.is_primary_admin) {
+          await client.query(
+            'UPDATE employees SET is_active = false WHERE id = $1 AND business_id = $2',
+            [userId, businessId]
+          );
+        }
+        if (is_active === true) {
+          await client.query(
+            'UPDATE employees SET is_active = true WHERE id = $1 AND business_id = $2',
+            [userId, businessId]
+          );
+        }
+        return (result.rows[0] as Record<string, unknown> | undefined) ?? null;
+      });
+    } catch (e) {
+      if (e instanceof LimitRefusedError && (e.limitType === 'users' || e.limitType === 'connect_agents') && !e.check.unavailable) {
+        return NextResponse.json(
+          {
+            error: seatLimitMessage(targetSeat, e.check),
+            limit: e.check.limit,
+            current: e.check.current,
+            seat_type: targetSeat,
+            limit_type: e.limitType,
+            code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          },
+          { status: 403 },
+        );
+      }
+      const refused = limitRefusedResponse(e);
+      if (refused) return refused;
+      throw e;
     }
 
     const updater = await queryOne('SELECT name FROM users WHERE id = $1', [updated_by_user_id]);

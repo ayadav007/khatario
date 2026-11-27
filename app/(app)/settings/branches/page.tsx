@@ -13,6 +13,7 @@ import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Button } from '@/components/ui/Button';
 import { InfoCallout } from '@/components/ui/InfoCallout';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { OverLimitAccessNotice } from '@/components/settings/OverLimitAccessNotice';
 import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 
 interface Branch {
@@ -167,6 +168,8 @@ export default function BranchesPage() {
           </Button>
         }
       >
+
+        <OverLimitAccessNotice />
 
         {/* Info Banner */}
         <InfoCallout tone="neutral" icon={Building2} title="About branches">

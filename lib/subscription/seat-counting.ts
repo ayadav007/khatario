@@ -12,9 +12,7 @@
  * SQL fragment: Billing/HR console seats counted against those plans' max_users ($1 = business_id).
  * Connect agents (`seat_type = 'connect'`) are a separate pool on the Connect plan.
  */
-export const CONSOLE_SEAT_COUNT_SQL = `
-  SELECT COUNT(*)::int AS count
-  FROM users u
+const CONSOLE_SEAT_WHERE = `
   WHERE u.business_id = $1
     AND COALESCE(u.is_active, true) = true
     AND COALESCE(u.seat_type, 'billing') <> 'connect'
@@ -28,6 +26,22 @@ export const CONSOLE_SEAT_COUNT_SQL = `
       )
     )
 `;
+
+export const CONSOLE_SEAT_COUNT_SQL = `
+  SELECT COUNT(*)::int AS count
+  FROM users u${CONSOLE_SEAT_WHERE}`;
+
+/**
+ * The users who hold those same console seats, in the order over-limit access keeps them
+ * ($1 = business_id): the owner first, then the owner's explicit choice (`over_limit_keep`), then the
+ * longest-standing users. Same WHERE as CONSOLE_SEAT_COUNT_SQL by construction.
+ */
+export const CONSOLE_SEAT_USERS_SQL = `
+  SELECT u.id, COALESCE(u.is_primary_admin, false) AS is_primary_admin,
+         COALESCE(u.over_limit_keep, false) AS over_limit_keep, u.created_at
+  FROM users u${CONSOLE_SEAT_WHERE}
+  ORDER BY COALESCE(u.is_primary_admin, false) DESC, COALESCE(u.over_limit_keep, false) DESC,
+           u.created_at ASC NULLS LAST, u.id ASC`;
 
 export type SeatFields = {
   is_active: boolean | null;

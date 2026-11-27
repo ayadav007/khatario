@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { OverLimitAccessNotice } from '@/components/settings/OverLimitAccessNotice';
 
 interface UserData {
   id: string;
@@ -389,6 +390,8 @@ export default function ManageUsersPage() {
           variant="inline"
           highlightLimit="users"
         />
+
+        <OverLimitAccessNotice />
 
         {/* Users List */}
         {loading ? (

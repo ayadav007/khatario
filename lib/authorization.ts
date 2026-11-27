@@ -320,6 +320,18 @@ export async function authorize(
     }
   }
 
+  // A branch beyond the plan's branch limit is read-only for everyone, the owner included (SUB-24):
+  // writes under it are refused, viewing works. Runs before the owner short-circuit below.
+  if (context?.branchId && action !== 'read') {
+    const branchBusinessId = targetBusinessId ?? callingUser?.business_id;
+    if (branchBusinessId) {
+      const { isBranchReadOnly, BRANCH_READ_ONLY_MESSAGE } = await import('./subscription/over-limit-access');
+      if (await isBranchReadOnly(branchBusinessId, context.branchId)) {
+        throw new AuthorizationError(BRANCH_READ_ONLY_MESSAGE, 'BRANCH_READ_ONLY', { branch_id: context.branchId }, 403);
+      }
+    }
+  }
+
   if (callingUser?.is_primary_admin) {
     return;
   }

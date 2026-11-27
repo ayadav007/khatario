@@ -9,6 +9,7 @@ import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { isUserSeatPaused, SEAT_PAUSED_MESSAGE } from '@/lib/subscription/over-limit-access';
 import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
@@ -127,6 +128,11 @@ export async function POST(request: NextRequest) {
         { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' },
         { status: 403 }
       );
+    }
+
+    // The plan has fewer user seats than users and this user is beyond them (SUB-24): no sign-in, nothing deleted.
+    if (user.business_id && (await isUserSeatPaused(user.id, user.business_id))) {
+      return NextResponse.json({ error: SEAT_PAUSED_MESSAGE, code: 'SEAT_PAUSED' }, { status: 403 });
     }
 
     // Multi-device login is a per-plan feature (Admin → Plans → Features).
