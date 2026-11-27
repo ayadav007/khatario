@@ -2033,3 +2033,19 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Production check still owed: `SELECT count(*) FROM platform_limits;` must not be 0 (the setup-script fix only helps a future setup).
   - The local test database was built before the schema seed fix and lacks five feature rows a fresh build has; tests that depend on them could behave differently on a freshly built database. Not checked.
   - `docs/HOW_TO_MODIFY_SUBSCRIPTION_PLANS.md` still points at the retired table.
+
+## 2026-11-27: Optional GST on subscription charges (plan renewal-refund-gst, task 6)
+- **Asked:** an optional GST line on Khatario's own subscription charges, numbered tax invoices and a receipt the customer can open, with the default changing nothing.
+- **Decided:**
+  - Mode `none` (default), `inclusive`, `exclusive`; tax is applied last (after coupon, upgrade credit and the Rs 1 floor), in integer paise, rounding half up, taxable + tax = amount charged. The mode, rate and breakdown are stored on the pending row and completion uses those, never today's setting.
+  - Document numbers (`KH/2026-27/000001`, credit notes `KH/CN/...`) only for payments and refunds that carry GST, issued as the last statement of the completion transaction, gap-free per April-March year (IST). Mode `none` issues no number and never touches the counter table; its document is a plain Receipt (or Refund receipt) identified by payment reference and date.
+  - Partial refunds split tax head by head (CGST, SGST, IGST) with a cumulative rule, so every head sums exactly to the invoice.
+  - Upgrade credit uses the pre-tax (taxable) amount of each source payment; rows from before this have no breakdown and count as tax-free.
+  - Migration 481 (480 stays as committed). Admin setting at `/api/admin/settings/billing-tax` (super admin to change; who and when stored on the setting and in the admin log). No admin screen yet (UI task).
+- **Shipped:** nothing committed here (the controller commits). Migration 481 written, run only on the local test database.
+- **Open:**
+  - Migration 481 must run before the code (see SERVER_INFRASTRUCTURE.md).
+  - Owner to confirm: the default SAC 998314; that inclusive mode takes the pre-tax credit off a tax-inclusive price; seller details before switching GST on.
+  - Payments recorded by an admin ("record payment") and Rs 0 coupon activations get no tax breakdown and no number, even when GST is on.
+  - Receipts of deleted businesses (archived rows) cannot be opened by anyone yet.
+  - A refund still pending when an earlier one fails keeps the tax share computed at its creation; shares can differ by a few paise from the invoice in that rare case.

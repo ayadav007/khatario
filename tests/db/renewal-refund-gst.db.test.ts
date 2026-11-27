@@ -90,6 +90,16 @@ import { POST as refundPost } from '@/app/api/admin/businesses/[id]/billing/[txI
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { BillingCycle } from '@/lib/subscription/apply-plan-change';
+import { NextResponse } from 'next/server';
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+import { completeSubscriptionCheckoutPaymentDetailed } from '@/lib/platform-subscription-checkout';
+import { completeAddonCheckoutPayment, createAddonCheckout } from '@/lib/platform-addon-checkout';
+import { financialYearLabel, loadTaxSettings, nextInvoiceNumber, saveTaxSettings, TaxSettingsError } from '@/lib/platform-tax';
+import { gstinCheckChar } from '@/lib/tax/gstin';
+import { GET as receiptGet } from '@/app/api/subscriptions/receipts/[id]/route';
+import { GET as adminReceiptGet } from '@/app/api/admin/businesses/[id]/billing/[txId]/receipt/route';
+import { GET as historyGet } from '@/app/api/subscriptions/billing-history/route';
+import { GET as taxSettingsGet, PUT as taxSettingsPut } from '@/app/api/admin/settings/billing-tax/route';
 
 const run = enabled ? describe : describe.skip;
 
@@ -258,6 +268,10 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
 
   beforeAll(async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network disabled in tests'));
+    // Migrations 480 and 481 (idempotent) are the schema every test below runs on: refund indexes, GST settings, tax columns, counters.
+    for (const f of ['480_subscription_tax_and_refunds.sql', '481_subscription_tax.sql']) {
+      await query(readFileSync(join(process.cwd(), 'database/migrations', f), 'utf8'));
+    }
   });
 
   beforeEach(async () => {
@@ -1352,7 +1366,7 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
       await setRow(biz, 'billing_starter', { startOffset: -20, endOffset: 10 });
       expect((await post(cancelPost, '/api/subscriptions/cancel', biz, {})).status).toBe(200);
       await paidAndActivated(biz, 'billing_growth');
-      expect(await queryOne<any>(`SELECT plan_id, cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1`, [biz]))
+      expect(await queryOne<any>(`SELECT plan_id, cancel_at_period_end AS c, cancelled_at IS NULL AS cleared FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`, [biz]))
         .toEqual({ plan_id: 'billing_growth', c: false, cleared: true });
     });
 
@@ -2610,6 +2624,848 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
         expect(rows.rows[0]).toMatchObject({ type: 'refund', status: 'completed', total_amount: '100.00', refund_of: tx });
         expect(await count(`billing_transactions_archive WHERE business_id = $1`, [b3])).toBe(2);
         expect(typeof archiveBusinessBillingTransactions).toBe('function');
+      });
+    });
+  });
+
+  // ---- Task 6: GST mode, tax line, invoice numbers, receipt ----
+
+  describe('GST mode, tax line, invoice numbers and receipt', () => {
+    const ADMIN = randomUUID();
+    const gstinFor = (state: string) => {
+      const first14 = `${state}AAAAA0000A1Z`;
+      return first14 + gstinCheckChar(first14);
+    };
+    const SELLER_MH = gstinFor('27'); // same state as the test businesses (27)
+    const SELLER_KA = gstinFor('29'); // a different state
+    const SAVED = { seller_legal_name: 'Khatario Software Pvt Ltd', seller_address: '1 MG Road, Bengaluru' };
+
+    async function resetTax() {
+      await query(`INSERT INTO platform_settings (id) VALUES ('default') ON CONFLICT (id) DO NOTHING`);
+      await query(
+        `UPDATE platform_settings SET subscription_gst_mode = 'none', subscription_gst_rate = 18, subscription_seller_gstin = NULL,
+           subscription_seller_legal_name = NULL, subscription_seller_address = NULL, subscription_seller_state_code = NULL,
+           subscription_sac_code = '998314', subscription_invoice_prefix = 'KH', platform_payment_provider = NULL
+         WHERE id = 'default'`,
+      );
+    }
+    const setTax = (o: Record<string, unknown> = {}) =>
+      saveTaxSettings({ mode: 'exclusive', rate_percent: 18, seller_gstin: SELLER_MH, ...SAVED, ...o });
+
+    afterEach(async () => {
+      await resetTax();
+      (requirePlatformRequest as jest.Mock).mockReset();
+      (global.fetch as unknown as jest.Mock).mockReset();
+      (global.fetch as unknown as jest.Mock).mockRejectedValue(new Error('network disabled in tests'));
+      jest.restoreAllMocks();
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network disabled in tests'));
+    });
+    beforeEach(resetTax);
+
+    /** A real checkout with the gateway call stubbed. Returns the pending row id, the quoted and the gateway amount. */
+    async function checkout(businessId: string, planId: string, o: { cycle?: BillingCycle; coupon?: string; provider?: 'razorpay' | 'easebuzz' } = {}) {
+      const proto = o.provider === 'easebuzz' ? EasebuzzPaymentProvider.prototype : RazorpayPaymentProvider.prototype;
+      const spy = jest
+        .spyOn(proto as any, 'createHostedPaymentLink')
+        .mockResolvedValue({ provider: o.provider ?? 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://pay.example/x' });
+      try {
+        const r = await createSubscriptionCheckout({ businessId, planId, billingCycle: o.cycle ?? 'monthly', couponCode: o.coupon });
+        return { tx: r.billingTransactionId, amount: r.amount, gateway: (spy.mock.calls[0][0] as { amount: number }).amount, result: r };
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    const taxRow = (id: string) =>
+      queryOne<{
+        status: string; amount: string; total_amount: string; tax_amount: string; taxable_amount: string | null;
+        cgst_amount: string | null; sgst_amount: string | null; igst_amount: string | null; gst_rate: string | null;
+        gst_mode: string | null; invoice_number: string | null; metadata: Record<string, any>; type: string;
+      }>(
+        `SELECT type, status, amount::text, total_amount::text, tax_amount::text, taxable_amount::text, cgst_amount::text,
+                sgst_amount::text, igst_amount::text, gst_rate::text, gst_mode, invoice_number, metadata
+         FROM billing_transactions WHERE id = $1`,
+        [id],
+      );
+
+    const count = async (from: string, params: unknown[] = []) =>
+      Number((await queryOne<{ c: string }>(`SELECT COUNT(*)::text AS c FROM ${from}`, params))!.c);
+    const FY = /^KH\/\d{4}-\d{2}\/\d{6}$/;
+
+    async function complete(businessId: string, tx: string, planId: string, rupees: number, cycle: BillingCycle = 'monthly') {
+      return hook('payment.captured', 'pay_t6_' + sfx(), 'captured', notesFor(businessId, tx, planId, cycle), Math.round(rupees * 100));
+    }
+
+    /** A completed payment with a stored tax split and a paid period, as a taxed checkout would leave it. */
+    async function insertTaxedPaid(businessId: string, planId: string, taxable: number | null, total: number, tax: number, startOff: number, endOff: number) {
+      const r = await queryOne<{ id: string }>(
+        `INSERT INTO billing_transactions
+           (business_id, type, status, amount, total_amount, tax_amount, taxable_amount, plan_id, module_key, billing_cycle,
+            payment_method, period_start, period_end, gateway_response)
+         VALUES ($1, 'payment', 'completed', $2, $3, $4, $5, $6, 'billing', 'monthly', 'razorpay',
+                 CURRENT_DATE + $7::int, CURRENT_DATE + $8::int, '{"checkout_type":"subscription","provider":"razorpay"}'::jsonb)
+         RETURNING id`,
+        [businessId, taxable ?? total, total, tax, taxable, planId, startOff, endOff],
+      );
+      return r!.id;
+    }
+
+    const asBusiness = (id: string) => ({ headers: { 'x-authenticated-business-id': id, 'x-authenticated-user-id': adminOf.get(id)! } });
+    async function receiptOf(businessId: string | null, id: string) {
+      const res = await receiptGet(new NextRequest(`http://localhost/api/subscriptions/receipts/${id}`, businessId ? asBusiness(businessId) : {}), {
+        params: { id },
+      });
+      return { status: res.status, type: res.headers.get('content-type'), text: await res.text() };
+    }
+    const asPlatformAdmin = () => (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: ADMIN } });
+
+    function stubRefundGateway() {
+      (global.fetch as unknown as jest.Mock).mockReset();
+      (global.fetch as unknown as jest.Mock).mockImplementation(async (url: unknown) => {
+        const u = String(url);
+        return { ok: true, status: 200, json: async () => (u.includes('/refund') ? { id: 'rfnd_' + sfx().replace(/-/g, 'x'), status: 'processed' } : {}) };
+      });
+    }
+    const refundOf = (businessId: string, tx: string, amount?: number) =>
+      refundPlatformPayment({ businessId, transactionId: tx, adminId: ADMIN, endPlan: 'period_end', ...(amount === undefined ? {} : { amount }) });
+
+    // ---------------- default mode: nothing a customer pays changes ----------------
+
+    describe('default (none): every amount is what it was', () => {
+      it('a normal plan: quoted, sent to the gateway and stored at the plan price, no tax; completion issues no number in mode none', async () => {
+        expect((await loadTaxSettings()).mode).toBe('none');
+        const price = await planPrice('billing_growth');
+        const q = await checkout(biz, 'billing_growth');
+        expect(q.amount).toBe(price);
+        expect(q.gateway).toBe(price);
+        expect(await taxRow(q.tx)).toMatchObject({
+          status: 'pending', amount: price.toFixed(2), total_amount: price.toFixed(2), tax_amount: '0.00', taxable_amount: price.toFixed(2),
+          gst_mode: 'none', invoice_number: null,
+        });
+        expect((await taxRow(q.tx))!.metadata.tax).toMatchObject({ mode: 'none', rate: 0, taxable: price, tax: 0 });
+        expect(await complete(biz, q.tx, 'billing_growth', price)).toMatchObject({ ok: true });
+        const done = (await taxRow(q.tx))!;
+        expect(done.status).toBe('completed');
+        expect(done.invoice_number).toBeNull(); // mode none: a plain receipt, never numbered
+        expect(done.tax_amount).toBe('0.00');
+      });
+
+      it('a ₹1 plan is charged ₹1 and the floor still holds', async () => {
+        await query(`UPDATE subscription_plans SET price_monthly = 1 WHERE id = 'billing_starter'`);
+        try {
+          const q = await checkout(biz, 'billing_starter');
+          expect(q.amount).toBe(1);
+          expect(q.gateway).toBe(1);
+          expect(Number((await taxRow(q.tx))!.total_amount)).toBe(1);
+          expect(await complete(biz, q.tx, 'billing_starter', 1)).toMatchObject({ ok: true });
+          expect((await moduleRow(biz))!.plan_id).toBe('billing_starter');
+        } finally {
+          await query(`UPDATE subscription_plans SET price_monthly = 299 WHERE id = 'billing_starter'`);
+        }
+      });
+
+      it('a coupon takes its amount off and nothing else is added', async () => {
+        const code = `T6${randomUUID().slice(0, 8).toUpperCase()}`;
+        const c = await queryOne<{ id: string }>(`INSERT INTO coupons (code, type, value, max_per_business) VALUES ($1, 'flat', 100, 1) RETURNING id`, [code]);
+        coupons.push(c!.id);
+        const q = await checkout(biz, 'billing_growth', { coupon: code });
+        expect(q.amount).toBe((await planPrice('billing_growth')) - 100);
+        expect(q.gateway).toBe(q.amount);
+        expect(await taxRow(q.tx)).toMatchObject({ amount: '499.00', tax_amount: '0.00', total_amount: '399.00', gst_mode: 'none' });
+      });
+
+      it('an upgrade with credit charges the same as before (price - credit)', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        await insertTaxedPaid(biz, 'billing_starter', null, 299, 0, -10, 20);
+        const p = await resolveCheckoutPricing({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+        expect(p).toMatchObject({ finalAmount: 299.67, netAmount: 299.67, taxAmount: 0, taxableAmount: 299.67, creditApplied: 199.33 });
+        const q = await checkout(biz, 'billing_growth');
+        expect(q.amount).toBe(299.67);
+        expect(q.gateway).toBe(299.67);
+      });
+
+      it('an add-on is charged its price, and its pending row carries no tax', async () => {
+        const spy = jest
+          .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+          .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://pay.example/a' });
+        const r = await createAddonCheckout({ businessId: biz, addonType: 'khatario_ai' });
+        expect(r.amount).toBe(299);
+        expect((spy.mock.calls[0][0] as { amount: number }).amount).toBe(299);
+        expect(await taxRow(r.billingTransactionId)).toMatchObject({ total_amount: '299.00', tax_amount: '0.00', gst_mode: 'none' });
+      });
+    });
+
+    // ---------------- exclusive / inclusive ----------------
+
+    describe('exclusive: tax is added after coupon and credit', () => {
+      it('18 % on ₹299 charges ₹352.82 (tax ₹53.82); the same amount reaches Razorpay and Easebuzz; the breakdown is stored', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        expect(q.amount).toBe(352.82);
+        expect(q.gateway).toBe(352.82);
+        const row = (await taxRow(q.tx))!;
+        expect(row).toMatchObject({
+          amount: '299.00', total_amount: '352.82', tax_amount: '53.82', taxable_amount: '299.00', gst_rate: '18.00', gst_mode: 'exclusive',
+          cgst_amount: '26.91', sgst_amount: '26.91', igst_amount: '0.00', invoice_number: null,
+        });
+        expect(row.metadata.tax).toMatchObject({ mode: 'exclusive', rate: 18, taxable: 299, tax: 53.82, intra_state: true, place_of_supply_code: '27' });
+        expect(row.metadata.tax.seller).toMatchObject({ legal_name: SAVED.seller_legal_name, gstin: SELLER_MH });
+
+        await query(`UPDATE platform_settings SET platform_payment_provider = 'easebuzz' WHERE id = 'default'`);
+        const e = await checkout(await newBusiness('eb'), 'billing_starter', { provider: 'easebuzz' });
+        expect(e.amount).toBe(352.82);
+        expect(e.gateway).toBe(352.82);
+      });
+
+      it('the completion check uses the stored amounts, not the setting at payment time; the invoice number is issued then', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        await saveTaxSettings({ mode: 'none' }); // switched after the link was made
+        await expect(
+          completeSubscriptionCheckoutPaymentDetailed({
+            businessId: biz, planId: 'billing_starter', billingCycle: 'monthly', billingTransactionId: q.tx, providerPaymentId: 'pay_x_' + sfx(), amount: 299,
+          }),
+        ).rejects.toThrow('AMOUNT_MISMATCH');
+        expect((await taxRow(q.tx))!).toMatchObject({ status: 'pending', invoice_number: null });
+        expect(await complete(biz, q.tx, 'billing_starter', 352.82)).toMatchObject({ ok: true });
+        const done = (await taxRow(q.tx))!;
+        expect(done).toMatchObject({ status: 'completed', total_amount: '352.82', tax_amount: '53.82' });
+        expect(done.invoice_number).toMatch(FY);
+        expect(done.invoice_number!.split('/')[1]).toBe(await financialYearLabel({ query: (sql: string, v?: unknown[]) => getPool().query(sql, v as unknown[]) } as any));
+      });
+
+      it('a failed or pending payment gets no number; a repeated completion does not issue a second one', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_growth');
+        expect((await taxRow(q.tx))!.invoice_number).toBeNull();
+        await updateBillingTransactionStatus(q.tx, 'failed');
+        expect((await taxRow(q.tx))!.invoice_number).toBeNull();
+
+        const ok = await checkout(biz, 'billing_growth');
+        const payId = 'pay_rep_' + sfx();
+        const notes = notesFor(biz, ok.tx, 'billing_growth');
+        await hook('payment.captured', payId, 'captured', notes, 58882);
+        const first = (await taxRow(ok.tx))!.invoice_number;
+        expect(first).toMatch(FY);
+        const counter = () => queryOne<{ n: string }>(`SELECT COALESCE(SUM(last_number), 0)::text AS n FROM subscription_invoice_counters`);
+        const before = await counter();
+        await hook('payment.captured', payId, 'captured', notes, 58882);
+        const again = await completeSubscriptionCheckoutPaymentDetailed({
+          businessId: biz, planId: 'billing_growth', billingCycle: 'monthly', billingTransactionId: ok.tx, providerPaymentId: payId, amount: 588.82,
+        });
+        expect(again.completion).toBe('already_completed');
+        expect((await taxRow(ok.tx))!.invoice_number).toBe(first);
+        expect(await counter()).toEqual(before);
+      });
+
+      it('simultaneous completions get different numbers with no gap', async () => {
+        await setTax();
+        const bs = await Promise.all([newBusiness('c1'), newBusiness('c2'), newBusiness('c3'), newBusiness('c4')]);
+        const qs: Awaited<ReturnType<typeof checkout>>[] = [];
+        for (const b of bs) qs.push(await checkout(b, 'billing_growth')); // one at a time: each stubs the gateway call
+        await Promise.all(qs.map((q, i) => complete(bs[i], q.tx, 'billing_growth', 588.82)));
+        const seqs = (await Promise.all(qs.map((q) => taxRow(q.tx)))).map((r) => Number(r!.invoice_number!.split('/')[2])).sort((a, b) => a - b);
+        expect(new Set(seqs).size).toBe(4);
+        expect(seqs[3] - seqs[0]).toBe(3);
+      });
+
+      it('two simultaneous completions of the SAME payment issue one number', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_growth');
+        const payId = 'pay_same_' + sfx();
+        const results = await Promise.all([
+          hook('payment.captured', payId, 'captured', notesFor(biz, q.tx, 'billing_growth'), 58882),
+          hook('payment.captured', payId, 'captured', notesFor(biz, q.tx, 'billing_growth'), 58882),
+        ]);
+        expect(results.every((r) => (r as { ok: boolean }).ok)).toBe(true);
+        expect((await taxRow(q.tx))!.invoice_number).toMatch(FY);
+        expect(await count(`billing_transactions WHERE invoice_number = $1`, [(await taxRow(q.tx))!.invoice_number])).toBe(1);
+      });
+
+      it('another state, and an unknown state, get IGST; the same state gets CGST + SGST', async () => {
+        await setTax({ seller_gstin: SELLER_KA });
+        const q1 = await checkout(biz, 'billing_starter'); // buyer GSTIN state 27, seller 29
+        expect(await taxRow(q1.tx)).toMatchObject({ igst_amount: '53.82', cgst_amount: '0.00', sgst_amount: '0.00' });
+        const unknown = await newBusiness('nostate');
+        await query(`UPDATE businesses SET gstin = NULL, state_code = NULL, state = NULL WHERE id = $1`, [unknown]);
+        const q2 = await checkout(unknown, 'billing_starter');
+        expect(await taxRow(q2.tx)).toMatchObject({ igst_amount: '53.82', cgst_amount: '0.00', total_amount: '352.82' });
+        expect((await taxRow(q2.tx))!.metadata.tax).toMatchObject({ intra_state: false, place_of_supply_code: null });
+        const named = await newBusiness('named');
+        await query(`UPDATE businesses SET gstin = NULL, state_code = NULL, state = 'Karnataka' WHERE id = $1`, [named]);
+        await setTax({ seller_gstin: SELLER_KA });
+        expect(await taxRow((await checkout(named, 'billing_starter')).tx)).toMatchObject({ cgst_amount: '26.91', sgst_amount: '26.91' });
+      });
+
+      it('the ₹1 floor: credit larger than the price leaves ₹1 before tax; ₹1.18 to pay', async () => {
+        await setTax();
+        await setRow(biz, 'billing_starter', { startOffset: -1, endOffset: 29 });
+        await insertTaxedPaid(biz, 'billing_starter', null, 5000, 0, -1, 29);
+        const p = await resolveCheckoutPricing({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+        expect(p).toMatchObject({ netAmount: 1, taxableAmount: 1, taxAmount: 0.18, finalAmount: 1.18 });
+        const q = await checkout(biz, 'billing_growth');
+        expect(q.gateway).toBe(1.18);
+      });
+
+      it('a ₹1 plan: 1.18 exclusive, 1 inclusive', async () => {
+        await query(`UPDATE subscription_plans SET price_monthly = 1 WHERE id = 'billing_starter'`);
+        try {
+          await setTax();
+          expect((await checkout(biz, 'billing_starter')).amount).toBe(1.18);
+          await saveTaxSettings({ mode: 'inclusive' });
+          const q = await checkout(await newBusiness('one'), 'billing_starter');
+          expect(q.amount).toBe(1);
+          expect(await taxRow(q.tx)).toMatchObject({ total_amount: '1.00', taxable_amount: '0.85', tax_amount: '0.15' });
+        } finally {
+          await query(`UPDATE subscription_plans SET price_monthly = 299 WHERE id = 'billing_starter'`);
+        }
+      });
+
+      it('an upgrade: tax is on the price after credit (₹299.67 + ₹53.94)', async () => {
+        await setTax();
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        await insertTaxedPaid(biz, 'billing_starter', null, 299, 0, -10, 20); // from before GST was recorded
+        const p = await resolveCheckoutPricing({ businessId: biz, planId: 'billing_growth', billingCycle: 'monthly' });
+        expect(p).toMatchObject({ baseAmount: 499, creditApplied: 199.33, netAmount: 299.67, taxAmount: 53.94, finalAmount: 353.61 });
+      });
+
+      it('yearly ₹4,499 + 18 % = ₹5,308.82', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_growth', { cycle: 'yearly' });
+        expect(q.amount).toBe(5308.82);
+        expect(await complete(biz, q.tx, 'billing_growth', 5308.82, 'yearly')).toMatchObject({ ok: true });
+      });
+
+      it('an add-on gets the same tax, on both gateways, and completes only at the stored total', async () => {
+        await setTax();
+        const rz = jest
+          .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+          .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://pay.example/a' });
+        const r = await createAddonCheckout({ businessId: biz, addonType: 'khatario_ai' });
+        expect(r.amount).toBe(352.82);
+        expect(r.taxAmount).toBe(53.82);
+        expect((rz.mock.calls[0][0] as { amount: number }).amount).toBe(352.82);
+        expect(await taxRow(r.billingTransactionId)).toMatchObject({ amount: '299.00', total_amount: '352.82', tax_amount: '53.82', gst_mode: 'exclusive' });
+        await query(`UPDATE platform_settings SET platform_payment_provider = 'easebuzz' WHERE id = 'default'`);
+        const eb = jest
+          .spyOn(EasebuzzPaymentProvider.prototype, 'createHostedPaymentLink')
+          .mockResolvedValue({ provider: 'easebuzz', providerPaymentId: 'txn_' + sfx(), paymentUrl: 'https://pay.example/e' });
+        const r2 = await createAddonCheckout({ businessId: await newBusiness('ebadd'), addonType: 'khatario_ai' });
+        expect(r2.amount).toBe(352.82);
+        expect((eb.mock.calls[0][0] as { amount: number }).amount).toBe(352.82);
+
+        await expect(
+          completeAddonCheckoutPayment({ businessId: biz, billingTransactionId: r.billingTransactionId, providerPaymentId: 'pay_a_' + sfx(), amount: 299 }),
+        ).rejects.toThrow('AMOUNT_MISMATCH');
+        await completeAddonCheckoutPayment({ businessId: biz, billingTransactionId: r.billingTransactionId, providerPaymentId: 'pay_a_' + sfx(), amount: 352.82 });
+        expect((await taxRow(r.billingTransactionId))!.invoice_number).toMatch(FY);
+      });
+    });
+
+    describe('inclusive: the charge is unchanged, the tax part is shown', () => {
+      it('₹299 stays ₹299; taxable ₹253.39 + tax ₹45.61', async () => {
+        await setTax({ mode: 'inclusive' });
+        const q = await checkout(biz, 'billing_starter');
+        expect(q.amount).toBe(299);
+        expect(q.gateway).toBe(299);
+        expect(await taxRow(q.tx)).toMatchObject({
+          total_amount: '299.00', taxable_amount: '253.39', tax_amount: '45.61', cgst_amount: '22.80', sgst_amount: '22.81', gst_mode: 'inclusive',
+        });
+      });
+    });
+
+    // ---------------- upgrade credit is pre-tax ----------------
+
+    describe('upgrade credit uses the pre-tax amount of each source', () => {
+      it('a taxed payment (₹352.82, taxable ₹299) gives the same credit as ₹299 did; a row with no breakdown uses its total', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        const taxed = await insertTaxedPaid(biz, 'billing_starter', 299, 352.82, 53.82, -10, 20);
+        expect(await computeUpgradeCredit(biz, 'billing', 'billing_growth')).toMatchObject({ amount: 199.33, fromTransactionId: taxed });
+        const b2 = await newBusiness('legacy');
+        await setRow(b2, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        await insertTaxedPaid(b2, 'billing_starter', null, 299, 0, -10, 20);
+        expect((await computeUpgradeCredit(b2, 'billing', 'billing_growth')).amount).toBe(199.33);
+      });
+
+      it('a part-refunded taxed payment loses the pre-tax share of the refund', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        const id = await insertTaxedPaid(biz, 'billing_starter', 299, 352.82, 53.82, -10, 20);
+        await query(`UPDATE billing_transactions SET metadata = jsonb_build_object('refunded_paise', 17641) WHERE id = $1`, [id]);
+        // half of the money went back: pre-tax 149.50 left; 20/30 of it
+        expect((await computeUpgradeCredit(biz, 'billing', 'billing_growth')).amount).toBe(99.66);
+      });
+
+      it('a tax-free part-refunded payment is exactly as before (total - refunded)', async () => {
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        const id = await insertTaxedPaid(biz, 'billing_starter', null, 299, 0, -10, 20);
+        await query(`UPDATE billing_transactions SET metadata = jsonb_build_object('refunded_paise', 10000) WHERE id = $1`, [id]);
+        expect((await computeUpgradeCredit(biz, 'billing', 'billing_growth')).amount).toBe(132.66); // (299 - 100) * 20 / 30
+      });
+    });
+
+    // ---------------- refunds ----------------
+
+    describe('refunds', () => {
+      it('a refund of a taxed payment carries its share of the tax, a credit-note number, and the shares add up', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        await complete(biz, q.tx, 'billing_starter', 352.82);
+        stubRefundGateway();
+        const a = await refundOf(biz, q.tx, 100);
+        const b = await refundOf(biz, q.tx);
+        const rows = (
+          await query<{ id: string }>(`SELECT id FROM billing_transactions WHERE type = 'refund' AND metadata->>'refund_of' = $1 ORDER BY created_at`, [q.tx])
+        ).rows;
+        const [r1, r2] = await Promise.all(rows.map((r) => taxRow(r.id)));
+        expect(a.status).toBe('processed');
+        expect(b.status).toBe('processed');
+        expect(r1).toMatchObject({ status: 'completed', total_amount: '100.00', tax_amount: '15.24', taxable_amount: '84.76', gst_mode: 'exclusive' });
+        expect(r2).toMatchObject({ total_amount: '252.82', tax_amount: '38.58', taxable_amount: '214.24' });
+        expect(Number(r1!.tax_amount) + Number(r2!.tax_amount)).toBeCloseTo(53.82, 2);
+        expect(Number(r1!.cgst_amount) + Number(r1!.sgst_amount)).toBeCloseTo(15.24, 2);
+        for (const r of [r1, r2]) expect(r!.invoice_number).toMatch(/^KH\/CN\/\d{4}-\d{2}\/\d{6}$/);
+        expect(r1!.invoice_number).not.toBe(r2!.invoice_number);
+        // the payment's own number is untouched and from the other series
+        expect((await taxRow(q.tx))!.invoice_number).toMatch(FY);
+      });
+
+      it('a refund of a tax-free payment has no tax and no number: a plain Refund receipt', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_growth', 499);
+        stubRefundGateway();
+        await refundOf(biz, q.tx, 100);
+        const r = (await queryOne<{ id: string }>(`SELECT id FROM billing_transactions WHERE type = 'refund' AND metadata->>'refund_of' = $1`, [q.tx]))!;
+        expect(await taxRow(r.id)).toMatchObject({ tax_amount: '0.00', total_amount: '100.00', gst_mode: null });
+        expect((await taxRow(r.id))!.invoice_number).toBeNull();
+        const doc = await receiptOf(biz, r.id);
+        expect(doc.status).toBe(200);
+        expect(doc.text).toContain('<h1>Refund receipt</h1>');
+        expect(doc.text).not.toMatch(/tax invoice|GST/i);
+      });
+
+      it('a pending refund has no number', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_growth', 499);
+        (global.fetch as unknown as jest.Mock).mockReset();
+        (global.fetch as unknown as jest.Mock).mockRejectedValue(new TypeError('fetch failed'));
+        await refundOf(biz, q.tx, 100).catch(() => undefined);
+        const rows = await query<{ id: string; status: string; invoice_number: string | null }>(
+          `SELECT id, status, invoice_number FROM billing_transactions WHERE type = 'refund' AND metadata->>'refund_of' = $1`, [q.tx]);
+        expect(rows.rows.length).toBeGreaterThan(0);
+        for (const r of rows.rows) if (r.status !== 'completed') expect(r.invoice_number).toBeNull();
+      });
+    });
+
+    // ---------------- numbering ----------------
+
+    describe('numbers', () => {
+      const scoped = async (fn: (c: import('pg').PoolClient) => Promise<void>) => {
+        const c = await getPool().connect();
+        try {
+          await c.query('BEGIN');
+          await fn(c);
+        } finally {
+          await c.query('ROLLBACK').catch(() => undefined);
+          c.release();
+        }
+      };
+
+      it('the financial year runs April to March by the date in India', async () => {
+        await scoped(async (c) => {
+          expect(await financialYearLabel(c, '2027-03-31T18:00:00Z')).toBe('2026-27'); // 23:30 IST on 31 March
+          expect(await financialYearLabel(c, '2027-03-31T18:30:00Z')).toBe('2027-28'); // 00:00 IST on 1 April
+          expect(await financialYearLabel(c, '2026-04-01T00:00:00+05:30')).toBe('2026-27');
+          expect(await financialYearLabel(c, '2027-01-15T10:00:00Z')).toBe('2026-27');
+          expect(await financialYearLabel(c, '2099-12-31T00:00:00Z')).toBe('2099-00');
+        });
+      });
+
+      it('numbers continue within a year, restart in a new one, credit notes have their own series, and a rollback gives the number back', async () => {
+        await query(`DELETE FROM subscription_invoice_counters WHERE financial_year IN ('2090-91', '2091-92')`);
+        try {
+          await scoped(async (c) => {
+            expect(await nextInvoiceNumber(c, { invoicePrefix: 'ZZ' }, { at: '2090-05-01T00:00:00Z' })).toBe('ZZ/2090-91/000001');
+          });
+          const c = await getPool().connect();
+          try {
+            await c.query('BEGIN');
+            expect(await nextInvoiceNumber(c, { invoicePrefix: 'ZZ' }, { at: '2090-05-01T00:00:00Z' })).toBe('ZZ/2090-91/000001');
+            expect(await nextInvoiceNumber(c, { invoicePrefix: 'ZZ' }, { at: '2091-03-01T00:00:00Z' })).toBe('ZZ/2090-91/000002');
+            expect(await nextInvoiceNumber(c, { invoicePrefix: 'ZZ' }, { at: '2091-04-01T00:00:00Z' })).toBe('ZZ/2091-92/000001');
+            expect(await nextInvoiceNumber(c, { invoicePrefix: 'ZZ' }, { at: '2090-05-01T00:00:00Z', series: 'credit_note' })).toBe('ZZ/CN/2090-91/000001');
+            await c.query('COMMIT');
+          } finally {
+            c.release();
+          }
+          await scoped(async (c2) => {
+            expect(await nextInvoiceNumber(c2, { invoicePrefix: 'ZZ' }, { at: '2090-05-01T00:00:00Z' })).toBe('ZZ/2090-91/000003');
+          });
+        } finally {
+          await query(`DELETE FROM subscription_invoice_counters WHERE financial_year IN ('2090-91', '2091-92')`);
+        }
+      });
+
+      it('the database refuses a second row with the same invoice number', async () => {
+        const q1 = await checkout(biz, 'billing_growth');
+        const q2 = await checkout(biz, 'billing_growth');
+        await query(`UPDATE billing_transactions SET invoice_number = 'DUP/1' WHERE id = $1`, [q1.tx]);
+        await expect(query(`UPDATE billing_transactions SET invoice_number = 'DUP/1' WHERE id = $1`, [q2.tx])).rejects.toMatchObject({ code: '23505' });
+        await query(`UPDATE billing_transactions SET invoice_number = NULL WHERE id = $1`, [q1.tx]);
+      });
+    });
+
+    // ---------------- receipt route ----------------
+
+    describe('receipt route', () => {
+      it('a taxed payment: the owner sees a Tax invoice with the stored split; the seller as it was when the link was made', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        await complete(biz, q.tx, 'billing_starter', 352.82);
+        await saveTaxSettings({ seller_legal_name: 'Renamed Later Pvt Ltd' });
+        const doc = await receiptOf(biz, q.tx);
+        const number = (await taxRow(q.tx))!.invoice_number!;
+        expect(doc.status).toBe(200);
+        expect(doc.type).toMatch(/text\/html/);
+        expect(doc.text).toContain('<h1>Tax invoice</h1>');
+        expect(doc.text).toContain(number);
+        expect(doc.text).toContain(SAVED.seller_legal_name);
+        expect(doc.text).not.toContain('Renamed Later');
+        expect(doc.text).toContain(SELLER_MH);
+        expect(doc.text).toContain('27AAAPA1234A1Z5'); // buyer GSTIN
+        expect(doc.text).toContain('CGST @ 9%');
+        expect(doc.text).toContain('SGST @ 9%');
+        expect(doc.text).toContain('26.91');
+        expect(doc.text).toContain('299.00');
+        expect(doc.text).toContain('352.82');
+        expect(doc.text).toContain('998314');
+      });
+
+      it('mode none: a Receipt with the payment reference, no number, and never a Tax invoice or a GST line', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_growth', 499);
+        const doc = await receiptOf(biz, q.tx);
+        expect(doc.status).toBe(200);
+        expect(doc.text).toContain('<h1>Receipt</h1>');
+        expect((await taxRow(q.tx))!.invoice_number).toBeNull();
+        expect(doc.text).not.toMatch(/ no\.|tax invoice|GST|Taxable|IGST/i);
+        expect(doc.text).toContain('Reference');
+        expect(doc.text).toContain('499.00');
+      });
+
+      it('a receipt of a payment made before GST was recorded (no breakdown) is a Receipt', async () => {
+        const id = await insertTaxedPaid(biz, 'billing_growth', null, 499, 0, 0, 30);
+        const doc = await receiptOf(biz, id);
+        expect(doc.status).toBe(200);
+        expect(doc.text).toContain('<h1>Receipt</h1>');
+      });
+
+      it('a payment of another business, a pending payment, a bad id and no session all fail; business ids in the URL are not trusted', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        expect((await receiptOf(biz, q.tx)).status).toBe(404); // pending
+        await complete(biz, q.tx, 'billing_growth', 499);
+        expect((await receiptOf(biz, q.tx)).status).toBe(200);
+        const other = await newBusiness('other');
+        expect((await receiptOf(other, q.tx)).status).toBe(404);
+        expect((await receiptOf(biz, randomUUID())).status).toBe(404);
+        expect((await receiptOf(biz, 'not-a-uuid')).status).toBe(404);
+        expect((await receiptOf(null, q.tx)).status).toBe(401);
+        const res = await receiptGet(new NextRequest(`http://localhost/api/subscriptions/receipts/${q.tx}?business_id=${biz}`, asBusiness(other)), { params: { id: q.tx } });
+        expect(res.status).toBe(404);
+      });
+
+      it('a business name with markup is escaped', async () => {
+        const evil = '<script>alert(1)</script>';
+        await setTax();
+        await query(`UPDATE businesses SET name = $2 WHERE id = $1`, [biz, evil]);
+        const q = await checkout(biz, 'billing_starter');
+        await complete(biz, q.tx, 'billing_starter', 352.82);
+        const taxed = await receiptOf(biz, q.tx);
+        expect(taxed.text).not.toContain('<script>');
+        expect(taxed.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+        await saveTaxSettings({ mode: 'none' });
+        const biz2 = await newBusiness('plain');
+        await query(`UPDATE businesses SET name = $2 WHERE id = $1`, [biz2, evil]);
+        const q2 = await checkout(biz2, 'billing_growth');
+        await complete(biz2, q2.tx, 'billing_growth', 499);
+        const plain = await receiptOf(biz2, q2.tx);
+        expect(plain.text).not.toContain('<script>');
+        expect(plain.text).toContain('&lt;script&gt;');
+      });
+
+      it('a platform admin opens it through the admin route for that business only', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_growth', 499);
+        const call = (bizId: string, tx: string) =>
+          adminReceiptGet(new NextRequest(`http://localhost/api/admin/businesses/${bizId}/billing/${tx}/receipt`), { params: { id: bizId, txId: tx } });
+        asPlatformAdmin();
+        const ok = await call(biz, q.tx);
+        expect(ok.status).toBe(200);
+        expect(await ok.text()).toContain('<h1>Receipt</h1>');
+        expect((await call(await newBusiness('adm'), q.tx)).status).toBe(404);
+        (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'no' }, { status: 403 }) });
+        expect((await call(biz, q.tx)).status).toBe(403);
+      });
+    });
+
+    // ---------------- billing history ----------------
+
+    describe('billing history', () => {
+      it('carries the receipt link, number and breakdown; pending rows have no link; refunds are negative', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        const pendingOnly = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_starter', 352.82);
+        stubRefundGateway();
+        await refundOf(biz, q.tx, 100);
+        const res = await historyGet(new NextRequest('http://localhost/api/subscriptions/billing-history', asBusiness(biz)));
+        const body = await res.json();
+        const byId = (id: string) => body.history.find((h: any) => h.id === id);
+        const paid = byId(q.tx);
+        expect(paid).toMatchObject({
+          receipt_url: `/api/subscriptions/receipts/${q.tx}`, invoice_number: expect.stringMatching(FY), document_kind: 'tax_invoice',
+          gst_mode: 'exclusive', gst_rate: 18, taxable_amount: 299, tax_amount: 53.82, cgst_amount: 26.91, sgst_amount: 26.91, igst_amount: 0, amount: 352.82,
+        });
+        expect(byId(pendingOnly.tx)).toMatchObject({ receipt_url: null, invoice_number: null });
+        const refund = body.history.find((h: any) => h.type === 'refund');
+        expect(refund).toMatchObject({
+          amount: -100, tax_amount: -15.24, taxable_amount: -84.76, document_kind: 'credit_note',
+          receipt_url: expect.stringContaining('/api/subscriptions/receipts/'), invoice_number: expect.stringContaining('/CN/'),
+        });
+      });
+
+      it('a payment with no tax shows tax 0 and a Receipt kind', async () => {
+        const q = await checkout(biz, 'billing_growth');
+        await complete(biz, q.tx, 'billing_growth', 499);
+        const body = await (await historyGet(new NextRequest('http://localhost/api/subscriptions/billing-history', asBusiness(biz)))).json();
+        expect(body.history.find((h: any) => h.id === q.tx)).toMatchObject({ gst_mode: 'none', tax_amount: 0, taxable_amount: 499, document_kind: 'receipt' });
+      });
+    });
+
+    // ---------------- admin setting ----------------
+
+    describe('admin tax settings', () => {
+      const put = (body: unknown) =>
+        taxSettingsPut(new NextRequest('http://localhost/api/admin/settings/billing-tax', { method: 'PUT', body: JSON.stringify(body) }));
+
+      it('only a platform admin can change it; a caller that is refused changes nothing', async () => {
+        (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'no' }, { status: 403 }) });
+        const r = await put({ mode: 'exclusive', seller_gstin: SELLER_MH, seller_legal_name: 'X' });
+        expect(r.status).toBe(403);
+        expect((await loadTaxSettings()).mode).toBe('none');
+        const g = await taxSettingsGet(new NextRequest('http://localhost/api/admin/settings/billing-tax'));
+        expect(g.status).toBe(403);
+      });
+
+      it('refuses to switch tax on without the seller GSTIN and legal name, and a bad GSTIN, rate or mode; nothing changes', async () => {
+        asPlatformAdmin();
+        for (const body of [
+          { mode: 'exclusive' },
+          { mode: 'inclusive', seller_gstin: SELLER_MH },
+          { mode: 'exclusive', seller_legal_name: 'X' },
+          { mode: 'exclusive', seller_gstin: '27AAAAA0000A1Z0', seller_legal_name: 'X' },
+          { mode: 'exclusive', seller_gstin: SELLER_MH, seller_legal_name: 'X', rate_percent: 29 },
+          { mode: 'exclusive', seller_gstin: SELLER_MH, seller_legal_name: 'X', rate_percent: -1 },
+          { mode: 'exclusive', seller_gstin: SELLER_MH, seller_legal_name: 'X', rate_percent: 'abc' },
+          { mode: 'exclusive', seller_gstin: SELLER_MH, seller_legal_name: 'X', rate_percent: 18.123 },
+          { mode: 'sometimes' },
+          { mode: 'none', invoice_prefix: 'bad prefix!' },
+          { mode: 'none', sac_code: 'abc' },
+          { mode: 'none', seller_state_code: '29', seller_gstin: SELLER_MH },
+        ]) {
+          const r = await put(body);
+          expect({ body, status: r.status }).toEqual({ body, status: 400 });
+          expect(typeof (await r.json()).error).toBe('string');
+        }
+        expect(await loadTaxSettings()).toMatchObject({ mode: 'none', sellerGstin: null });
+      });
+
+      it('saves and returns the settings; a later partial change keeps the rest; the audit log is written without the secrets of the request', async () => {
+        asPlatformAdmin();
+        const r = await put({
+          mode: 'exclusive', rate_percent: 12, seller_gstin: SELLER_KA.toLowerCase(), seller_legal_name: ' Khatario Pvt Ltd ',
+          seller_address: 'Bengaluru', sac_code: '998313', invoice_prefix: 'kh', business_id: randomUUID(), created_by: 'x',
+        });
+        expect(r.status).toBe(200);
+        expect((await r.json()).settings).toEqual({
+          mode: 'exclusive', rate_percent: 12, seller_gstin: SELLER_KA, seller_legal_name: 'Khatario Pvt Ltd', seller_address: 'Bengaluru',
+          seller_state_code: '29', sac_code: '998313', invoice_prefix: 'KH', updated_by: ADMIN, updated_at: expect.any(String),
+        });
+        const r2 = await put({ rate_percent: 5 });
+        expect(r2.status).toBe(200);
+        expect(await loadTaxSettings()).toMatchObject({ mode: 'exclusive', ratePercent: 5, sellerGstin: SELLER_KA, sacCode: '998313' });
+        const g = await taxSettingsGet(new NextRequest('http://localhost/api/admin/settings/billing-tax'));
+        expect((await g.json()).settings).toMatchObject({ mode: 'exclusive', rate_percent: 5 });
+        // a checkout now uses the saved rate
+        expect((await checkout(biz, 'billing_starter')).amount).toBe(313.95);
+      });
+
+      it('the database itself refuses tax on without a seller GSTIN', async () => {
+        await expect(query(`UPDATE platform_settings SET subscription_gst_mode = 'exclusive' WHERE id = 'default'`)).rejects.toMatchObject({ code: '23514' });
+        await expect(query(`UPDATE platform_settings SET subscription_gst_rate = 40 WHERE id = 'default'`)).rejects.toMatchObject({ code: '23514' });
+        expect(saveTaxSettings({ mode: 'exclusive' })).rejects.toBeInstanceOf(TaxSettingsError);
+      });
+    });
+
+
+    // ---------------- fix round 1 ----------------
+
+    describe('numbers only for taxed rows, number last, per-head refunds, setting switched', () => {
+      it('two completions at once for one business and product, one with upgrade credit and one without, both finish with distinct consecutive numbers', async () => {
+        await setTax();
+        await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+        await insertTaxedPaid(biz, 'billing_starter', null, 299, 0, -10, 20);
+        const withCredit = await checkout(biz, 'billing_growth');
+        const renewal = await checkout(biz, 'billing_starter');
+        expect(withCredit.amount).toBe(353.61);
+        expect(renewal.amount).toBe(352.82);
+        const [a, b] = await Promise.all([
+          complete(biz, withCredit.tx, 'billing_growth', 353.61),
+          complete(biz, renewal.tx, 'billing_starter', 352.82),
+        ]);
+        expect(a).toMatchObject({ ok: true });
+        expect(b).toMatchObject({ ok: true });
+        const rows = [await taxRow(withCredit.tx), await taxRow(renewal.tx)];
+        expect(rows.map((r) => r!.status)).toEqual(['completed', 'completed']);
+        const seqs = rows.map((r) => Number(r!.invoice_number!.split('/')[2])).sort((x, y) => x - y);
+        expect(seqs[1] - seqs[0]).toBe(1);
+      });
+
+      it('mode none never reads or writes the counter table: the row count is unchanged and a locked counter table does not stop a completion or a refund', async () => {
+        const sums = () => queryOne<{ n: string; c: string }>(`SELECT COALESCE(SUM(last_number), 0)::text AS n, COUNT(*)::text AS c FROM subscription_invoice_counters`);
+        const before = await sums();
+        const q = await checkout(biz, 'billing_growth');
+        const locker = await getPool().connect();
+        try {
+          await locker.query('BEGIN');
+          await locker.query('LOCK TABLE subscription_invoice_counters IN ACCESS EXCLUSIVE MODE');
+          const done = await Promise.race([
+            complete(biz, q.tx, 'billing_growth', 499).then(() => 'done'),
+            new Promise((r) => setTimeout(() => r('blocked'), 8000)),
+          ]);
+          expect(done).toBe('done');
+          stubRefundGateway();
+          const refund = await Promise.race([
+            refundOf(biz, q.tx, 100).then(() => 'done'),
+            new Promise((r) => setTimeout(() => r('blocked'), 8000)),
+          ]);
+          expect(refund).toBe('done');
+        } finally {
+          await locker.query('ROLLBACK').catch(() => undefined);
+          locker.release();
+        }
+        expect((await taxRow(q.tx))).toMatchObject({ status: 'completed', invoice_number: null });
+        const rf = await queryOne<{ invoice_number: string | null; status: string }>(
+          `SELECT invoice_number, status FROM billing_transactions WHERE type = 'refund' AND metadata->>'refund_of' = $1`, [q.tx]);
+        expect(rf).toEqual({ invoice_number: null, status: 'completed' });
+        expect(await sums()).toEqual(before);
+      });
+
+      it('the document kind follows the mode stored on the row, not today\'s setting', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        await complete(biz, q.tx, 'billing_starter', 352.82);
+        await saveTaxSettings({ mode: 'none' });
+        expect((await receiptOf(biz, q.tx)).text).toContain('<h1>Tax invoice</h1>');
+        const b2 = await newBusiness('plain2');
+        const p = await checkout(b2, 'billing_starter');
+        await setTax();
+        await complete(b2, p.tx, 'billing_starter', 299);
+        const doc = await receiptOf(b2, p.tx);
+        expect(doc.text).toContain('<h1>Receipt</h1>');
+        expect(doc.text).not.toMatch(/tax invoice|GST/i);
+      });
+
+      it('created in exclusive, switched to none, paid: completes at the stored total with the stored breakdown and a tax-invoice number', async () => {
+        await setTax();
+        const q = await checkout(biz, 'billing_starter');
+        await saveTaxSettings({ mode: 'none' });
+        expect(await complete(biz, q.tx, 'billing_starter', 352.82)).toMatchObject({ ok: true });
+        const row = (await taxRow(q.tx))!;
+        expect(row).toMatchObject({ status: 'completed', total_amount: '352.82', tax_amount: '53.82', taxable_amount: '299.00', gst_mode: 'exclusive' });
+        expect(row.invoice_number).toMatch(FY);
+      });
+
+      it('created in none, switched to exclusive, paid: completes at the original amount, no tax, no number', async () => {
+        const q = await checkout(biz, 'billing_starter');
+        await setTax();
+        await expect(
+          completeSubscriptionCheckoutPaymentDetailed({
+            businessId: biz, planId: 'billing_starter', billingCycle: 'monthly', billingTransactionId: q.tx, providerPaymentId: 'pay_x_' + sfx(), amount: 352.82,
+          }),
+        ).rejects.toThrow('AMOUNT_MISMATCH');
+        expect(await complete(biz, q.tx, 'billing_starter', 299)).toMatchObject({ ok: true });
+        expect(await taxRow(q.tx)).toMatchObject({ status: 'completed', total_amount: '299.00', tax_amount: '0.00', gst_mode: 'none', invoice_number: null });
+      });
+
+      describe.each([
+        ['intra-state (CGST + SGST)', SELLER_MH],
+        ['inter-state (IGST)', SELLER_KA],
+      ])('three partial refunds of an odd-paise invoice, %s', (_label, sellerGstin) => {
+        it('every head sums exactly to the invoice figure after the full refund', async () => {
+          await setTax({ rate_percent: 5, seller_gstin: sellerGstin }); // 299 + 14.95 = 313.95, tax 14.95 is odd
+          const q = await checkout(biz, 'billing_starter');
+          expect(q.amount).toBe(313.95);
+          await complete(biz, q.tx, 'billing_starter', 313.95);
+          const inv = (await taxRow(q.tx))!;
+          stubRefundGateway();
+          await refundOf(biz, q.tx, 100.01);
+          await refundOf(biz, q.tx, 100.01);
+          await refundOf(biz, q.tx); // the rest
+          const sums = (
+            await query<{ taxable: string; cgst: string; sgst: string; igst: string; total: string; n: string }>(
+              `SELECT SUM(round(taxable_amount * 100))::text AS taxable, SUM(round(cgst_amount * 100))::text AS cgst,
+                      SUM(round(sgst_amount * 100))::text AS sgst, SUM(round(igst_amount * 100))::text AS igst,
+                      SUM(round(total_amount * 100))::text AS total, COUNT(*)::text AS n
+               FROM billing_transactions WHERE type = 'refund' AND status = 'completed' AND metadata->>'refund_of' = $1`, [q.tx])
+          ).rows[0];
+          const paise = (v: string | null) => Math.round(Number(v ?? 0) * 100);
+          expect(sums.n).toBe('3');
+          expect(Number(sums.total)).toBe(paise(inv.total_amount));
+          expect(Number(sums.taxable)).toBe(paise(inv.taxable_amount));
+          expect(Number(sums.cgst)).toBe(paise(inv.cgst_amount));
+          expect(Number(sums.sgst)).toBe(paise(inv.sgst_amount));
+          expect(Number(sums.igst)).toBe(paise(inv.igst_amount));
+          expect(Number(sums.cgst) + Number(sums.sgst) + Number(sums.igst)).toBe(1495);
+          if (sellerGstin === SELLER_MH) expect([paise(inv.cgst_amount), paise(inv.sgst_amount)]).toEqual([747, 748]);
+          else expect(paise(inv.igst_amount)).toBe(1495);
+        });
+      });
+
+      it('the setting records who changed it and when', async () => {
+        asPlatformAdmin();
+        const res = await taxSettingsPut(new NextRequest('http://localhost/x', { method: 'PUT', body: JSON.stringify({ mode: 'none', invoice_prefix: 'AB' }) }));
+        expect(res.status).toBe(200);
+        expect(await queryOne(`SELECT subscription_tax_updated_by AS by, subscription_tax_updated_at IS NOT NULL AS at FROM platform_settings WHERE id = 'default'`)).toEqual({ by: ADMIN, at: true });
+      });
+    });
+
+    // ---------------- migration ----------------
+
+    describe('migration 481', () => {
+      it('can run again; the tax columns are on both tables and the billing archive list; the invoice number is unique', async () => {
+        const text = readFileSync(join(process.cwd(), 'database/migrations/481_subscription_tax.sql'), 'utf8');
+        await query(text);
+        await query(text);
+        const cols = async (t: string) =>
+          new Set((await query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, [t])).rows.map((r) => r.column_name));
+        for (const c of ['taxable_amount', 'cgst_amount', 'sgst_amount', 'igst_amount', 'gst_rate', 'gst_mode']) {
+          expect((await cols('billing_transactions')).has(c)).toBe(true);
+          expect((await cols('billing_transactions_archive')).has(c)).toBe(true);
+        }
+        expect(await count(`pg_indexes WHERE indexname = 'uq_billing_tx_invoice_number'`)).toBe(1);
+        expect(text).toMatch(/SET LOCAL lock_timeout/);
+      });
+
+      it('a deleted business keeps its tax breakdown and invoice number in the archive', async () => {
+        await setTax();
+        const b = await newBusiness('arch6');
+        const q = await checkout(b, 'billing_starter');
+        await complete(b, q.tx, 'billing_starter', 352.82);
+        const number = (await taxRow(q.tx))!.invoice_number;
+        await deleteBusinessCompletely(b, ADMIN);
+        const a = await queryOne<{ invoice_number: string; tax_amount: string; taxable_amount: string; gst_mode: string }>(
+          `SELECT invoice_number, tax_amount::text, taxable_amount::text, gst_mode FROM billing_transactions_archive WHERE id = $1`, [q.tx]);
+        expect(a).toEqual({ invoice_number: number, tax_amount: '53.82', taxable_amount: '299.00', gst_mode: 'exclusive' });
       });
     });
   });

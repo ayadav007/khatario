@@ -64,6 +64,8 @@ import { normalizePlatformModule } from '@/lib/platform-modules';
 
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 
+import { isTaxedMode, issueInvoiceNumber } from '@/lib/platform-tax';
+
 import { redeemCoupon } from '@/lib/subscription/coupons';
 
 import {
@@ -183,6 +185,12 @@ export interface CreateSubscriptionCheckoutResult {
 
   /** What the customer's unused paid time is worth towards this plan. */
   creditAvailable: number;
+
+  /** GST included in `amount` (0 when GST is off). */
+  taxAmount: number;
+
+  /** The part of `amount` that is not tax. */
+  taxableAmount: number;
 
   currency: string;
 
@@ -326,6 +334,8 @@ export async function createSubscriptionCheckout(
           }
         : undefined,
 
+    tax: pricing.tax,
+
     couponId: pricing.couponId ?? null,
 
     billingCycle: input.billingCycle,
@@ -460,6 +470,10 @@ export async function createSubscriptionCheckout(
 
     creditAvailable: pricing.creditAvailable,
 
+    taxAmount: pricing.taxAmount,
+
+    taxableAmount: pricing.taxableAmount,
+
     currency: 'INR',
 
     billingTransactionId: pending.id,
@@ -548,10 +562,13 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
       total_amount: string | null;
       checkout_type: string | null;
       upgrade_credit: StoredUpgradeCredit | null;
+      invoice_prefix: string | null;
+      gst_mode: string | null;
     }>(
       `SELECT status, plan_id, billing_cycle, coupon_id, total_amount::text AS total_amount,
               gateway_response->>'checkout_type' AS checkout_type,
-              metadata->'upgrade_credit' AS upgrade_credit
+              metadata->'upgrade_credit' AS upgrade_credit,
+              metadata->'tax'->>'invoice_prefix' AS invoice_prefix, gst_mode
        FROM billing_transactions
        WHERE id = $1 AND business_id = $2
        FOR UPDATE`,
@@ -620,6 +637,7 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
                                     ELSE COALESCE(payment_reference, $2) END,
            gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
                                    ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
+           metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('paid_at', CURRENT_TIMESTAMP::text),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -695,6 +713,12 @@ export async function completeSubscriptionCheckoutPaymentDetailed(params: {
          AND bt.business_id = bms.business_id`,
       [billingTransactionId, params.businessId, moduleKey, result.paidFrom ?? null],
     );
+
+    // The tax invoice number, only for a payment priced with GST (the mode stored on the row, not today's
+    // setting). It is the LAST statement before COMMIT: the counter row is the last lock this transaction
+    // takes, so it can never be part of a lock cycle, and it is held for milliseconds. A payment that does
+    // not complete never gets one; a repeat returned above.
+    if (isTaxedMode(tx.gst_mode)) await issueInvoiceNumber(client, billingTransactionId, tx.invoice_prefix);
 
     await client.query('COMMIT');
 

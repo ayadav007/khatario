@@ -30,6 +30,7 @@ import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscrip
 import { moveModuleSubscriptionToFree } from '@/lib/subscription/module-plan-lifecycle';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
+import { isTaxedMode, issueInvoiceNumber } from '@/lib/platform-tax';
 import { assertBillingTransactionTransition } from '@/lib/platform-billing-transaction-state';
 import { GatewayRefundError } from '@/lib/payments/gateway-refund-error';
 import { getBusinessPlatformRecipient, sendPlatformEmail } from '@/lib/platform-email';
@@ -100,13 +101,21 @@ type PaymentRow = {
   period_end: string | null;
   gateway_response: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
+  tax_amount: string | null;
+  cgst_amount: string | null;
+  sgst_amount: string | null;
+  igst_amount: string | null;
+  gst_rate: string | null;
+  gst_mode: string | null;
 };
 
 type RefundRow = PaymentRow & { amount: string };
 
 const PAYMENT_COLUMNS = `id::text AS id, business_id::text AS business_id, type, status, payment_method, payment_reference,
   total_amount::text AS total_amount, currency, plan_id, billing_cycle, module_key, coupon_id::text AS coupon_id,
-  period_start::text AS period_start, period_end::text AS period_end, gateway_response, metadata`;
+  period_start::text AS period_start, period_end::text AS period_end, gateway_response, metadata,
+  tax_amount::text AS tax_amount, cgst_amount::text AS cgst_amount, sgst_amount::text AS sgst_amount,
+  igst_amount::text AS igst_amount, gst_rate::text AS gst_rate, gst_mode`;
 
 const toPaise = (v: string | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
 const rupees = (paise: number) => paise / 100;
@@ -142,16 +151,65 @@ async function syncRefundedPaise(client: Pick<PoolClient, 'query'>, payment: Pay
   return t;
 }
 
+/**
+ * The tax inside a refund of `paise`, head by head (CGST, SGST, IGST), as a credit note shows it. For each head
+ * the refund takes round-down(cumulative refunded x payment's head / amount paid) minus what earlier refunds
+ * (pending or completed) already took of that head; the refund that reaches the full amount paid takes the exact
+ * remainder. So after refunds in any number of parts every head sums exactly to the invoice's figure. The taxable
+ * part is what is left of the refund. Null for a payment with no tax recorded (tax-free).
+ */
+async function refundTaxShare(client: Pick<PoolClient, 'query'>, payment: PaymentRow, paise: number) {
+  const paidPaise = toPaise(payment.total_amount);
+  if (toPaise(payment.tax_amount) <= 0 || paidPaise <= 0) return null;
+  const done = await refundTotals(client, payment.id);
+  const cumAfter = done.completed + done.pending + paise;
+  const prior = (
+    await client.query<{ cgst: string; sgst: string; igst: string }>(
+      `SELECT COALESCE(SUM(round(cgst_amount * 100)), 0)::text AS cgst, COALESCE(SUM(round(sgst_amount * 100)), 0)::text AS sgst,
+              COALESCE(SUM(round(igst_amount * 100)), 0)::text AS igst
+       FROM billing_transactions
+       WHERE type = 'refund' AND metadata->>'refund_of' = $1 AND status <> 'failed'`,
+      [payment.id],
+    )
+  ).rows[0];
+  const head = (total: number, before: number) => {
+    const upTo = cumAfter >= paidPaise ? total : Math.floor((cumAfter * total) / paidPaise);
+    return Math.min(Math.max(0, upTo - before), Math.max(0, total - before));
+  };
+  const cgstPaise = head(toPaise(payment.cgst_amount), Number(prior.cgst));
+  const sgstPaise = head(toPaise(payment.sgst_amount), Number(prior.sgst));
+  const igstPaise = head(toPaise(payment.igst_amount), Number(prior.igst));
+  const taxPaise = cgstPaise + sgstPaise + igstPaise;
+  return {
+    taxPaise,
+    cgstPaise,
+    sgstPaise,
+    igstPaise,
+    meta: {
+      mode: payment.gst_mode,
+      rate: Number(payment.gst_rate ?? 0),
+      taxable: rupees(paise - taxPaise),
+      tax: rupees(taxPaise),
+      cgst: rupees(cgstPaise),
+      sgst: rupees(sgstPaise),
+      igst: rupees(igstPaise),
+    },
+  };
+}
+
 async function insertRefundRow(
   client: Pick<PoolClient, 'query'>,
   payment: PaymentRow,
   p: { id: string; paise: number; reference: string | null; metadata: Record<string, unknown> },
 ) {
+  const tax = await refundTaxShare(client, payment, p.paise);
   await client.query(
     `INSERT INTO billing_transactions
        (id, business_id, type, status, amount, currency, plan_id, billing_cycle, payment_method, payment_reference,
-        discount_amount, tax_amount, total_amount, description, metadata, module_key)
-     VALUES ($1, $2, 'refund', 'pending', $3, $4, $5, $6, $7, $8, 0, 0, $3, $9, $10::jsonb, $11)`,
+        discount_amount, tax_amount, total_amount, description, metadata, module_key,
+        taxable_amount, cgst_amount, sgst_amount, igst_amount, gst_rate, gst_mode)
+     VALUES ($1, $2, 'refund', 'pending', $3, $4, $5, $6, $7, $8, 0, $12, $3, $9, $10::jsonb, $11,
+             $13, $14, $15, $16, $17, $18)`,
     [
       p.id,
       payment.business_id,
@@ -162,8 +220,21 @@ async function insertRefundRow(
       payment.payment_method,
       p.reference,
       `Refund of payment ${payment.id}`,
-      JSON.stringify({ refund_of: payment.id, refund_paise: p.paise, ...p.metadata }),
+      JSON.stringify({
+        refund_of: payment.id,
+        refund_paise: p.paise,
+        ...p.metadata,
+        // Who sold to whom, copied from the payment, plus this refund's own share of the tax.
+        ...(payment.metadata?.tax || tax ? { tax: { ...((payment.metadata?.tax as object | undefined) ?? {}), ...(tax?.meta ?? {}) } } : {}),
+      }),
       payment.module_key,
+      tax ? rupeesText(tax.taxPaise) : '0',
+      tax ? rupeesText(p.paise - tax.taxPaise) : null,
+      tax ? rupeesText(tax.cgstPaise) : null,
+      tax ? rupeesText(tax.sgstPaise) : null,
+      tax ? rupeesText(tax.igstPaise) : null,
+      tax ? payment.gst_rate : null,
+      tax ? payment.gst_mode : null,
     ],
   );
 }
@@ -605,6 +676,17 @@ export async function completePlatformRefund(refundId: string, providerRefundId:
         }),
       ],
     );
+    // A credit-note number, only for a refund of a payment that carried GST (the mode stored on the rows).
+    // Last statement before the commit: the counter row is the last lock taken. The payment's own prefix is
+    // used, so the credit note reads like the invoice it undoes. A plain refund receipt has no number.
+    if (isTaxedMode(refund.gst_mode ?? payment.gst_mode)) {
+      await issueInvoiceNumber(
+        client,
+        refund.id,
+        (payment.metadata?.tax as { invoice_prefix?: string } | undefined)?.invoice_prefix,
+        'credit_note',
+      );
+    }
     return {
       ...base,
       status: 'completed',

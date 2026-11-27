@@ -35,6 +35,12 @@ export const BILLING_TRANSACTION_COLUMNS = [
   'created_at',
   'updated_at',
   'module_key',
+  'taxable_amount',
+  'cgst_amount',
+  'sgst_amount',
+  'igst_amount',
+  'gst_rate',
+  'gst_mode',
 ] as const;
 
 export const BILLING_ARCHIVE_TABLE = 'billing_transactions_archive';

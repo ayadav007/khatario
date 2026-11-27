@@ -6,12 +6,15 @@ import { comparePlanTier } from '@/lib/subscription/plan-tier';
 /**
  * The amount a payment actually paid for the subscription itself, excluding any tax, minus what has
  * been refunded or is being refunded (`metadata.refunded_paise`, kept by lib/platform-refunds.ts), so a
- * partly refunded payment gives credit only on what remains. Today the paid amount is `total_amount`.
- * When a later task stores tax separately, change the first term (for example to
- * `bt.total_amount - COALESCE(bt.tax_amount, 0)`); nothing else reads the column for credit.
+ * partly refunded payment gives credit only on what remains. The base is the stored taxable amount
+ * (migration 480) when one is recorded, else `total_amount`: rows from before GST was recorded have no
+ * breakdown and are tax-free. A refund is money including tax, so its pre-tax share is taken off in
+ * proportion (taxable / total); for a tax-free payment that is the whole refund, exactly as before.
+ * This is the single swap point: nothing else reads these columns for credit.
  */
 export const PAID_SUBSCRIPTION_AMOUNT_SQL =
-  `(bt.total_amount - COALESCE((bt.metadata->>'refunded_paise')::numeric, 0) / 100)`;
+  `(COALESCE(bt.taxable_amount, bt.total_amount)
+    - COALESCE((bt.metadata->>'refunded_paise')::numeric, 0) * COALESCE(bt.taxable_amount, bt.total_amount) / (100 * NULLIF(bt.total_amount, 0)))`;
 
 export type CreditSource = {
   id: string;

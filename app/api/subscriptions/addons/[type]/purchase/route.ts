@@ -90,6 +90,7 @@ export async function POST(
       mode: 'redirect',
       checkoutUrl: checkout.checkoutUrl,
       amount: checkout.amount,
+      tax_amount: checkout.taxAmount,
       currency: checkout.currency,
       billingTransactionId: checkout.billingTransactionId,
       addon: {

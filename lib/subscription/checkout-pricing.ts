@@ -7,12 +7,20 @@ import {
 } from '@/lib/subscription/coupons';
 import { queryOne } from '@/lib/db';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { resolveCheckoutTax, type CheckoutTax } from '@/lib/platform-tax';
 import { allocateCredit, computeUpgradeCredit, type CreditAllocation } from '@/lib/subscription/upgrade-credit';
 
 export interface CheckoutPricingResult {
   baseAmount: number;
   discountAmount: number;
+  /** The amount to pay: the price after coupon and credit, plus GST when the mode is exclusive. */
   finalAmount: number;
+  /** The price after coupon, credit and the ₹1 floor, before any tax is added. */
+  netAmount: number;
+  /** GST mode, rate, taxable value and tax as decided now (all zero tax when the mode is none). */
+  tax: CheckoutTax;
+  taxableAmount: number;
+  taxAmount: number;
   couponId?: string;
   couponCode?: string;
   freeMonths?: number;
@@ -115,10 +123,18 @@ export async function resolveCheckoutPricing(params: {
     }
   }
 
+  // Tax is applied last, to the amount after coupon, credit and the ₹1 floor. The result is the
+  // amount to pay; with GST off (the default) it is exactly finalAmount as computed above.
+  const tax = await resolveCheckoutTax(params.businessId, Math.round(finalAmount * 100));
+
   return {
     baseAmount,
     discountAmount,
-    finalAmount,
+    finalAmount: tax.breakdown.payablePaise / 100,
+    netAmount: finalAmount,
+    tax,
+    taxableAmount: tax.breakdown.taxablePaise / 100,
+    taxAmount: tax.breakdown.taxPaise / 100,
     creditAvailable,
     creditApplied,
     creditUnused: round2(creditAvailable - creditApplied),

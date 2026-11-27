@@ -40,6 +40,7 @@ import { applyRazorpayRefundNotice, PlatformRefundError } from '@/lib/platform-r
 import { readRazorpayRefundNotice } from '@/lib/payments/providers/razorpay-payment-provider';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
+import type { CheckoutTax } from '@/lib/platform-tax';
 import { getPrimaryModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import {
   formatModulePlanReceiptLabel,
@@ -68,6 +69,11 @@ export interface RecordBillingInput {
   creditAmount?: number;
   /** Stored in the row's metadata column. */
   metadata?: Record<string, unknown>;
+  /**
+   * The tax decided at checkout (lib/platform-tax.ts). When given, the row's total is the amount to pay
+   * including any tax (exclusive mode adds it), and the breakdown is stored on the row.
+   */
+  tax?: CheckoutTax;
 }
 
 async function sendTemplatedTenantEmail(
@@ -176,14 +182,21 @@ export async function recordBillingTransaction(
   const base = Math.round(input.amount * 100) / 100;
   const discount = Math.round((input.discountAmount ?? 0) * 100) / 100;
   const credit = Math.round((input.creditAmount ?? 0) * 100) / 100;
-  const total = Math.max(0, Math.round((base - discount - credit) * 100) / 100);
+  const tax = input.tax?.breakdown;
+  // With a tax decision the total is what is charged (price after coupon and credit, plus tax in exclusive mode).
+  const total = tax
+    ? tax.payablePaise / 100
+    : Math.max(0, Math.round((base - discount - credit) * 100) / 100);
+  const metadata = input.tax ? { ...(input.metadata ?? {}), tax: input.tax.stored } : (input.metadata ?? {});
 
   const row = await queryOne<{ id: string; status: string }>(
     `INSERT INTO billing_transactions (
        business_id, type, status, amount, currency, plan_id, module_key,
        billing_cycle, payment_method, payment_reference, gateway_response, description,
-       coupon_id, discount_amount, total_amount, metadata
-     ) VALUES ($1, 'payment', $2, $3, 'INR', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+       coupon_id, discount_amount, total_amount, metadata,
+       tax_amount, taxable_amount, cgst_amount, sgst_amount, igst_amount, gst_rate, gst_mode
+     ) VALUES ($1, 'payment', $2, $3, 'INR', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb,
+               COALESCE($15::numeric, 0), $16, $17, $18, $19, $20, $21)
      RETURNING id, status`,
     [
       input.businessId,
@@ -199,7 +212,14 @@ export async function recordBillingTransaction(
       input.couponId ?? null,
       discount,
       total,
-      JSON.stringify(input.metadata ?? {}),
+      JSON.stringify(metadata),
+      tax ? tax.taxPaise / 100 : null,
+      tax ? tax.taxablePaise / 100 : null,
+      tax ? tax.cgstPaise / 100 : null,
+      tax ? tax.sgstPaise / 100 : null,
+      tax ? tax.igstPaise / 100 : null,
+      tax ? tax.ratePercent : null,
+      tax ? tax.mode : null,
     ],
   );
 

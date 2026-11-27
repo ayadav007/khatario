@@ -27,6 +27,7 @@ import {
   isPlatformRazorpayConfigured,
   type PlatformPaymentProviderId,
 } from '@/lib/platform-subscription-checkout';
+import { isTaxedMode, issueInvoiceNumber, resolveCheckoutTax } from '@/lib/platform-tax';
 
 export { isPlatformPaymentConfigured, isPlatformRazorpayConfigured };
 
@@ -56,7 +57,10 @@ export interface CreateAddonCheckoutInput {
 
 export interface CreateAddonCheckoutResult {
   checkoutUrl: string;
+  /** What the customer pays: the add-on price, plus GST when the mode is exclusive. */
   amount: number;
+  /** GST included in `amount` (0 when GST is off). */
+  taxAmount: number;
   currency: string;
   billingTransactionId: string;
   paymentLinkId?: string;
@@ -116,12 +120,16 @@ export async function createAddonCheckout(
 
   const label = WHATSAPP_ADDON_LABELS[input.addonType];
   const recipient = await getBusinessPlatformRecipient(input.businessId);
+  // Same tax treatment as a plan: applied to the price, decided now and stored on the row.
+  const tax = await resolveCheckoutTax(input.businessId, Math.round(price * 100));
+  const payable = tax.breakdown.payablePaise / 100;
 
   const pending = await recordBillingTransaction({
     businessId: input.businessId,
     planId: CONNECT_PLAN_ID,
     moduleKey: 'connect',
     amount: price,
+    tax,
     billingCycle: 'monthly',
     paymentMethod: checkout.id,
     status: 'pending',
@@ -141,7 +149,7 @@ export async function createAddonCheckout(
   const link = await provider.createHostedPaymentLink({
     businessId: input.businessId,
     orderId: pending.id,
-    amount: price,
+    amount: payable,
     currency: 'INR',
     customerName: recipient?.businessName,
     customerEmail: recipient?.email ?? undefined,
@@ -187,7 +195,8 @@ export async function createAddonCheckout(
 
   return {
     checkoutUrl: link.paymentUrl,
-    amount: price,
+    amount: payable,
+    taxAmount: tax.breakdown.taxPaise / 100,
     currency: 'INR',
     billingTransactionId: pending.id,
     paymentLinkId: link.providerPaymentId,
@@ -227,10 +236,13 @@ export async function completeAddonCheckoutPayment(params: {
       total_amount: string | null;
       checkout_type: string | null;
       addon_type: string | null;
+      invoice_prefix: string | null;
+      gst_mode: string | null;
     }>(
       `SELECT status, total_amount::text AS total_amount,
               gateway_response->>'checkout_type' AS checkout_type,
-              gateway_response->>'addon_type' AS addon_type
+              gateway_response->>'addon_type' AS addon_type,
+              metadata->'tax'->>'invoice_prefix' AS invoice_prefix, gst_mode
        FROM billing_transactions
        WHERE id = $1 AND business_id = $2
        FOR UPDATE`,
@@ -267,6 +279,7 @@ export async function completeAddonCheckoutPayment(params: {
                                     ELSE COALESCE(payment_reference, $2) END,
            gateway_response = CASE WHEN $3::jsonb IS NULL THEN gateway_response
                                    ELSE COALESCE(gateway_response, '{}'::jsonb) || jsonb_build_object('webhook', $3::jsonb) END,
+           metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('paid_at', CURRENT_TIMESTAMP::text),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -311,6 +324,9 @@ export async function completeAddonCheckoutPayment(params: {
              AND bt.business_id = wa.business_id`,
       [billingTransactionId, params.businessId, prev.rows[0]?.start ?? null],
     );
+
+    // Tax invoice number (taxed rows only), the last statement before COMMIT: see completeSubscriptionCheckoutPayment.
+    if (isTaxedMode(tx.gst_mode)) await issueInvoiceNumber(client, billingTransactionId, tx.invoice_prefix);
 
     await client.query('COMMIT');
   } catch (err) {
