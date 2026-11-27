@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../api.dart';
 import '../../format.dart';
@@ -39,6 +40,29 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
     return null;
   }
 
+  Future<void> _payOnWebsite() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pay on the website'),
+        content: const Text(
+          "Paid plans are paid for on the Khatario website. We'll open it in your browser. Sign in there with the same account, pay, and come back: this app will show your new plan by itself.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Continue')),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    final uri = Uri.parse(apiBaseUrl).resolve('/settings/subscription');
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) Navigator.pop(context, false);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('The browser did not open. Open $uri yourself, sign in and choose your plan.')));
+    }
+  }
+
   Future<void> _continue() async {
     final plan = _selected;
     if (plan == null || _saving) return;
@@ -47,9 +71,7 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
     final yearly = toNum(plan['price_yearly']);
     final priced = _yearly ? (yearly > 0 ? yearly : monthly) : monthly;
     if (priced > 0 || monthly > 0 || yearly > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Paid plans are billed through the payment partner. That checkout is not in the phone yet. Write to support@khatario.com to change this plan.'),
-      ));
+      await _payOnWebsite();
       return;
     }
     setState(() => _saving = true);
@@ -275,7 +297,7 @@ class _PlanPickerScreenState extends State<PlanPickerScreen> {
     final monthly = toNum(plan['price_monthly']);
     final yearly = toNum(plan['price_yearly']);
     if (monthly <= 0 && yearly <= 0) return 'Free. You can switch again anytime.';
-    if (_yearly && yearly > 0) return '${inr(yearly)} a year. Paid checkout is not in the phone yet.';
-    return '${inr(monthly)} a month. Paid checkout is not in the phone yet.';
+    if (_yearly && yearly > 0) return '${inr(yearly)} a year. You pay on the website.';
+    return '${inr(monthly)} a month. You pay on the website.';
   }
 }

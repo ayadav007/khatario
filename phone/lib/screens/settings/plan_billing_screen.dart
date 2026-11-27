@@ -10,7 +10,7 @@ import 'plan_picker_screen.dart';
 import 'settings_kit.dart';
 
 /// Website `SubscriptionTab`: plan name, usage, included features, and billing history.
-/// Free plans change here. Paid plans stay listed; checkout is not in the phone yet.
+/// Free plans change here. Paid plans are paid for on the website; the plan reloads when the app resumes.
 class PlanBillingScreen extends StatefulWidget {
   const PlanBillingScreen({super.key, required this.session});
 
@@ -20,7 +20,7 @@ class PlanBillingScreen extends StatefulWidget {
   State<PlanBillingScreen> createState() => _PlanBillingScreenState();
 }
 
-class _PlanBillingScreenState extends State<PlanBillingScreen> {
+class _PlanBillingScreenState extends State<PlanBillingScreen> with WidgetsBindingObserver {
   bool _loading = true;
   String? _error;
   Map<String, dynamic> _subscription = const {};
@@ -31,7 +31,19 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) _load();
   }
 
   Future<void> _load() async {
