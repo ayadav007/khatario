@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   Calendar,
@@ -14,6 +14,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { getPlanChangeAction } from '@/lib/subscription/trial-plan';
 import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
 import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
+import { CheckoutPreviewBox, useCheckoutPreview } from '@/components/subscription/CheckoutPreviewBox';
 
 export interface SubscriptionPlanFeatures {
   limits: {
@@ -55,6 +56,9 @@ export function SubscriptionChangePlanModal({
   businessId,
   moduleKey,
   endDate,
+  currentCycle = 'monthly',
+  renewable = false,
+  startWithRenew = false,
   onClose,
   onSuccess,
 }: {
@@ -65,6 +69,12 @@ export function SubscriptionChangePlanModal({
   businessId: string;
   moduleKey?: string;
   endDate: string | null;
+  /** The billing cycle of the current period; a renewal starts on it. */
+  currentCycle?: BillingCycle;
+  /** The current plan can be bought again now (renewal, grace, or after the plan ended). */
+  renewable?: boolean;
+  /** Open straight on the renew confirmation for the current plan. */
+  startWithRenew?: boolean;
   onClose: () => void;
   onSuccess: (upgradedPlanName?: string) => void;
 }) {
@@ -74,12 +84,22 @@ export function SubscriptionChangePlanModal({
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
-  const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [downgradeWarnings, setDowngradeWarnings] = useState<DowngradeWarning[]>([]);
   const [warningsLoading, setWarningsLoading] = useState(false);
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
+
+  // Renew from the card: open on the current plan's confirmation.
+  useEffect(() => {
+    if (!startWithRenew) return;
+    const current = availablePlans.find((p) => p.id === currentPlanId);
+    if (current && !confirmPlan) {
+      setBillingCycle(currentCycle);
+      setConfirmPlan(current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once when opened
+  }, []);
 
   function listPrice(plan: SubscriptionAvailablePlan): number {
     return computePlanAmount(plan, billingCycle);
@@ -90,7 +110,6 @@ export function SubscriptionChangePlanModal({
     setCouponLoading(true);
     setCouponMessage(null);
     setCouponApplied(false);
-    setCouponDiscount(0);
     try {
       const res = await fetch('/api/subscriptions/coupons/validate', {
         method: 'POST',
@@ -106,12 +125,6 @@ export function SubscriptionChangePlanModal({
       const data = await res.json();
       if (res.ok && data.valid) {
         setCouponApplied(true);
-        // Checkout upgrades free_months coupons instantly with nothing to pay.
-        setCouponDiscount(
-          data.discount?.type === 'free_months'
-            ? Number.POSITIVE_INFINITY
-            : Number(data.discount?.amount) || 0,
-        );
         setCouponMessage(data.message || 'Coupon will apply at checkout.');
         toast.success(data.message || 'Coupon validated');
       } else {
@@ -127,11 +140,12 @@ export function SubscriptionChangePlanModal({
 
   function getPlanAction(
     plan: SubscriptionAvailablePlan
-  ): 'current' | 'upgrade' | 'downgrade' {
-    return getPlanChangeAction(
+  ): 'current' | 'renew' | 'upgrade' | 'downgrade' {
+    const action = getPlanChangeAction(
       { id: currentPlanId, sort_order: currentPlanSortOrder },
       { id: plan.id, sort_order: plan.sort_order },
     );
+    return action === 'current' && renewable ? 'renew' : action;
   }
 
   function formatDate(dateStr: string | null): string {
@@ -185,7 +199,7 @@ export function SubscriptionChangePlanModal({
     setCouponCode('');
     setCouponApplied(false);
     setCouponMessage(null);
-    setBillingCycle('monthly');
+    setBillingCycle(action === 'renew' ? currentCycle : 'monthly');
   }
 
   async function handleConfirm() {
@@ -206,7 +220,7 @@ export function SubscriptionChangePlanModal({
             }
           : { business_id: businessId, plan_id: confirmPlan.id, module_key: moduleKey };
 
-      if (action === 'upgrade') {
+      if (action === 'upgrade' || action === 'renew') {
         const amountInr = listPrice(confirmPlan);
         const result = await startPlanUpgrade({
           businessId,
@@ -236,23 +250,40 @@ export function SubscriptionChangePlanModal({
       } else {
         toast.error(data.error || 'Failed to change plan');
       }
-    } catch {
-      toast.error('Failed to change plan');
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : 'Failed to change plan');
     } finally {
       setProcessing(false);
     }
   }
 
   const confirmAction = confirmPlan ? getPlanAction(confirmPlan) : null;
-  const payableAmount = confirmPlan
-    ? Math.max(0, listPrice(confirmPlan) - (couponApplied ? couponDiscount : 0))
-    : 0;
-  const confirmCtaLabel =
-    confirmAction === 'upgrade'
-      ? payableAmount > 0
-        ? 'Proceed to pay'
+  const isPay = confirmAction === 'upgrade' || confirmAction === 'renew';
+  const needsPreview = isPay && !!confirmPlan && listPrice(confirmPlan) > 0;
+
+  // The price the server will charge, for this plan, cycle and (validated) coupon. Nothing is created.
+  const previewState = useCheckoutPreview({
+    enabled: needsPreview,
+    planId: confirmPlan?.id ?? null,
+    billingCycle,
+    couponCode: couponApplied ? couponCode : undefined,
+  });
+  const { preview } = previewState;
+
+  const payNow = preview ? preview.breakdown.amountToPay : null;
+  const confirmCtaLabel = isPay
+    ? payNow === null || payNow > 0
+      ? confirmAction === 'renew'
+        ? 'Renew and pay'
+        : 'Proceed to pay'
+      : confirmAction === 'renew'
+        ? 'Confirm renewal'
         : 'Confirm upgrade'
-      : 'Schedule downgrade';
+    : 'Schedule downgrade';
+  const confirmBlocked =
+    processing ||
+    warningsLoading ||
+    previewState.blocked;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
@@ -280,8 +311,8 @@ export function SubscriptionChangePlanModal({
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {availablePlans.map((plan) => {
                   const action = getPlanAction(plan);
-                  const isCurrent = action === 'current';
-                  const isUpgrade = action === 'upgrade';
+                  const isCurrent = action === 'current' || action === 'renew';
+                  const isUpgrade = action === 'upgrade' || action === 'renew';
 
                   return (
                     <div
@@ -364,7 +395,15 @@ export function SubscriptionChangePlanModal({
                           : null}
                       </ul>
 
-                      {isCurrent ? (
+                      {action === 'renew' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPlan(plan)}
+                          className="w-full rounded-lg bg-primary-600 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
+                        >
+                          Renew
+                        </button>
+                      ) : isCurrent ? (
                         <button
                           type="button"
                           disabled
@@ -403,12 +442,14 @@ export function SubscriptionChangePlanModal({
               <div className="mb-6 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="settings-section-title mb-0">
-                    Confirm {confirmAction === 'upgrade' ? 'upgrade' : 'downgrade'}
+                    Confirm {confirmAction === 'renew' ? 'renewal' : confirmAction === 'upgrade' ? 'upgrade' : 'downgrade'}
                   </h2>
                   <p className="type-body-secondary mt-1">
-                    {confirmAction === 'upgrade'
-                      ? `You're upgrading to ${confirmPlan.display_name}`
-                      : `You're downgrading to ${confirmPlan.display_name}`}
+                    {confirmAction === 'renew'
+                      ? `You're renewing ${confirmPlan.display_name}`
+                      : confirmAction === 'upgrade'
+                        ? `You're upgrading to ${confirmPlan.display_name}`
+                        : `You're downgrading to ${confirmPlan.display_name}`}
                   </p>
                 </div>
                 <button
@@ -444,7 +485,7 @@ export function SubscriptionChangePlanModal({
                 </div>
               </div>
 
-              {confirmAction === 'upgrade' && listPrice(confirmPlan) > 0 ? (
+              {isPay && listPrice(confirmPlan) > 0 ? (
                 <div className="mb-6 space-y-4">
                   <div>
                     <p className="type-label mb-2 text-text-secondary">Billing cycle</p>
@@ -549,7 +590,8 @@ export function SubscriptionChangePlanModal({
                     </div>
                     Your current plan will remain active until{' '}
                     <strong>{formatDate(scheduledDate)}</strong>. After that, you&apos;ll
-                    automatically be moved to {confirmPlan.display_name}.
+                    automatically be moved to {confirmPlan.display_name}. You will be asked to
+                    pay for {confirmPlan.display_name} when your current period ends.
                   </div>
 
                   {warningsLoading ? (
@@ -589,11 +631,17 @@ export function SubscriptionChangePlanModal({
                 </div>
               ) : null}
 
-              {confirmAction === 'upgrade' ? (
+              {needsPreview ? <CheckoutPreviewBox state={previewState} /> : null}
+
+              {isPay ? (
                 <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                  {payableAmount > 0
-                    ? `You'll be redirected to secure payment. After payment, ${confirmPlan.display_name} features unlock immediately.`
-                    : `Your plan will be upgraded immediately with access to all ${confirmPlan.display_name} features.`}
+                  {payNow === null || payNow > 0
+                    ? `You'll be redirected to secure payment. After payment, ${
+                        confirmAction === 'renew'
+                          ? `your new period is added to ${confirmPlan.display_name}.`
+                          : `${confirmPlan.display_name} features unlock immediately.`
+                      }`
+                    : `Your plan will be ${confirmAction === 'renew' ? 'renewed' : 'upgraded'} immediately with access to all ${confirmPlan.display_name} features.`}
                 </div>
               ) : null}
             </>
@@ -614,9 +662,9 @@ export function SubscriptionChangePlanModal({
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={processing || warningsLoading}
+                disabled={confirmBlocked}
                 className={`flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold transition disabled:opacity-50 sm:flex-1 ${
-                  confirmAction === 'upgrade'
+                  isPay
                     ? 'bg-primary-600 text-white hover:bg-primary-700'
                     : 'bg-amber-600 text-white hover:bg-amber-700'
                 }`}

@@ -12,6 +12,8 @@ import {
   Users,
 } from 'lucide-react';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { RefundControl } from '@/components/admin/RefundControl';
+import { formatSignedRupees } from '@/lib/subscription/renewal-view';
 import { useToastContext } from '@/contexts/ToastContext';
 import { DeleteTenantModal } from '@/components/admin/DeleteTenantModal';
 import { allowedAdminStatusesForPlan } from '@/lib/subscription/admin-plan-status';
@@ -53,6 +55,15 @@ type BillingTx = {
   plan_id: string | null;
   payment_method: string | null;
   created_at: string;
+  /** Set by the server on payments: what an admin may refund and how. */
+  can_refund?: boolean;
+  refundable_amount?: number;
+  pending_refund_amount?: number;
+  sent_through_gateway?: boolean;
+  plan_end_date?: string | null;
+  /** Set by the server on refund rows. */
+  refund_of?: string | null;
+  can_cancel_refund?: boolean;
 };
 
 export interface BusinessAdminPanelProps {
@@ -122,6 +133,28 @@ export function BusinessAdminPanel({
       setLoadingUsers(false);
     }
   }, [businessId]);
+
+  const [cancellingRefund, setCancellingRefund] = useState<string | null>(null);
+  const [confirmCancelRefund, setConfirmCancelRefund] = useState<string | null>(null);
+  async function cancelRefund(tx: BillingTx) {
+    if (!tx.refund_of) return;
+    setCancellingRefund(tx.id);
+    try {
+      const res = await fetch(`/api/admin/businesses/${businessId}/billing/${tx.refund_of}/refund/cancel`, {
+        ...platformAdminFetchInit,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refund_id: tx.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) toast.success('The waiting refund was cancelled. Nothing was sent to the gateway.');
+      else toast.error(data.error || 'The refund could not be cancelled.');
+      await loadBilling();
+    } finally {
+      setCancellingRefund(null);
+      setConfirmCancelRefund(null);
+    }
+  }
 
   const loadBilling = useCallback(async () => {
     const res = await fetch(`/api/admin/businesses/${businessId}/billing`, platformAdminFetchInit);
@@ -586,7 +619,8 @@ export function BusinessAdminPanel({
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Amount</th>
-                  <th className="py-2">Plan</th>
+                  <th className="py-2 pr-4">Plan</th>
+                  <th className="py-2">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -604,11 +638,51 @@ export function BusinessAdminPanel({
                               : 'text-gray-600'
                         }
                       >
-                        {tx.status}
+                        {tx.type === 'refund' && tx.status === 'pending' ? 'pending' : tx.status}
                       </span>
                     </td>
-                    <td className="py-2 pr-4">₹{tx.amount}</td>
-                    <td className="py-2">{tx.plan_id || '—'}</td>
+                    <td className="py-2 pr-4">{tx.type === 'refund' ? formatSignedRupees(-Number(tx.amount)) : `₹${tx.amount}`}</td>
+                    <td className="py-2 pr-4">{tx.plan_id || '—'}</td>
+                    <td className="py-2">
+                      {tx.type === 'payment' && tx.can_refund ? (
+                        <RefundControl
+                          businessId={businessId}
+                          payment={{
+                            id: tx.id,
+                            refundable_amount: tx.refundable_amount ?? 0,
+                            sent_through_gateway: tx.sent_through_gateway ?? true,
+                            plan_end_date: tx.plan_end_date ?? null,
+                          }}
+                          onDone={() => {
+                            void loadBilling();
+                            onUpdated();
+                          }}
+                        />
+                      ) : tx.type === 'payment' && (tx.pending_refund_amount ?? 0) > 0 ? (
+                        <span className="text-xs text-gray-500">Refund pending</span>
+                      ) : null}
+                      {tx.type === 'refund' && tx.status === 'pending' ? (
+                        tx.can_cancel_refund ? (
+                          confirmCancelRefund === tx.id ? (
+                            <span className="text-xs">
+                              Cancel this waiting refund?{' '}
+                              <button type="button" disabled={cancellingRefund === tx.id} onClick={() => void cancelRefund(tx)} className="font-semibold text-red-600 underline">
+                                Yes, cancel it
+                              </button>{' '}
+                              <button type="button" onClick={() => setConfirmCancelRefund(null)} className="underline">
+                                No
+                              </button>
+                            </span>
+                          ) : (
+                            <button type="button" onClick={() => setConfirmCancelRefund(tx.id)} className="text-sm font-medium text-red-600 hover:text-red-700">
+                              Cancel
+                            </button>
+                          )
+                        ) : (
+                          <span className="text-xs text-gray-500">Waiting for the gateway</span>
+                        )
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -18,6 +18,7 @@ import {
 } from '@/components/settings/ModuleSubscriptionCard';
 import type { PlatformModule } from '@/lib/platform-modules';
 import Link from 'next/link';
+import { anyTax, formatPlanDate, formatSignedRupees, historyView } from '@/lib/subscription/renewal-view';
 
 interface CurrentSubscription {
   subscription_id: string;
@@ -71,6 +72,11 @@ interface BillingRecord {
   module_label?: string;
   plan_display_name?: string;
   billing_cycle?: string | null;
+  type?: string;
+  receipt_url?: string | null;
+  document_kind?: string | null;
+  invoice_number?: string | null;
+  tax_amount?: number;
 }
 
 export function SubscriptionTab({ businessId }: { businessId: string }) {
@@ -91,6 +97,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   );
   const [cancellingModuleSubscription, setCancellingModuleSubscription] =
     useState<PlatformModule | null>(null);
+  const [undoingModuleCancel, setUndoingModuleCancel] = useState<PlatformModule | null>(null);
 
   const [subscription, setSubscription] = useState<CurrentSubscription | null>(null);
   const [availablePlans, setAvailablePlans] = useState<AvailablePlan[]>([]);
@@ -232,6 +239,31 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     }
   }
 
+  async function handleUndoModuleCancel(moduleKey: PlatformModule) {
+    setUndoingModuleCancel(moduleKey);
+    try {
+      // The business comes from the signed-in session, not from this request.
+      const response = await fetch('/api/subscriptions/cancel/undo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ module_key: moduleKey }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        toast.success(data.message || 'Cancellation undone. Your plan stays active.');
+        fetchModulePlans();
+        fetchSubscription();
+      } else {
+        toast.error(data.error || 'Could not undo the cancellation');
+      }
+    } catch {
+      toast.error('Could not undo the cancellation');
+    } finally {
+      setUndoingModuleCancel(null);
+    }
+  }
+
   async function fetchSubscription() {
     try {
       const response = await fetch(
@@ -345,6 +377,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
               module_label?: string;
               plan_display_name?: string;
               billing_cycle?: string | null;
+              type?: string;
+              receipt_url?: string | null;
+              document_kind?: string | null;
+              invoice_number?: string | null;
+              tax_amount?: number | null;
             }) => ({
               date: tx.date || tx.created_at || '',
               description: tx.description || 'Subscription payment',
@@ -353,6 +390,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
               module_label: tx.module_label,
               plan_display_name: tx.plan_display_name,
               billing_cycle: tx.billing_cycle,
+              type: tx.type,
+              receipt_url: tx.receipt_url ?? null,
+              document_kind: tx.document_kind ?? null,
+              invoice_number: tx.invoice_number ?? null,
+              tax_amount: Number(tx.tax_amount ?? 0),
             }),
           ),
         );
@@ -467,14 +509,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     return Math.min((current / max) * 100, 100);
   }
 
-  function formatDate(dateStr: string | null): string {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }
+  const formatDate = formatPlanDate;
 
   if (loading && modulePlansLoading && !sessionExpired) {
     return (
@@ -540,6 +575,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   };
 
   const useModulePlans = modulePlans.length > 0;
+  const showTaxColumn = anyTax(billingHistory);
 
   return (
     <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
@@ -613,6 +649,8 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                 }}
                 onCancelDowngrade={handleCancelModuleDowngrade}
                 onCancelSubscription={handleCancelModuleSubscription}
+                onUndoCancel={handleUndoModuleCancel}
+                undoingCancel={undoingModuleCancel === mod.module_key}
                 cancellingDowngrade={cancellingModuleDowngrade === mod.module_key}
                 cancellingSubscription={cancellingModuleSubscription === mod.module_key}
               />
@@ -790,12 +828,18 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                     <th className="text-left py-3 px-2 font-medium text-text-muted">Product</th>
                     <th className="text-left py-3 px-2 font-medium text-text-muted">Plan</th>
                     <th className="text-left py-3 px-2 font-medium text-text-muted">Description</th>
+                    {showTaxColumn ? (
+                      <th className="text-right py-3 px-2 font-medium text-text-muted">GST</th>
+                    ) : null}
                     <th className="text-right py-3 px-2 font-medium text-text-muted">Amount</th>
                     <th className="text-center py-3 px-2 font-medium text-text-muted">Status</th>
+                    <th className="text-left py-3 px-2 font-medium text-text-muted">Receipt</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {billingHistory.map((record, idx) => (
+                  {billingHistory.map((record, idx) => {
+                    const view = historyView(record);
+                    return (
                     <tr key={idx} className="border-b border-border last:border-0">
                       <td className="py-3 px-2 text-text-secondary">{formatDate(record.date)}</td>
                       <td className="py-3 px-2 text-text-secondary">
@@ -805,11 +849,24 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                         {record.plan_display_name || '—'}
                       </td>
                       <td className="py-3 px-2 text-text-secondary text-xs">{record.description}</td>
-                      <td className="py-3 px-2 text-right text-text-primary font-medium">₹{record.amount}</td>
+                      {showTaxColumn ? (
+                        <td className="py-3 px-2 text-right text-text-secondary">
+                          {record.tax_amount ? formatSignedRupees(record.tax_amount) : '—'}
+                        </td>
+                      ) : null}
+                      <td
+                        className={`py-3 px-2 text-right font-medium ${
+                          view.isRefund ? 'text-red-700 dark:text-red-300' : 'text-text-primary'
+                        }`}
+                      >
+                        {view.amountText}
+                      </td>
                       <td className="py-3 px-2 text-center">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                            record.status === 'paid' || record.status === 'success'
+                            view.isRefund
+                              ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                              : record.status === 'paid' || record.status === 'success'
                               ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
                               : record.status === 'pending'
                               ? 'bg-yellow-100 text-yellow-700'
@@ -818,11 +875,27 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                               : 'bg-gray-100 text-text-secondary'
                           }`}
                         >
-                          {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                          {view.statusText}
                         </span>
                       </td>
+                      <td className="py-3 px-2 text-xs">
+                        {view.receiptUrl ? (
+                          <a
+                            href={view.receiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link-primary font-medium"
+                          >
+                            {view.receiptLabel}
+                            {record.invoice_number ? ` ${record.invoice_number}` : ''}
+                          </a>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

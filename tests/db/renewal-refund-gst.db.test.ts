@@ -56,6 +56,8 @@ import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 import { createSubscriptionCheckout } from '@/lib/platform-subscription-checkout';
 import { NextRequest } from 'next/server';
 import { POST as checkoutPost } from '@/app/api/subscriptions/checkout/route';
+import { GET as adminBillingGet } from '@/app/api/admin/businesses/[id]/billing/route';
+import { GET as previewGet } from '@/app/api/subscriptions/checkout/preview/route';
 import { refundableAmountPaise } from '@/lib/subscription/upgrade-credit';
 import { findRejectedUpgradeCredits, reportBillingAnomalies } from '@/lib/subscription/reconcile-payments';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
@@ -3467,6 +3469,175 @@ run('renewal, refund and GST (kh_phase2_test)', () => {
           `SELECT invoice_number, tax_amount::text, taxable_amount::text, gst_mode FROM billing_transactions_archive WHERE id = $1`, [q.tx]);
         expect(a).toEqual({ invoice_number: number, tax_amount: '53.82', taxable_amount: '299.00', gst_mode: 'exclusive' });
       });
+    });
+  });
+
+  // ---- Task 7: the price preview shows what checkout then stores ----
+
+  describe('checkout preview', () => {
+    const asBiz = (id: string) => ({ headers: { 'x-authenticated-business-id': id, 'x-authenticated-user-id': adminOf.get(id)! } });
+    async function preview(businessId: string, qs: Record<string, string>) {
+      const res = await previewGet(
+        new NextRequest(`http://localhost/api/subscriptions/checkout/preview?${new URLSearchParams(qs).toString()}`, asBiz(businessId)),
+      );
+      return { status: res.status, body: await res.json() };
+    }
+    async function realCheckout(businessId: string, planId: string, coupon?: string) {
+      const spy = jest
+        .spyOn(RazorpayPaymentProvider.prototype, 'createHostedPaymentLink')
+        .mockResolvedValue({ provider: 'razorpay', providerPaymentId: 'plink_' + sfx(), paymentUrl: 'https://rzp.io/x' });
+      try {
+        return await createSubscriptionCheckout({ businessId, planId, billingCycle: 'monthly', couponCode: coupon });
+      } finally {
+        spy.mockRestore();
+      }
+    }
+    const stored = (id: string) =>
+      queryOne<{ total_amount: string; tax_amount: string; metadata: Record<string, any>; period_start: string | null; period_end: string | null }>(
+        `SELECT total_amount::text, tax_amount::text, metadata, period_start::text, period_end::text FROM billing_transactions WHERE id = $1`,
+        [id],
+      );
+    const tables = async (businessId: string) =>
+      (await queryOne<{ n: string }>(
+        `SELECT ((SELECT COUNT(*) FROM billing_transactions WHERE business_id = $1)
+               + (SELECT COUNT(*) FROM coupon_redemptions WHERE business_id = $1)
+               + (SELECT COUNT(*) FROM subscription_events WHERE business_id = $1))::text AS n`,
+        [businessId],
+      ))!.n;
+    const insertPaid7 = (businessId: string, planId: string, amount: number, s: number, e: number) =>
+      query(
+        `INSERT INTO billing_transactions (business_id, type, status, amount, total_amount, plan_id, module_key, billing_cycle, payment_method,
+           period_start, period_end, gateway_response)
+         VALUES ($1, 'payment', 'completed', $2, $2, $3, 'billing', 'monthly', 'razorpay', CURRENT_DATE + $4::int, CURRENT_DATE + $5::int,
+           '{"checkout_type":"subscription","provider":"razorpay"}'::jsonb)`,
+        [businessId, amount, planId, s, e],
+      );
+
+    /** Preview, then the real checkout, then the payment: the three must agree. */
+    async function agree(businessId: string, planId: string, coupon?: string) {
+      const before = await tables(businessId);
+      const p = await preview(businessId, { plan_id: planId, billing_cycle: 'monthly', ...(coupon ? { coupon_code: coupon } : {}) });
+      expect(p.status).toBe(200);
+      expect(await tables(businessId)).toBe(before); // a preview writes nothing
+      expect(global.fetch).not.toHaveBeenCalled();
+      const c = await realCheckout(businessId, planId, coupon);
+      const row = await stored(c.billingTransactionId);
+      expect(p.body.breakdown.amountToPay).toBe(c.amount);
+      expect(Number(row!.total_amount)).toBe(p.body.breakdown.amountToPay);
+      expect(p.body.breakdown.taxAmount).toBe(Number(row!.tax_amount));
+      expect(p.body.breakdown.creditApplied).toBe(c.creditApplied);
+      expect(p.body.breakdown.creditUnused).toBe(c.creditUnused);
+      expect(p.body.credit_unused).toBe(c.creditUnused);
+      expect(p.body.breakdown.listPrice).toBe(c.baseAmount);
+      expect(p.body.breakdown.couponDiscount).toBe(c.discountAmount);
+      const done = await hook('payment.captured', 'pay_pv_' + sfx(), 'captured', notesFor(businessId, c.billingTransactionId, planId), Math.round(c.amount * 100));
+      expect(done).toMatchObject({ ok: true });
+      const paid = await stored(c.billingTransactionId);
+      // The subscription row ends up with the previewed dates; the payment row records the days it bought.
+      expect(await moduleRow(businessId)).toMatchObject({ start_date: p.body.period_start, end_date: p.body.period_end });
+      expect(paid!.period_end).toBe(p.body.period_end);
+      return p.body;
+    }
+
+    it('a normal plan on a business with no plan row', async () => {
+      const b = await agree(biz, 'billing_starter');
+      expect(b.period_kind).toBe('change');
+      expect(b.breakdown.listPrice).toBe(299);
+    });
+
+    it('a Rs 1 plan previews Rs 1 and the same Rs 1 is charged', async () => {
+      await query(`UPDATE subscription_plans SET price_monthly = 1 WHERE id = 'billing_starter'`);
+      try {
+        const b = await agree(biz, 'billing_starter');
+        expect(b.breakdown.amountToPay).toBe(1);
+      } finally {
+        await query(`UPDATE subscription_plans SET price_monthly = 299 WHERE id = 'billing_starter'`);
+      }
+    });
+
+    it('a renewal keeps the start and adds the cycle after the current end date', async () => {
+      await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+      await insertPaid7(biz, 'billing_starter', 299, -10, 20);
+      const b = await agree(biz, 'billing_starter');
+      expect(b.period_kind).toBe('renewal');
+      expect(b.period_start).toBe(await daysFromToday(-10));
+      expect(b.period_end).toBe(await addMonths(await daysFromToday(20), 1));
+      expect(b.breakdown.creditApplied).toBe(0);
+    });
+
+    it('an upgrade with credit, including credit that is left over', async () => {
+      await setRow(biz, 'billing_starter', { startOffset: -10, endOffset: 20 });
+      await insertPaid7(biz, 'billing_starter', 299, -10, 20);
+      const b = await agree(biz, 'billing_growth');
+      expect(b.period_kind).toBe('change');
+      expect(b.breakdown.creditApplied).toBe(199.33);
+      expect(b.period_start).toBe(await daysFromToday(0));
+
+      const b2 = await newBusiness('pv-left');
+      await setRow(b2, 'billing_starter', { startOffset: -1, endOffset: 29 });
+      await insertPaid7(b2, 'billing_starter', 5000, -1, 29);
+      const body = await agree(b2, 'billing_growth');
+      expect(body.breakdown.amountToPay).toBe(1);
+      expect(body.credit_unused).toBeGreaterThan(0);
+    });
+
+    it('a coupon', async () => {
+      const code = `PV${randomUUID().slice(0, 8).toUpperCase()}`;
+      const c = await queryOne<{ id: string }>(`INSERT INTO coupons (code, type, value, max_per_business) VALUES ($1, 'flat', 100, 1) RETURNING id`, [code]);
+      coupons.push(c!.id);
+      const b = await agree(biz, 'billing_growth', code);
+      expect(b.breakdown.couponDiscount).toBe(100);
+      expect(b.breakdown.amountToPay).toBe(399);
+    });
+
+    it('refuses the trial plan, an unknown plan and a missing session; never takes a business id from the query', async () => {
+      expect((await preview(biz, { plan_id: 'trial' })).status).toBe(400);
+      expect((await preview(biz, { plan_id: 'no_such_plan' })).status).toBe(400);
+      expect((await preview(biz, {})).status).toBe(400);
+      const anon = await previewGet(new NextRequest('http://localhost/api/subscriptions/checkout/preview?plan_id=billing_starter'));
+      expect(anon.status).toBe(401);
+      const other = await newBusiness('pv-other');
+      const p = await preview(biz, { plan_id: 'billing_starter', business_id: other });
+      expect(p.status).toBe(200); // ignored: the answer is for the session's business
+    });
+  });
+
+  describe('admin billing list tells the screen what a refund may be', () => {
+    it('reports the refundable amount (paid minus credit used, minus refunds), pending refunds and whether one can be cancelled', async () => {
+      (requirePlatformRequest as jest.Mock).mockResolvedValue({ ok: true, admin: { id: randomUUID() } });
+      await setRow(biz, 'billing_starter', { startOffset: -5, endOffset: 25 });
+      const pay = await queryOne<{ id: string }>(
+        `INSERT INTO billing_transactions (business_id, type, status, amount, total_amount, plan_id, module_key, billing_cycle, payment_method,
+           period_start, period_end, metadata, gateway_response)
+         VALUES ($1, 'payment', 'completed', 300, 300, 'billing_starter', 'billing', 'monthly', 'razorpay', CURRENT_DATE - 5, CURRENT_DATE + 25,
+           '{"credit_used_paise": 5000}'::jsonb, '{"checkout_type":"subscription","provider":"razorpay"}'::jsonb) RETURNING id`,
+        [biz],
+      );
+      const refund = (status: string, amt: number, meta: Record<string, unknown>) =>
+        queryOne<{ id: string }>(
+          `INSERT INTO billing_transactions (business_id, type, status, amount, total_amount, plan_id, module_key, payment_method, metadata)
+           VALUES ($1, 'refund', $2, $3, $3, 'billing_starter', 'billing', 'razorpay', $4::jsonb) RETURNING id`,
+          [biz, status, amt, JSON.stringify({ refund_of: pay!.id, ...meta })],
+        );
+      const done = await refund('completed', 50, {});
+      const waiting = await refund('pending', 100, {});
+      const sent = await refund('pending', 20, { gateway_requested: true });
+      const res = await adminBillingGet(new NextRequest(`http://localhost/api/admin/businesses/${biz}/billing`), { params: { id: biz } });
+      const { transactions } = await res.json();
+      const byId = (id: string) => transactions.find((t: any) => t.id === id);
+      expect(byId(pay!.id)).toMatchObject({
+        can_refund: true,
+        refundable_amount: 80, // 300 - 50 credit used - 50 refunded - 100 waiting - 20 waiting
+        refunded_amount: 50,
+        pending_refund_amount: 120,
+        sent_through_gateway: true,
+        plan_end_date: await daysFromToday(25),
+      });
+      expect(byId(pay!.id).metadata).toBeUndefined();
+      expect(byId(done!.id)).toMatchObject({ refund_of: pay!.id, can_cancel_refund: false });
+      expect(byId(waiting!.id).can_cancel_refund).toBe(true);
+      expect(byId(sent!.id).can_cancel_refund).toBe(false);
+      (requirePlatformRequest as jest.Mock).mockReset();
     });
   });
 });

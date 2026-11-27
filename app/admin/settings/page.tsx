@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAdmin } from '@/context/AdminContext';
 import { Settings, Bell, Shield, Database, Megaphone, Mail, MessageCircle, CreditCard } from 'lucide-react';
 import { AdminPlatformPaymentSettings } from '@/components/admin/AdminPlatformPaymentSettings';
+import { AdminBillingTaxSettings } from '@/components/admin/AdminBillingTaxSettings';
 import { AdminEmailTemplatesEditor } from '@/components/admin/AdminEmailTemplatesEditor';
 import { AdminWhatsAppTemplatesEditor } from '@/components/admin/AdminWhatsAppTemplatesEditor';
 import { PromotionsManager } from '@/components/admin/PromotionsManager';
@@ -13,8 +14,9 @@ import { AdminEmailLogsPanel } from '@/components/admin/AdminEmailLogsPanel';
 export default function AdminSettingsPage() {
   const { isMinimumRole } = useAdmin();
   const canManagePayments = isMinimumRole('super_admin');
+  const canViewGst = isMinimumRole('admin');
   const [activeTab, setActiveTab] = useState<
-    'general' | 'notifications' | 'templates' | 'whatsapp' | 'payments' | 'security' | 'system' | 'promotions'
+    'general' | 'notifications' | 'templates' | 'whatsapp' | 'payments' | 'gst' | 'security' | 'system' | 'promotions'
   >('general');
 
   return (
@@ -31,6 +33,7 @@ export default function AdminSettingsPage() {
           { id: 'templates', label: 'Email templates', icon: Mail },
           { id: 'whatsapp', label: 'WhatsApp templates', icon: MessageCircle },
           ...(canManagePayments ? [{ id: 'payments', label: 'Payments', icon: CreditCard }] : []),
+          ...(canViewGst ? [{ id: 'gst', label: 'GST', icon: CreditCard }] : []),
           { id: 'security', label: 'Security', icon: Shield },
           { id: 'system', label: 'System', icon: Database },
           { id: 'promotions', label: 'Promotions', icon: Megaphone },
@@ -122,6 +125,7 @@ export default function AdminSettingsPage() {
         {activeTab === 'whatsapp' && <AdminWhatsAppTemplatesEditor />}
 
         {activeTab === 'payments' && canManagePayments && <AdminPlatformPaymentSettings />}
+        {activeTab === 'gst' && canViewGst && <AdminBillingTaxSettings canEdit={canManagePayments} />}
 
         {activeTab === 'security' && (
           <div className="space-y-6">

@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Loader2, ShieldCheck, Tag } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
+import { CheckoutPreviewBox, useCheckoutPreview } from '@/components/subscription/CheckoutPreviewBox';
 import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
 import { productLineForModule, type PlatformModule } from '@/lib/platform-modules';
 import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
@@ -136,6 +137,12 @@ export function UpgradePlanPicker({
     ...(offersThreeYear ? [{ id: 'three_year' as const, label: '3 years' }] : []),
   ];
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const previewState = useCheckoutPreview({
+    enabled: !!selectedPlan && !isFreeModule && listPrice(selectedPlan) > 0 && isBillingCycleOffered(selectedPlan, billingCycle),
+    planId: selectedPlanId || null,
+    billingCycle,
+    couponCode: couponApplied ? couponCode : undefined,
+  });
 
   async function handleStartTrial() {
     if (!trialConfig || !business?.id || !moduleKey) return;
@@ -366,10 +373,14 @@ export function UpgradePlanPicker({
                 </div>
               )}
 
+              {selectedPlan && listPrice(selectedPlan) > 0 && isBillingCycleOffered(selectedPlan, billingCycle) ? (
+                <CheckoutPreviewBox state={previewState} />
+              ) : null}
+
               <button
                 type="button"
                 onClick={handleUpgrade}
-                disabled={!selectedPlanId || upgrading || (!!selectedPlan && !isBillingCycleOffered(selectedPlan, billingCycle))}
+                disabled={!selectedPlanId || upgrading || previewState.blocked || (!!selectedPlan && !isBillingCycleOffered(selectedPlan, billingCycle))}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent-500 text-[15px] font-semibold text-white hover:bg-accent-600 disabled:opacity-50"
               >
                 {upgrading ? (

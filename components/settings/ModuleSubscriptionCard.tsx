@@ -18,6 +18,7 @@ import {
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { productLineForModule } from '@/lib/platform-modules';
+import { formatPlanDate, renewalView } from '@/lib/subscription/renewal-view';
 import type { PlatformModule } from '@/lib/platform-modules';
 
 export type ModuleSubscriptionDetail = {
@@ -38,6 +39,11 @@ export type ModuleSubscriptionDetail = {
   trial_days_remaining: number | null;
   is_operational: boolean;
   cancel_at_period_end?: boolean;
+  /** Set by the server: nothing renews by itself (auto_renew is always false). */
+  ends_on?: string | null;
+  grace_ends_on?: string | null;
+  in_grace?: boolean;
+  can_renew?: boolean;
 };
 
 type UsageRow = {
@@ -55,14 +61,7 @@ const LIMIT_LABELS: Record<string, string> = {
   connect_agents: 'WhatsApp agents',
 };
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
+const formatDate = formatPlanDate;
 
 export function ModuleSubscriptionCard({
   moduleKey,
@@ -74,8 +73,10 @@ export function ModuleSubscriptionCard({
   onPlanChanged,
   onCancelDowngrade,
   onCancelSubscription,
+  onUndoCancel,
   cancellingDowngrade,
   cancellingSubscription,
+  undoingCancel,
 }: {
   moduleKey: PlatformModule;
   label: string;
@@ -86,10 +87,13 @@ export function ModuleSubscriptionCard({
   onPlanChanged: () => void;
   onCancelDowngrade: (moduleKey: PlatformModule) => void;
   onCancelSubscription: (moduleKey: PlatformModule) => void;
+  onUndoCancel: (moduleKey: PlatformModule) => void;
   cancellingDowngrade: boolean;
   cancellingSubscription: boolean;
+  undoingCancel: boolean;
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [startWithRenew, setStartWithRenew] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   const productLine = productLineForModule(moduleKey);
@@ -134,7 +138,26 @@ export function ModuleSubscriptionCard({
     isStaffLite ||
     (moduleKey === 'connect' && Number(subscription.price_monthly) === 0);
 
-  const isCancelled = Boolean(subscription.cancel_at_period_end);
+  const view = renewalView({
+    plan_id: subscription.plan_id,
+    status: subscription.status,
+    end_date: subscription.end_date,
+    ends_on: subscription.ends_on,
+    grace_ends_on: subscription.grace_ends_on,
+    in_grace: subscription.in_grace,
+    can_renew: subscription.can_renew,
+    cancel_at_period_end: subscription.cancel_at_period_end,
+    is_operational: subscription.is_operational,
+    trial_days_remaining: subscription.trial_days_remaining,
+    is_free: isFree,
+  });
+  // The cancelled box and the undo button show only while the paid period is still running.
+  const isCancelled = view.state === 'cancelled';
+  const canBuyAgain = !isFree && (view.state === 'locked' || Boolean(subscription.can_renew));
+  const openModal = (renew: boolean) => {
+    setStartWithRenew(renew);
+    setShowModal(true);
+  };
 
   const limitTiles = usage.slice(0, 4);
 
@@ -155,7 +178,7 @@ export function ModuleSubscriptionCard({
           <Button
             size="sm"
             variant="primary"
-            onClick={() => setShowModal(true)}
+            onClick={() => openModal(false)}
             className="shrink-0 gap-1.5 whitespace-nowrap"
           >
             <TrendingUp className="h-3.5 w-3.5" />
@@ -213,10 +236,19 @@ export function ModuleSubscriptionCard({
 
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg bg-gray-50 p-3 dark:bg-slate-800/50">
-            <p className="text-xs text-text-muted">Renewal</p>
+            <p className="text-xs text-text-muted">{subscription.end_date ? 'Ends on' : 'End date'}</p>
             <p className="font-semibold text-text-primary">
               {subscription.end_date ? formatDate(subscription.end_date) : 'No expiry'}
             </p>
+            {canBuyAgain && view.state !== 'in_grace' && view.state !== 'locked' ? (
+              <button
+                type="button"
+                onClick={() => openModal(true)}
+                className="mt-1 text-xs font-semibold text-primary-600 underline hover:text-primary-700"
+              >
+                Renew
+              </button>
+            ) : null}
           </div>
           <div className="rounded-lg bg-gray-50 p-3 dark:bg-slate-800/50">
             <p className="text-xs text-text-muted">Cycle</p>
@@ -262,14 +294,50 @@ export function ModuleSubscriptionCard({
           </div>
         ) : null}
 
+        {view.state === 'in_grace' && view.graceBanner ? (
+          <div
+            role="status"
+            className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+          >
+            <p>{view.graceBanner}</p>
+            <Button size="sm" variant="primary" className="mt-2" onClick={() => openModal(true)}>
+              Renew
+            </Button>
+          </div>
+        ) : null}
+
+        {view.state === 'locked' ? (
+          <div
+            role="alert"
+            className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300"
+          >
+            <p className="font-semibold">{view.headline}</p>
+            <p className="mt-0.5">{view.detail}</p>
+            <Button size="sm" variant="primary" className="mt-2" onClick={() => openModal(true)}>
+              Renew
+            </Button>
+          </div>
+        ) : null}
+
         {isCancelled ? (
           <div className="mt-3 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-300">
             Cancellation scheduled — access continues until{' '}
             {formatDate(subscription.end_date)}. You will move to the free plan after that.
+            <div className="mt-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={undoingCancel}
+                onClick={() => onUndoCancel(moduleKey)}
+              >
+                {undoingCancel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Undo cancellation
+              </Button>
+            </div>
           </div>
         ) : null}
 
-        {!isFree && !isCancelled ? (
+        {!isFree && !isCancelled && view.state !== 'locked' ? (
           <div className="mt-4 border-t border-border pt-4">
             <button
               type="button"
@@ -329,6 +397,9 @@ export function ModuleSubscriptionCard({
           businessId={businessId}
           moduleKey={moduleKey}
           endDate={subscription.end_date}
+          currentCycle={subscription.billing_cycle}
+          renewable={canBuyAgain}
+          startWithRenew={startWithRenew}
           onClose={() => setShowModal(false)}
           onSuccess={(name) => {
             setShowModal(false);
