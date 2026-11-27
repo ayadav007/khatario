@@ -2097,6 +2097,6 @@ Append only. Newest entry at the bottom. Format and rules: [brain.md](brain.md).
   - Whether a business's plan is paid is judged from that business's own price, so a plan made free for new customers still renews, reminds and protects paid days for those on its old price.
 - **Shipped:** on branch `claude/gifted-gates-jx4rbn`, not merged, not deployed. Migration 485 written, run only on the local test database. `tests/db/plan-change-scope.db.test.ts` and the other billing suites pass locally; `tsc` clean. Not seen in a browser.
 - **Open:**
-  - Trials are kept on older terms like paying customers; if trials should convert at the new price instead, it is a one-line change in `pinBusinessesToTerms`.
+  - Owner said yes to converting trials at the new price: an "Only new customers" save keeps only paying businesses (status active) on their old terms; businesses on a free trial get the new terms, including the new price when they start paying.
   - The public pricing page and catalogue always show current terms; a business on older terms does not see its own renewal price there.
   - The full `tests/db` folder has 50 suites (84 tests) that fail locally on a clean checkout too (no `.env` here); none is a billing suite.

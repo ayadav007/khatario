@@ -20,6 +20,11 @@ export const PLAN_CHANGE_SCOPES: readonly PlanChangeScope[] = ['everyone', 'new_
 
 /** Statuses in which a plan's terms apply to a business today (same set the admin count uses). */
 export const PLAN_TERMS_STATUSES = ['active', 'trial'] as const;
+/**
+ * Who keeps their terms on an "Only new customers" save: paying businesses only. A business on a free trial
+ * gets the plan's new terms, including the new price when it converts (owner's decision, 2026-11-27).
+ */
+export const PLAN_TERMS_PIN_STATUSES = ['active'] as const;
 
 export function isPlanChangeScope(raw: unknown): raw is PlanChangeScope {
   return raw === 'everyone' || raw === 'new_customers';
@@ -227,7 +232,7 @@ export async function snapshotPlanTerms(
   return id;
 }
 
-/** Pin every business on the plan (active or trial) that is not already pinned. Returns how many were pinned. */
+/** Pin every paying business on the plan (status active, not trial) that is not already pinned. Returns how many were pinned. */
 export async function pinBusinessesToTerms(
   client: Pick<PoolClient, 'query'>,
   planId: string,
@@ -237,7 +242,7 @@ export async function pinBusinessesToTerms(
     `UPDATE business_module_subscriptions
         SET plan_terms_id = $2
       WHERE plan_id = $1 AND plan_terms_id IS NULL AND status = ANY($3::text[])`,
-    [planId, termsId, [...PLAN_TERMS_STATUSES]],
+    [planId, termsId, [...PLAN_TERMS_PIN_STATUSES]],
   );
   return r.rowCount ?? 0;
 }

@@ -427,6 +427,20 @@ run('plan changes: everyone now / only new customers (kh_phase2_test)', () => {
       expect((await checkoutAmount(fresh, plan)).amount).toBe(250);
     });
 
+    it('only new customers: a business on a free trial is not kept on the old terms; it pays the new price', async () => {
+      const plan = await newPlan({ monthly: 100, yearly: 1000 });
+      const paying = await newBusiness();
+      await putOnPlan(paying, plan);
+      const trialing = await newBusiness();
+      await putOnPlan(trialing, plan, 'trial');
+      const res = await postP(plan, { price_monthly: 25000 }, 2, 'new_customers');
+      expect(res.status).toBe(200);
+      expect(await pinOf(paying)).not.toBeNull();
+      expect(await pinOf(trialing)).toBeNull();
+      expect((await checkoutAmount(paying, plan)).amount).toBe(100);
+      expect((await checkoutAmount(trialing, plan)).amount).toBe(250);
+    });
+
     it('the preview shows what checkout stores, for a pinned business and for a new one', async () => {
       const plan = await newPlan({ monthly: 100, yearly: 1000 });
       const old = await newBusiness();

@@ -59,8 +59,8 @@ export function PlanChangeScopeChoice({
       )}
       {option(
         'new_customers',
-        `Only new customers — the ${affected} ${noun} on this plan keep what they have now`,
-        'They keep their current features, limits and renewal price while they stay on this plan and keep renewing it. A business that changes plan, or comes back to it later, gets the current terms.',
+        `Only new customers — paying businesses on this plan keep what they have now`,
+        'Paying businesses keep their current features, limits and renewal price while they stay on this plan and keep renewing it. Businesses on a free trial get the new terms, including the new price when they start paying. A business that changes plan, or comes back to it later, gets the current terms.',
       )}
       <p className="text-xs text-amber-800">The change and your choice are recorded with your name.</p>
     </fieldset>
