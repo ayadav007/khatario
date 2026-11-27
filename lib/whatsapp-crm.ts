@@ -2143,7 +2143,7 @@ export async function processIncomingMessage(
     // changed in the conversation (no state, flow session or rule chain moves), the skip is logged with its
     // reason and the chat goes to a person's queue, as for any message the bot did not answer.
     {
-      const automation = await checkAutomationAllowed(businessId, 'connect_automation');
+      const automation = await checkAutomationAllowed(businessId, 'bot_reply');
       if (!automation.allowed) {
         console.warn('[CRM] Automatic reply skipped:', automation.reason, { businessId });
         await recordSkippedAutomation({ businessId, conversationId, messageId, reason: automation.reason });

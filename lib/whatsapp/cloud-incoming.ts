@@ -4,7 +4,7 @@ import type { CloudIncomingQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
 import { queueIfUnanswered } from './inbox-ownership';
 import { checkAutomationAllowed, recordSkippedAutomation } from './automation-guard';
-import { WhatsAppSlotRefused, withWhatsAppSlot } from './send-slot';
+import { asCustomerReply } from './send-slot';
 
 /** A cart sent from the business's Meta catalog: stored in the inbox, then ordered and billed. */
 async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullable<CloudIncomingQueueJob['order']> }) {
@@ -34,8 +34,8 @@ async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullabl
     note: job.order.note,
     lines: job.order.items.map((i) => ({ itemId: i.retailerId, quantity: i.quantity })),
   });
-  // The order is recorded (it is the customer's), but the automatic confirmation needs the Connect plan and cap.
-  const automation = await checkAutomationAllowed(job.businessId, 'connect_automation');
+  // The order is recorded (it is the customer's), but the automatic confirmation needs the Connect plan (no daily cap).
+  const automation = await checkAutomationAllowed(job.businessId, 'bot_reply');
   if (!automation.allowed) {
     await recordSkippedAutomation({
       businessId: job.businessId,
@@ -46,19 +46,8 @@ async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullabl
     await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
     return;
   }
-  try {
-    await withWhatsAppSlot(
-      job.businessId,
-      { to: job.from, messageType: 'bot_reply', referenceType: 'shop_order' },
-      () => sendShopOrderReply(job.businessId, job.from, outcome),
-    );
-  } catch (err) {
-    if (!(err instanceof WhatsAppSlotRefused)) throw err;
-    await recordSkippedAutomation({
-      businessId: job.businessId, conversationId: conversationId ?? null, messageId: job.messageId, reason: err.reason,
-    });
-    await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
-  }
+  // A reply to the customer's own cart: not counted toward the daily cap (only the plan check above applies).
+  await asCustomerReply(() => sendShopOrderReply(job.businessId, job.from, outcome));
 }
 
 /**
@@ -164,41 +153,24 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
     const delayMs = Math.min(Math.max(result.delaySeconds ?? 0, 0), 10) * 1000;
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
 
-    let storedText: string;
-    let messageId: string | null;
-    try {
-      // The reply takes its place under the daily WhatsApp cap atomically before it is sent (and counts, so
-      // bot replies alone can reach the cap); a failed send gives the place back.
-      const sentReply = await withWhatsAppSlot(
-        job.businessId,
-        { to: job.from, messageType: 'bot_reply', text: result.response || null },
-        async () => {
-          if (result.list || (result.buttons && result.buttons.length)) {
-            const { sendFlowReply } = await import('@/lib/whatsapp/flows/send');
-            const sent = await sendFlowReply(job.businessId, job.from, {
-              text: result.response || '',
-              footer: result.footer,
-              buttons: result.buttons?.map((b) => ({ id: b.id, title: b.title })),
-              list: result.list,
-            });
-            return { storedText: sent.storedText, messageId: sent.messageId };
-          }
-          const text = cloudReplyText(result.response || '', result.buttons, result.footer);
-          const sent = await sendBusinessText(job.businessId, job.from, text);
-          return { storedText: text, messageId: sent.messageId };
-        },
-      );
-      storedText = sentReply.storedText;
-      messageId = sentReply.messageId;
-    } catch (err) {
-      if (!(err instanceof WhatsAppSlotRefused)) throw err;
-      // The cap was used up between the check and the send: nothing is sent, the chat goes to a person.
-      await recordSkippedAutomation({
-        businessId: job.businessId, conversationId: out.conversationUuid ?? null, messageId: job.messageId, reason: err.reason,
-      });
-      await queueIfUnanswered(job.businessId, out.conversationUuid, { replied: false, handled: false });
-      return;
-    }
+    // A reply to the customer's own message: not counted toward the daily WhatsApp cap and not refused by it.
+    const sentReply = await asCustomerReply(async () => {
+      if (result.list || (result.buttons && result.buttons.length)) {
+        const { sendFlowReply } = await import('@/lib/whatsapp/flows/send');
+        const sent = await sendFlowReply(job.businessId, job.from, {
+          text: result.response || '',
+          footer: result.footer,
+          buttons: result.buttons?.map((b) => ({ id: b.id, title: b.title })),
+          list: result.list,
+        });
+        return { storedText: sent.storedText, messageId: sent.messageId };
+      }
+      const text = cloudReplyText(result.response || '', result.buttons, result.footer);
+      const sent = await sendBusinessText(job.businessId, job.from, text);
+      return { storedText: text, messageId: sent.messageId };
+    });
+    const storedText: string = sentReply.storedText;
+    const messageId: string | null = sentReply.messageId;
 
     const conv = await queryOne<{ id: string }>(
       `SELECT id FROM whatsapp_conversations WHERE business_id = $1 AND conversation_id = $2 LIMIT 1`,

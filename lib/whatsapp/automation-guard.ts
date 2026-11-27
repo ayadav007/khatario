@@ -22,31 +22,34 @@ import { FeatureKeys } from '@/lib/featureKeys';
 export type AutomationSpec = { connect?: boolean; feature?: string; cap?: boolean };
 
 export const AUTOMATION = {
-  /** Bot rules, flows, AI and shop replies, the WhatsApp copy of a todo reminder: the Connect plan. */
+  /**
+   * Replies to a customer's own message (bot rules, flows, AI and shop replies): the Connect plan, and no daily cap.
+   * A reply to someone who just wrote does not count toward the cap and is not refused by it, otherwise a busy bot
+   * would stop every invoice and reminder for the day.
+   */
+  bot_reply: { connect: true, cap: false },
+  /** Proactive Connect sends (the WhatsApp copy of a todo reminder): the Connect plan and the daily cap. */
   connect_automation: { connect: true },
-  /** Scheduled payment reminders. */
+  /** Scheduled payment reminders (gate they always had). */
   auto_reminders: { feature: FeatureKeys.WHATSAPP_AUTO_REMINDERS },
-  /** "Payment received" messages are switched on in Settings > WhatsApp > Notifications (gated by this feature). */
-  payment_received: { feature: FeatureKeys.WHATSAPP_AUTO_REMINDERS },
+  /** Credit alerts (gate they always had). */
   credit_alerts: { feature: FeatureKeys.WHATSAPP_CREDIT_ALERTS },
-  /** Online-store buyer and merchant notices, abandoned-cart reminders. */
-  online_store: { feature: 'advanced_online_store' },
-  /** Order updates, parcel delays, dispatch alerts, returns, khata statements: no plan feature of their own. */
+  /**
+   * Senders that never had a plan feature (their own settings toggle is their gate): payment-received messages,
+   * store buyer and merchant notices, abandoned-cart reminders, order updates, parcel and dispatch alerts, returns,
+   * khata statements, owner updates and the evening summary. They get a usable subscription and the daily cap.
+   */
   no_feature: {},
-  /** Owner updates and the evening summary: configured under Settings > WhatsApp. */
-  owner_updates: { feature: 'settings_whatsapp' },
-  /** Supplier Hub notices go from Khatario's own number, so they do not use the business's cap. */
-  supplier_hub: { feature: 'purchase_supplier_hub', cap: false },
+  /** The owner assistant's answer to the owner's own message: a reply, so a usable subscription and no cap. */
+  owner_reply: { cap: false },
+  /** Supplier Hub notices go from Khatario's own number: a usable subscription, no cap of the business's. */
+  supplier_hub: { cap: false },
 } as const satisfies Record<string, AutomationSpec>;
 
 export type AutomationKind = keyof typeof AUTOMATION;
 
-/** Tenant WhatsApp event key to the automation it belongs to (default: no plan feature). */
-export function automationForEvent(eventKey: string): AutomationKind {
-  if (eventKey === 'invoice_payment_received') return 'payment_received';
-  if (eventKey.startsWith('store_') || eventKey === 'merchant_new_order' || eventKey === 'merchant_new_enquiry') {
-    return 'online_store';
-  }
+/** Tenant WhatsApp event key to the automation it belongs to: none of them had a plan feature before. */
+export function automationForEvent(_eventKey: string): AutomationKind {
   return 'no_feature';
 }
 

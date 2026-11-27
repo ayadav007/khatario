@@ -7,7 +7,7 @@ import {
 
 export { getTimestamp, getOriginalWaTimestampSecOrNull } from '@/lib/baileys-store-helpers';
 import { addWhatsAppMessageJob } from './queue';
-import { currentSlot } from './whatsapp/send-slot';
+import { currentSlot, inCustomerReply } from './whatsapp/send-slot';
 import * as db from '@/lib/db';
 import pino from 'pino';
 // Hybrid Baileys - combines stable connection from standard Baileys with button support from baileys-pro
@@ -3286,6 +3286,9 @@ export async function sendWhatsAppMessage(
       reservedSlot.providerId = baileysMessageId;
       reservedSlot.text = outText;
       reservedSlot.mediaUrl = outMedia || null;
+    } else if (inCustomerReply()) {
+      // A reply to a customer's own message: not counted toward the daily cap, so no whatsapp_messages row.
+      // The conversation history (outgoing-after-send below) is what the inbox shows.
     } else {
       await db.query(
         `

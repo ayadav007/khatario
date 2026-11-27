@@ -276,6 +276,7 @@ export async function sendStatementReminder(input: {
   // row of the first chased bill (same columns the duplicate check reads); the other bills get their rows below.
   const slotBillId = chased[0];
   let usedSlot = false;
+  const amountById = new Map(dues.bills.map((b) => [b.id, b.balance]));
   const runSend = async () => {
       const transport = await businessTransport(businessId);
       if (transport === 'cloud') {
@@ -333,6 +334,14 @@ export async function sendStatementReminder(input: {
           reminderSource: sourceOf.get(slotBillId) ?? 'auto_overdue',
           amountDue: dues.bills.find((b) => b.id === slotBillId)?.balance ?? null,
           batchId,
+          // The other bills in this message are logged in the same reservation (one message, one atomic step).
+          extra: logIds
+            .filter((id) => id !== slotBillId)
+            .map((id) => ({
+              referenceId: id,
+              reminderSource: sourceOf.get(id) ?? (manual ? 'manual' : 'auto_overdue'),
+              amountDue: amountById.get(id) ?? null,
+            })),
         },
         runSend,
       );
@@ -345,14 +354,13 @@ export async function sendStatementReminder(input: {
     console.error('[statement reminder] send failed:', error);
   }
 
-  const amountById = new Map(dues.bills.map((b) => [b.id, b.balance]));
-  for (const invoiceId of error ? chased : logIds) {
-    if (usedSlot && invoiceId === slotBillId) continue; // its row is the reserved one
+  for (const invoiceId of usedSlot ? [] : error ? chased : logIds) {
+    // A scheduled send's rows (every bill listed) were reserved together before sending and settled after.
     await query(
       `INSERT INTO whatsapp_messages (business_id, to_number, message_type, reference_type, reference_id, message_text,
           media_url, status, error_message, baileys_message_id, reminder_source, amount_due, batch_id, sent_at)
        VALUES ($1, $2, 'reminder', 'invoice', $3, $4, $5, $6, $7, $8, $9, $10, $11,
-               CASE WHEN $12::boolean AND $6 = 'failed' THEN NULL ELSE CURRENT_TIMESTAMP END)`,
+               CURRENT_TIMESTAMP)`,
       [
         businessId,
         customer.phone,
@@ -366,8 +374,6 @@ export async function sendStatementReminder(input: {
         sourceOf.get(invoiceId) ?? (manual ? 'manual' : 'auto_overdue'),
         amountById.get(invoiceId) ?? null,
         batchId,
-        // A failed automatic send does not use up the daily cap (the counter only counts rows with a send time).
-        usedSlot,
       ],
     );
   }

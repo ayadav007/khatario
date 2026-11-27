@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 import { runDueFollowupReminders } from '@/lib/whatsapp/followups';
 import { runDueLeadSummaries } from '@/lib/whatsapp/lead-summary';
+import { sweepStaleWhatsAppSlots } from '@/lib/whatsapp/send-slot';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,12 @@ export async function GET(request: NextRequest) {
       console.error('[cron whatsapp-followups] lead summaries failed:', error);
       return { error: error instanceof Error ? error.message : String(error) };
     });
-    return NextResponse.json({ ...reminders, summaries });
+    // Places reserved under the daily WhatsApp cap whose send never finished (more than 10 minutes ago) stop counting.
+    const releasedSlots = await sweepStaleWhatsAppSlots().catch((error) => {
+      console.error('[cron whatsapp-followups] slot sweep failed:', error);
+      return 0;
+    });
+    return NextResponse.json({ ...reminders, summaries, releasedSlots });
   } catch (error: any) {
     console.error('[cron whatsapp-followups] failed:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

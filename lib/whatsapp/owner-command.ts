@@ -5,7 +5,7 @@ import { canSeeBusinessData } from '@/lib/insights/turn';
 import { answerTurn } from '@/lib/rag/answer';
 import type { OwnerCommandQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
-import { WhatsAppSlotRefused, withWhatsAppSlot } from './send-slot';
+import { asCustomerReply } from './send-slot';
 import { clearOwnerLinkCache, digits, getOwnerLink, linkCodeValid, parseLinkCode } from './inbound-router';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -99,26 +99,19 @@ async function completeLink(job: OwnerCommandQueueJob): Promise<boolean> {
  * Queue job for owner messages. Never throws: a retry would send the reply twice, so failures
  * are logged and dropped.
  */
-/** One owner message from the business's number, taking its place under the daily WhatsApp cap first. */
+/** One reply to the owner's own message: not counted toward the daily WhatsApp cap and not refused by it. */
 async function ownerSend(job: OwnerCommandQueueJob, to: string, text: string): Promise<void> {
-  try {
-    await withWhatsAppSlot(job.businessId, { to, messageType: 'owner_update', text }, () => sendBusinessText(job.businessId, to, text));
-  } catch (err) {
-    if (!(err instanceof WhatsAppSlotRefused)) throw err;
-    const { recordSkippedAutomation } = await import('./automation-guard');
-    await recordSkippedAutomation({ businessId: job.businessId, messageId: job.messageId, reason: err.reason });
-  }
+  await asCustomerReply(() => sendBusinessText(job.businessId, to, text));
 }
 
 export async function processOwnerCommand(job: OwnerCommandQueueJob): Promise<void> {
   try {
     if (!(await businessActive(job.businessId))) return;
 
-    // Owner replies are messages from the business's own number: they need a plan with Settings > WhatsApp and
-    // room under the daily cap. A skipped reply is logged; the owner's message stays recorded as received.
+    // Owner replies need a usable subscription (no daily cap: they answer the owner's own message). A skipped reply is logged; the owner's message stays recorded as received.
     const planAllows = async () => {
       const { checkAutomationAllowed, recordSkippedAutomation } = await import('./automation-guard');
-      const plan = await checkAutomationAllowed(job.businessId, 'owner_updates');
+      const plan = await checkAutomationAllowed(job.businessId, 'owner_reply');
       if (!plan.allowed) await recordSkippedAutomation({ businessId: job.businessId, messageId: job.messageId, reason: plan.reason });
       return plan.allowed;
     };

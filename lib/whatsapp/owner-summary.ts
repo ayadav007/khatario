@@ -137,7 +137,7 @@ export async function sendOwnerSummary(businessId: string, opts: { force?: boole
   // not marked sent, so the summary resumes the day the plan allows.
   if (!opts.force) {
     const { checkAutomationAllowed } = await import('./automation-guard');
-    const plan = await checkAutomationAllowed(businessId, 'owner_updates');
+    const plan = await checkAutomationAllowed(businessId, 'no_feature');
     if (!plan.allowed) {
       await mark(`plan:${plan.reason}`);
       return { sent: false, reason: 'plan' };

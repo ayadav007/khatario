@@ -92,21 +92,24 @@ export async function sendEventTemplate(input: {
  * Chosen Cloud template first, then the QR session with plain text. Errors are logged, not thrown,
  * because these are side notifications of an order or enquiry that already succeeded.
  */
-export async function notifyBusinessEvent(input: {
+type NotifyBusinessEventInput = {
   businessId: string;
   eventKey: TenantWaEventKey;
   to: string;
   values: EventValues;
   fallbackText: string;
   /**
-   * Automatic sends (the default) need a usable plan, the feature the event is sold under and room under the
-   * daily WhatsApp cap. Pass `automatic: false` for a message a person asked for (for example "send statement
+   * Automatic sends (the default) need a usable subscription and room under the daily WhatsApp cap (no
+   * event has a plan feature of its own). Pass `automatic: false` for a message a person asked for (for example "send statement
    * now"), or when the caller already ran the same check.
    */
   automatic?: boolean;
   /** How the reserved `whatsapp_messages` row is labelled (default: message type 'notice', reference = the event key). */
   record?: { messageType?: string; referenceType?: string; referenceId?: string | null };
-}): Promise<{ via: 'cloud' | 'qr' | null; skipped?: AutomationSkipReason }> {
+};
+export type NotifyBusinessEventResult = { via: 'cloud' | 'qr' | null; skipped?: AutomationSkipReason };
+
+async function notifyBusinessEventUnsafe(input: NotifyBusinessEventInput): Promise<NotifyBusinessEventResult> {
   // Customer-facing events also reach the customer's phone app when they registered a device for
   // this shop (lib/push/customer-push.ts decides which events qualify). Never throws.
   await enqueueCustomerPush({
@@ -155,5 +158,19 @@ export async function notifyBusinessEvent(input: {
       return { via: null, skipped: err.reason };
     }
     throw err;
+  }
+}
+
+/**
+ * Chosen Cloud template first, then the QR session with plain text (see the checks above). Never throws: any error
+ * other than a plan or cap refusal is logged and answered with `{ via: null }`, because these are side notifications
+ * of something that already succeeded.
+ */
+export async function notifyBusinessEvent(input: NotifyBusinessEventInput): Promise<NotifyBusinessEventResult> {
+  try {
+    return await notifyBusinessEventUnsafe(input);
+  } catch (err) {
+    console.error(`[wa event] ${input.eventKey} failed for business ${input.businessId}: ${errMessage(err)}`);
+    return { via: null };
   }
 }

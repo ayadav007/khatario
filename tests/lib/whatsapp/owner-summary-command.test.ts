@@ -33,7 +33,7 @@ jest.mock('@/lib/whatsapp/business-transport', () => ({
 }));
 jest.mock('@/lib/whatsapp/send-slot', () => {
   class WhatsAppSlotRefused extends Error { reason = 'daily_whatsapp_limit_reached'; }
-  return { WhatsAppSlotRefused, withWhatsAppSlot: async (_b: string, _m: unknown, fn: () => Promise<unknown>) => fn(), currentSlot: () => undefined };
+  return { WhatsAppSlotRefused, withWhatsAppSlot: async (_b: string, _m: unknown, fn: () => Promise<unknown>) => fn(), currentSlot: () => undefined, asCustomerReply: async (fn: () => Promise<unknown>) => fn() };
 });
 jest.mock('@/lib/whatsapp/automation-guard', () => ({
   checkAutomationAllowed: jest.fn(async () => ({ allowed: true })),

@@ -222,13 +222,13 @@ run('automation plan checks (kh_phase2_test)', () => {
       expect((await inbound(biz, 'hello')).result.response).toBeUndefined();
     });
 
-    it('daily WhatsApp cap reached: no reply', async () => {
+    it('daily WhatsApp cap reached: the reply to the customer is still sent (replies are not refused by the cap)', async () => {
       const biz = await newBusiness('billing_growth', 'connect');
       await addKeywordRule(biz);
       await fillQuota(biz);
       const { result } = await inbound(biz, 'hello');
-      expect(result.response).toBeUndefined();
-      expect((await skippedLog(biz))!.reason).toBe('automation_skipped:daily_whatsapp_limit_reached');
+      expect(result.response).toBe('Hi from the bot');
+      expect((await skippedLog(biz))!.n).toBe('0');
     });
 
     it('usable Connect plan: the rule replies', async () => {
@@ -274,11 +274,11 @@ run('automation plan checks (kh_phase2_test)', () => {
       expect((await skippedLog(biz))!.n).toBe('1');
     });
 
-    it('cap reached: no flow reply', async () => {
+    it('cap reached: the flow still replies', async () => {
       const biz = await newBusiness('billing_growth', 'connect');
       await addFlow(biz);
       await fillQuota(biz);
-      expect((await inbound(biz, 'flowtest')).result.response).toBeUndefined();
+      expect((await inbound(biz, 'flowtest')).result.response).toBe('Flow hello');
     });
 
     it('usable plan (Rs 1): the flow replies', async () => {
@@ -340,11 +340,13 @@ run('automation plan checks (kh_phase2_test)', () => {
       expect(sendBusinessText).not.toHaveBeenCalled();
     });
 
-    it('bot reply is not delivered at the cap or after a lapse beyond grace', async () => {
+    it('bot reply is still delivered at the cap, and not after a lapse beyond grace', async () => {
       const capped = await newBusiness('billing_growth', 'connect');
       await addKeywordRule(capped);
       await fillQuota(capped);
       await processCloudIncoming(job(capped));
+      expect(sendBusinessText).toHaveBeenCalledTimes(1);
+      jest.mocked(sendBusinessText).mockClear();
       const lapsed = await newBusiness('billing_growth', 'connect');
       await addKeywordRule(lapsed);
       await setPlan(lapsed, 'connect', 'connect', { end: '-30 days', grace: '-23 days' });
@@ -369,7 +371,8 @@ run('automation plan checks (kh_phase2_test)', () => {
       const capped = await newBusiness('billing_growth', 'connect');
       await fillQuota(capped);
       await processCloudIncoming(job(capped, { order: cart, text: '' }));
-      expect(sendShopOrderReply).not.toHaveBeenCalled();
+      expect(sendShopOrderReply).toHaveBeenCalledTimes(1); // a reply to the customer's cart is not refused by the cap
+      jest.mocked(sendShopOrderReply).mockClear();
 
       const lapsed = await newBusiness('billing_growth', 'connect');
       await setPlan(lapsed, 'connect', 'connect', { end: '-30 days', grace: '-23 days' });
@@ -515,9 +518,9 @@ run('automation plan checks (kh_phase2_test)', () => {
       ['khata notice', 'khata_opened', null],
       ['parcel-delay notice', 'order_delayed', null],
       ['merchant dispatch alert', 'merchant_dispatch_overdue', null],
-      ['store order notice', 'store_order_paid', 'advanced_online_store'],
-      ['store cart reminder', 'store_cart_reminder', 'advanced_online_store'],
-      ['merchant new order', 'merchant_new_order', 'advanced_online_store'],
+      ['store order notice', 'store_order_paid', null],
+      ['store cart reminder', 'store_cart_reminder', null],
+      ['merchant new order', 'merchant_new_order', null],
     ])('%s (%s)', (_label, eventKey, feature) => {
       const okPlan = feature ? 'billing_business' : 'billing_starter';
       if (feature) {
@@ -637,10 +640,14 @@ run('automation plan checks (kh_phase2_test)', () => {
         );
         return paymentId;
       }
-      it('plan without the feature: not sent, reason returned', async () => {
-        const biz = await newBusiness('free', null);
-        const r = await notifyInvoicePaymentReceived({ businessId: biz, paymentId: await receipt(biz), source: 'manual' });
-        expect(r).toEqual({ sent: false, reason: 'plan_does_not_include_feature' });
+      it('no plan feature needed (as before): the Free plan sends; a lapsed plan does not, with its reason', async () => {
+        const free = await newBusiness('free', null);
+        expect(await notifyInvoicePaymentReceived({ businessId: free, paymentId: await receipt(free), source: 'manual' })).toEqual({ sent: true });
+        jest.mocked(sendWhatsAppMessage).mockClear();
+        const biz = await newBusiness('billing_starter', null);
+        const pay = await receipt(biz);
+        await lapse(biz, 'billing_starter');
+        expect(await notifyInvoicePaymentReceived({ businessId: biz, paymentId: pay, source: 'manual' })).toEqual({ sent: false, reason: 'plan_not_usable' });
         expect(waSent()).toBe(0);
       });
       it('cap reached: not sent', async () => {
@@ -681,11 +688,12 @@ run('automation plan checks (kh_phase2_test)', () => {
         storeSubdomain: 'shop', subtotal: '10',
         lines: [{ item_id: randomUUID(), name: 'Tea', quantity: 1, price: 10 }],
       }) as never;
-      it('plan without the online store: not sent, reason recorded, the cart is released to be reminded later', async () => {
-        const biz = await newBusiness('free', null);
+      it('lapsed plan: not sent, reason recorded, the cart is released to be reminded later', async () => {
+        const biz = await newBusiness('billing_business', null);
         const c = await cart(biz);
+        await lapse(biz, 'billing_business');
         const r = await sendCartReminder(due(c), 'auto');
-        expect(r).toMatchObject({ sent: false, error: 'plan_plan_does_not_include_feature' });
+        expect(r).toMatchObject({ sent: false, error: 'plan_plan_not_usable' });
         expect(waSent()).toBe(0);
         expect((await queryOne<{ reminded_at: string | null }>(`SELECT reminded_at FROM store_carts WHERE id = $1`, [c.id]))!.reminded_at).toBeNull();
       });
@@ -749,11 +757,12 @@ run('automation plan checks (kh_phase2_test)', () => {
       }
       const status = (id: string) =>
         queryOne<{ status: string; skip_reason: string | null }>(`SELECT status, skip_reason FROM supplier_hub_whatsapp_outbox WHERE id = $1`, [id]);
-      it('plan without Supplier Hub: skipped with the reason recorded, row kept', async () => {
-        const biz = await newBusiness('free', null);
+      it('lapsed plan: skipped with the reason recorded, row kept (Free plan has no feature requirement and sends)', async () => {
+        const biz = await newBusiness('billing_starter', null);
+        await lapse(biz, 'billing_starter');
         const id = await queued(biz);
         await flushHubWhatsApp();
-        expect(await status(id)).toEqual({ status: 'skipped', skip_reason: 'PLAN_PLAN_DOES_NOT_INCLUDE_FEATURE' });
+        expect(await status(id)).toEqual({ status: 'skipped', skip_reason: 'PLAN_PLAN_NOT_USABLE' });
         expect(sendPlatformEventWhatsApp).not.toHaveBeenCalledWith(expect.objectContaining({ eventKey: 'supplier_hub_update' }));
       });
       it('lapsed beyond grace: skipped; usable plan (Rs 1): sent; the cap does not apply', async () => {
@@ -794,16 +803,7 @@ run('automation plan checks (kh_phase2_test)', () => {
         expect(await link(biz)).toEqual({ last_summary_sent_on: null, last_summary_error: 'plan:daily_whatsapp_limit_reached' });
         expect(sendBusinessText).not.toHaveBeenCalled();
       });
-      it('summary: feature off or lapsed means not sent; a person pressing "send test now" is not blocked by the cap; Rs 1 plan sends', async () => {
-        const off = await newBusiness('billing_starter', null);
-        await linkedOwner(off);
-        await query(`UPDATE subscription_plan_features SET enabled = false WHERE plan_id = 'billing_starter' AND feature_id = 'settings_whatsapp'`);
-        try {
-          expect(await sendOwnerSummary(off)).toEqual({ sent: false, reason: 'plan' });
-          expect((await link(off))!.last_summary_error).toBe('plan:plan_does_not_include_feature');
-        } finally {
-          await query(`UPDATE subscription_plan_features SET enabled = true WHERE plan_id = 'billing_starter' AND feature_id = 'settings_whatsapp'`);
-        }
+      it('summary: lapsed means not sent; a person pressing "send test now" is not blocked by the cap; Rs 1 plan sends', async () => {
         const lapsed = await newBusiness('billing_starter', null);
         await linkedOwner(lapsed);
         await lapse(lapsed, 'billing_starter');
@@ -819,13 +819,13 @@ run('automation plan checks (kh_phase2_test)', () => {
           expect((await link(ok))!.last_summary_sent_on).not.toBeNull();
         });
       });
-      it('owner reply: cap reached means no reply; usable plan (Rs 1) replies; lapsed means no reply', async () => {
+      it('owner reply: still sent at the cap (a reply to the owner is not refused by it); lapsed means no reply; Rs 1 plan replies', async () => {
         const capped = await newBusiness('billing_starter', null);
         await linkedOwner(capped);
         await fillQuota(capped);
         await processOwnerCommand(textJob(capped));
-        expect(sendBusinessText).not.toHaveBeenCalled();
-        expect((await skippedLog(capped))!.reason).toBe('automation_skipped:daily_whatsapp_limit_reached');
+        expect(sendBusinessText).toHaveBeenCalledTimes(1);
+        jest.mocked(sendBusinessText).mockClear();
 
         const lapsed = await newBusiness('billing_starter', null);
         await linkedOwner(lapsed);
@@ -881,36 +881,85 @@ run('automation plan checks (kh_phase2_test)', () => {
       expect(c.current).toBe(c.limit);
     });
 
-    it('two concurrent bot replies at cap - 1: exactly one is sent', async () => {
+    it('bot replies are not counted and not refused: at the cap they are still sent and the count does not move', async () => {
       const biz = await newBusiness('billing_growth', 'connect');
       await addKeywordRule(biz);
       await leaveRoom(biz, 1);
-      jest.mocked(sendBusinessText).mockImplementation(async () => { await new Promise((r) => setTimeout(r, 150)); return { messageId: 'b' } as never; });
-      await Promise.all([processCloudIncoming(cloudJob(biz)), processCloudIncoming(cloudJob(biz))]);
-      expect(sendBusinessText).toHaveBeenCalledTimes(1);
-    });
-
-    it('bot replies count toward the cap: the cap reached by bot replies alone stops the next reply', async () => {
-      const biz = await newBusiness('billing_growth', 'connect');
-      await addKeywordRule(biz);
-      await leaveRoom(biz, 3); // three places left; only bot replies use them
       const before = (await capOf(biz)).current;
       for (let i = 0; i < 3; i++) await processCloudIncoming(cloudJob(biz));
       expect(sendBusinessText).toHaveBeenCalledTimes(3);
-      expect((await capOf(biz)).current).toBe(before + 3);
+      expect((await capOf(biz)).current).toBe(before); // replies do not move the count
+      expect(await count(`whatsapp_messages WHERE business_id = $1 AND message_type = 'bot_reply'`, [biz])).toBe(0);
+      // ...but a proactive notice still takes the last place, and the next one is refused
+      const ev = () => notifyBusinessEvent({ businessId: biz, eventKey: 'order_confirmed', to: `91${phone()}`, values: {}, fallbackText: 'hi' });
+      expect((await ev()).via).toBe('qr');
+      expect(await ev()).toMatchObject({ via: null, skipped: 'daily_whatsapp_limit_reached' });
+      // and bot replies still go out with the cap used up
       await processCloudIncoming(cloudJob(biz));
-      expect(sendBusinessText).toHaveBeenCalledTimes(3); // the fourth is not sent
-      expect((await capOf(biz)).current).toBe(before + 3); // and a reply skipped for the cap is not counted
-      expect((await skippedLog(biz))!.reason).toBe('automation_skipped:daily_whatsapp_limit_reached');
+      expect(sendBusinessText).toHaveBeenCalledTimes(4);
     });
 
-    it('a Baileys bot reply is counted once (the sender does not write a second row)', async () => {
-      const biz = await newBusiness('billing_growth', 'connect');
-      await withWhatsAppSlot(biz, { to: `91${phone()}@s.whatsapp.net`, messageType: 'bot_reply' }, async () => {
-        // sendWhatsAppMessage is mocked here; the real one fills the slot instead of inserting a row.
-        return 'ok';
-      });
+    it('rows left sending for more than 10 minutes are swept to failed and stop counting; fresh ones are left', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      const old = randomUUID();
+      const fresh = randomUUID();
+      await query(`INSERT INTO whatsapp_messages (id, business_id, to_number, message_type, status, sent_at) VALUES ($1, $2, '91', 'notice', 'sending', CURRENT_TIMESTAMP - INTERVAL '11 minutes')`, [old, biz]);
+      await query(`INSERT INTO whatsapp_messages (id, business_id, to_number, message_type, status) VALUES ($1, $2, '91', 'notice', 'sending')`, [fresh, biz]);
+      expect((await capOf(biz)).current).toBe(2);
+      const { sweepStaleWhatsAppSlots } = await import('@/lib/whatsapp/send-slot');
+      expect(await sweepStaleWhatsAppSlots()).toBeGreaterThanOrEqual(1);
+      clearSubscriptionCache(biz);
       expect((await capOf(biz)).current).toBe(1);
+      const rows = await query(`SELECT id, status, sent_at FROM whatsapp_messages WHERE business_id = $1`, [biz]);
+      const by = (id: string) => rows.rows.find((r: { id: string }) => r.id === id);
+      expect(by(old)).toMatchObject({ status: 'failed', sent_at: null });
+      expect(by(fresh).status).toBe('sending');
+      await sweepStaleWhatsAppSlots(); // a second run changes nothing
+      expect((await capOf(biz)).current).toBe(1);
+    });
+
+    it('notifyBusinessEvent never throws: an unexpected error is answered with { via: null }', async () => {
+      const biz = await newBusiness('billing_starter', null);
+      const { enqueueCustomerPush } = await import('@/lib/push/customer-push');
+      jest.mocked(enqueueCustomerPush).mockRejectedValueOnce(new Error('push lookup exploded'));
+      await expect(notifyBusinessEvent({ businessId: biz, eventKey: 'order_confirmed', to: `91${phone()}`, values: {}, fallbackText: 'x' }))
+        .resolves.toEqual({ via: null });
+    });
+
+    it('a statement reminder is one reservation: every bill listed is logged in it, and a refusal sends nothing', async () => {
+      const { sendStatementReminder } = await import('@/lib/payment-reminders/statement');
+      async function setup() {
+        const biz = await newBusiness('billing_starter', null);
+        const customerId = randomUUID();
+        await query(`INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Stmt', $3)`, [customerId, biz, phone()]);
+        const bills: string[] = [];
+        for (let i = 0; i < 3; i++) {
+          const id = randomUUID();
+          bills.push(id);
+          await query(
+            `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, due_date, status, payment_status, grand_total, balance_amount)
+             VALUES ($1, $2, $3, $4, CURRENT_DATE - 20, CURRENT_DATE - 10, 'final', 'unpaid', 100, 100)`,
+            [id, biz, customerId, `S-${id.slice(0, 6)}`]);
+        }
+        return { biz, customerId, chased: bills.slice(0, 2).map((invoiceId) => ({ invoiceId, source: 'auto_overdue' as const })) };
+      }
+      const a = await setup();
+      await leaveRoom(a.biz, 2); // two places left, three bills listed: refused as a whole
+      expect(await sendStatementReminder({ businessId: a.biz, customerId: a.customerId, chased: a.chased, scheduled: true }))
+        .toMatchObject({ outcome: 'skipped', reason: 'limit_reached' });
+      expect(jest.mocked(sendWhatsAppMessage)).not.toHaveBeenCalled();
+      expect(await count(`whatsapp_messages WHERE business_id = $1 AND batch_id IS NOT NULL`, [a.biz])).toBe(0);
+
+      const b = await setup();
+      await leaveRoom(b.biz, 3);
+      const before = (await capOf(b.biz)).current;
+      const ok = await sendStatementReminder({ businessId: b.biz, customerId: b.customerId, chased: b.chased, scheduled: true });
+      expect(['sent', 'failed']).toContain(ok.outcome);
+      const rows = await query(`SELECT batch_id FROM whatsapp_messages WHERE business_id = $1 AND message_type = 'reminder' AND batch_id IS NOT NULL`, [b.biz]);
+      expect(rows.rows).toHaveLength(3); // every bill listed is logged...
+      expect(new Set(rows.rows.map((r: { batch_id: string }) => r.batch_id)).size).toBe(1); // ...in one batch, reserved together
+      if (ok.outcome === 'sent') expect((await capOf(b.biz)).current).toBe(before + 3);
+      else expect((await capOf(b.biz)).current).toBe(before); // a failed send gives all of it back
     });
 
     it('a failed send does not use up the quota, and the failed attempt stays on record', async () => {
