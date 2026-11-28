@@ -1,0 +1,17 @@
+{
+  "results": {
+    "message": {
+      "EwbNo": 481010053170,
+      "EwbDt": "2026-11-28 05:42:00",
+      "EwbValidTill": "2026-11-30 23:59:00",
+      "Remarks": "",
+      "QRCodeUrl": "https://sandb-api.mastersindia.co/api/v1/einvoice/qrcode/b2N0X2RlY18yMDI2LTI3-6b0a1c447e2f884b8438da7c/",
+      "EinvoicePdf": "https://sandb-api.mastersindia.co/api/v1/einvoice/pdf/b2N0X2RlY18yMDI2LTI3-6b0a1c447e2f884b8438da7c/",
+      "EwaybillPdf": "https://sandb-api.mastersindia.co/api/v1/detailPrintPdf/b2N0X2RlY18yMDI2LTI3-6b0a1c467e2f884b8438da80/"
+    },
+    "errorMessage": "",
+    "InfoDtls": "",
+    "status": "Success",
+    "code": 200
+  }
+}

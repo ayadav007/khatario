@@ -1,0 +1,10 @@
+{
+  "results": {
+    "message": "",
+    "errorMessage": "2311: 6 digits HSN code is mandatory for tax payers with AATO greater than or equal to 5 Crores.",
+    "InfoDtls": "",
+    "status": "Failed",
+    "code": 204,
+    "requestId": "09AAAPG7885R002_KH5803238594_1795803239"
+  }
+}

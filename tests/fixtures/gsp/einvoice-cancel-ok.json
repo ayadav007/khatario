@@ -1,0 +1,12 @@
+{
+  "results": {
+    "message": {
+      "Irn": "06782abfb36204846d6af0f1767f9cc679cb29e06ca20ba977defb91824c5317",
+      "CancelDate": "2026-11-28 05:42:00"
+    },
+    "errorMessage": "",
+    "InfoDtls": "",
+    "status": "Success",
+    "code": 200
+  }
+}

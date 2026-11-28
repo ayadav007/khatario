@@ -47,3 +47,16 @@ Use the spelling the PDF samples show where several are accepted.
 - `Line Sales`: rejected, `611: Invalid document type for the given supply type` (Tax Invoice is not allowed with this subtype; the spelling itself is not shown to be wrong)
 - `Recipient not known`: accepted
 - `SKD/CKD`: accepted
+
+## E-invoice (sandbox, 2026-11-28)
+- Request shape from `buildEinvoice` (state codes as two-digit strings, pincodes as numbers, `hsn_code` and `item_serial_number` as strings, `unit_price` number, empty `address2`, no payment/reference/additional-document blocks): accepted.
+- `hsn_code` must be 6 digits or more for the e-invoicing sandbox GSTIN: `'1001'` was rejected with `2311: 6 digits HSN code is mandatory for tax payers with AATO greater than or equal to 5 Crores.` (HTTP 200, code 204; recorded in `einvoice-rejected-hsn.json`). `'100190'` (string) was accepted.
+- Duplicate document: NOT rejected. The same request again returns success (code 200) with the SAME `Irn` and `AckNo`, and `message.alert` = `IRN already generated on this document number <doc>` (empty string on a first generate). The portal's own duplicate code is 2150; the sandbox never sent it.
+- `AckNo` is a JSON number (15 digits; keep it as a string). `AckDt` is `YYYY-MM-DD HH:mm:ss` (IST).
+- Without `ewaybill_details`: `EwbNo`, `EwbDt`, `EwbValidTill` are `null`; `EwaybillPdf` is absent. With them: `EwbNo` is a number, `EwbDt` is `YYYY-MM-DD HH:mm:ss`, `EwbValidTill` is `YYYY-MM-DD HH:mm:ss`.
+- `InfoDtls` is an empty string `""` on every recorded call (success and failure).
+- Get by document: success has `Irn`, `AckNo`, `AckDt`, `SignedInvoice`, `SignedQRCode`, `Status`, `EwbNo`... but no `EinvoicePdf`, `QRCodeUrl` or `requestId`. Not found: HTTP 200, `results.code` 204, `errorMessage` `2154: IRN details are not found`.
+- E-way bill by IRN: `results.message` has `EwbNo` (number), `EwbDt`, `EwbValidTill`, `EwaybillPdf` (plus `EinvoicePdf`, `QRCodeUrl`); no `requestId`.
+- Cancel (reason `'1'`, remarks `Wrong entry`): `message` has `Irn` and `CancelDate` (`YYYY-MM-DD HH:mm:ss`).
+- Seller pincode 999999 is rejected: `2276: Supplier PIN code cannot be 999999` (code 204).
+- Document numbers like `KH` + 10 digits and today's date were accepted.
