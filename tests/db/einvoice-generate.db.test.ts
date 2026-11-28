@@ -12,6 +12,21 @@ const url = process.env.PHASE2_TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
 const d = url ? describe : describe.skip;
 
+jest.mock('next/headers', () => ({
+  headers: jest.fn(async () => ({ get: () => null })),
+  cookies: jest.fn(async () => ({ get: () => undefined })),
+}));
+jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
+jest.mock('@/lib/authorization', () => ({
+  ...jest.requireActual('@/lib/authorization'),
+  authorize: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('@/lib/subscription/feature-access', () => ({
+  ...jest.requireActual('@/lib/subscription/feature-access'),
+  denyIfFeatureMissing: jest.fn().mockResolvedValue(null),
+}));
+
+import { NextRequest } from 'next/server';
 import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { GspError } from '@/lib/gsp/mastersindia/client';
@@ -34,6 +49,7 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
   const [invoiceId, invoice2Id, invoice3Id, invoice4Id, invoice5Id, invoice6Id, invoice7Id, invoice8Id, invoice9Id,
     invoice10Id, invoice11Id, invoice12Id] = ids;
   const [invoiceWithoutHsnId, oldInvoiceId, b2cInvoiceId, serviceInvoiceId] = ids.slice(12);
+  const [ewbFailInvoiceId, cancelledInvoiceId] = [randomUUID(), randomUUID()];
 
   /** Today in India, YYYY-MM-DD. */
   const todayIso = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -130,6 +146,14 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
     await seedInvoice(oldInvoiceId, 14, { date: old });
     await seedInvoice(b2cInvoiceId, 15, { supplyType: 'b2c_large' });
     await seedInvoice(serviceInvoiceId, 16, { hsn: '998314' });
+    await seedInvoice(ewbFailInvoiceId, 17);
+    await seedInvoice(cancelledInvoiceId, 18);
+    await pool.query(
+      `UPDATE invoices SET irn = $2, irn_ack_no = '1', irn_ack_date = NOW() - INTERVAL '2 days', irn_signed_qr = 'Q',
+                           irn_status = 'cancelled', irn_cancelled_at = NOW() - INTERVAL '1 day'
+        WHERE id = $1`,
+      [cancelledInvoiceId, irnOf(18)],
+    );
   });
 
   afterAll(async () => {
@@ -316,6 +340,70 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
     const d1 = deps({ generate: jest.fn(async () => { throw new GspError('timeout', 'slow'); }), getByDocument: jest.fn(async () => res(10, { status: 'CNL' })) });
     await expect(generateIrn(businessId, userId, invoice10Id, undefined, d1)).rejects.toMatchObject({ code: 'IRN_MISMATCH', status: 409 });
     expect(await rowOf(invoice10Id)).toMatchObject({ irn: null, irn_status: null });
+  });
+
+  it('stores the IRN and warns when the e-way bill that came with it cannot be saved', async () => {
+    // The e-way bills table only takes 12-digit numbers: the insert fails inside the transaction.
+    const d1 = deps({
+      generate: jest.fn(async () => ({
+        ...res(17), ewb: { number: 'EWB-BAD', generatedAt: new Date(), validUntil: null, printUrl: null },
+      })),
+    });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const v = await generateIrn(businessId, userId, ewbFailInvoiceId, { ewb }, d1);
+    expect([v.status, v.irn]).toEqual(['active', irnOf(17)]);
+    expect(v.eway_warning).toBe(
+      'E-invoice generated. The e-way bill EWB-BAD was created on the portal but could not be saved here. Add it to the invoice by hand.',
+    );
+    expect(await rowOf(ewbFailInvoiceId)).toMatchObject({ irn: irnOf(17), irn_status: 'active' });
+    expect((await pool.query(`SELECT 1 FROM eway_bills WHERE source_id = $1`, [ewbFailInvoiceId])).rowCount).toBe(0);
+    expect(log).toHaveBeenCalledWith('[einvoice] e-way bill issued with the IRN but not saved', { invoiceId: ewbFailInvoiceId, error: '23514' });
+    log.mockRestore();
+  });
+
+  it('refuses an invoice whose e-invoice was cancelled, without calling the portal', async () => {
+    const d1 = deps();
+    await expect(generateIrn(businessId, userId, cancelledInvoiceId, undefined, d1)).rejects.toMatchObject({
+      code: 'IRN_CANCELLED', status: 409,
+      message: 'The e-invoice for this invoice was cancelled. The portal does not give a new e-invoice on the same invoice number. Make a new invoice instead.',
+    });
+    expect(d1.generate).not.toHaveBeenCalled();
+    expect(await getEinvoiceView(businessId, cancelledInvoiceId)).toMatchObject({ status: 'cancelled', problems: [], can_cancel: false });
+  });
+
+  describe('route', () => {
+    const headers = {
+      'content-type': 'application/json',
+      'x-authenticated-user-id': userId,
+      'x-authenticated-business-id': businessId,
+      'x-authenticated-session-version': '1',
+    };
+    const post = async (id: string, body: string) => {
+      const { POST } = await import('@/app/api/invoices/[id]/einvoice/route');
+      const r = await POST(new NextRequest(`http://localhost/api/invoices/${id}/einvoice`, { method: 'POST', headers, body }), { params: { id } });
+      return { status: r.status, json: await r.json() };
+    };
+
+    it('refuses a body that is not JSON instead of generating without the e-way bill', async () => {
+      expect(await post(cancelledInvoiceId, '{"ewb": {')).toEqual({ status: 400, json: { error: 'The request could not be read.', code: 'BAD_REQUEST' } });
+    });
+
+    it('treats an empty body as no e-way bill and reaches the generator', async () => {
+      const r = await post(cancelledInvoiceId, '');
+      expect([r.status, r.json.code]).toEqual([409, 'IRN_CANCELLED']);
+    });
+
+    it('refuses an e-way bill request without a distance', async () => {
+      const r = await post(cancelledInvoiceId, JSON.stringify({ ewb: { transport_mode: 'road' } }));
+      expect([r.status, r.json.code]).toEqual([400, 'INVALID_EWB']);
+    });
+
+    it('returns the view on GET', async () => {
+      const { GET } = await import('@/app/api/invoices/[id]/einvoice/route');
+      const r = await GET(new NextRequest(`http://localhost/api/invoices/${invoiceId}/einvoice`, { headers }), { params: { id: invoiceId } });
+      expect(r.status).toBe(200);
+      expect((await r.json()).einvoice).toMatchObject({ status: 'active', irn });
+    });
   });
 
   it('says the IRN was created but not saved when storing it fails', async () => {

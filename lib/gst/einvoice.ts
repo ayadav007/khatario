@@ -131,7 +131,8 @@ export async function getEinvoiceView(businessId: string, invoiceId: string): Pr
   if (!inv) return null;
   const applies = einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id));
   const status = inv.irn_status ?? 'none';
-  const problems = applies && status !== 'active' ? (await buildEinvoice(pool, businessId, invoiceId)).problems : [];
+  // A cancelled e-invoice cannot be made again on the same number, so there is nothing to fix.
+  const problems = applies && status === 'none' ? (await buildEinvoice(pool, businessId, invoiceId)).problems : [];
   const ackDate = inv.irn_ack_date ? new Date(inv.irn_ack_date) : null;
   return {
     applies,
@@ -174,6 +175,13 @@ export async function generateIrn(
   const inv = await readInvoice(pool, businessId, invoiceId);
   if (!inv) throw new EinvoiceError('Invoice not found', 404, 'NOT_FOUND');
   if (inv.irn_status === 'active') throw new EinvoiceError('This invoice already has an e-invoice.', 409, 'IRN_EXISTS');
+  if (inv.irn_status === 'cancelled') {
+    throw new EinvoiceError(
+      'The e-invoice for this invoice was cancelled. The portal does not give a new e-invoice on the same invoice number. Make a new invoice instead.',
+      409,
+      'IRN_CANCELLED',
+    );
+  }
 
   // 2. E-invoicing is on for this GSTIN and this invoice needs one.
   if (!einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id))) {
@@ -291,6 +299,7 @@ export async function generateIrn(
   // 7. Store in one transaction, with the e-way bill that came with it; on failure the next click
   // reaches the duplicate path and stores it.
   const issued = result;
+  let ewbNotSaved: string | null = null;
   try {
     await runWithInvoiceAudit({ actorUserId: userId, action: 'einvoice_generated' }, async (client) => {
       const u = await client.query(
@@ -304,18 +313,27 @@ export async function generateIrn(
       );
       if (!u.rowCount) throw new Error('invoice changed before the e-invoice was stored');
       if (issued.ewb && bill && wantEwb) {
-        const held = await client.query(`SELECT 1 FROM eway_bills WHERE business_id = $1 AND ewb_number = $2 LIMIT 1`, [businessId, issued.ewb.number]);
-        if (!held.rows.length) {
-          const ewbResult = {
-            ewbNumber: issued.ewb.number, generatedAt: issued.ewb.generatedAt, validUntil: issued.ewb.validUntil,
-            printUrl: issued.ewb.printUrl, alert: null, duplicate: false, requestId: issued.requestId,
-          };
-          await createEwayBill(client, businessId, toParsed({ source_type: 'invoice', source_id: invoiceId }, bill, wantEwb.transport, ewbResult, null), userId, {
-            generatedVia: 'irn',
-            requestId: issued.requestId,
-            printUrl: issued.ewb.printUrl,
-            transactionType: bill.transactionType,
-          });
+        // The e-way bill must never cost the IRN: on any failure only its own writes are undone.
+        await client.query('SAVEPOINT einvoice_ewb');
+        try {
+          const held = await client.query(`SELECT 1 FROM eway_bills WHERE business_id = $1 AND ewb_number = $2 LIMIT 1`, [businessId, issued.ewb.number]);
+          if (!held.rows.length) {
+            const ewbResult = {
+              ewbNumber: issued.ewb.number, generatedAt: issued.ewb.generatedAt, validUntil: issued.ewb.validUntil,
+              printUrl: issued.ewb.printUrl, alert: null, duplicate: false, requestId: issued.requestId,
+            };
+            await createEwayBill(client, businessId, toParsed({ source_type: 'invoice', source_id: invoiceId }, bill, wantEwb.transport, ewbResult, null), userId, {
+              generatedVia: 'irn',
+              requestId: issued.requestId,
+              printUrl: issued.ewb.printUrl,
+              transactionType: bill.transactionType,
+            });
+          }
+          await client.query('RELEASE SAVEPOINT einvoice_ewb');
+        } catch (ewbError: any) {
+          await client.query('ROLLBACK TO SAVEPOINT einvoice_ewb');
+          console.error('[einvoice] e-way bill issued with the IRN but not saved', { invoiceId, error: ewbError?.code ?? null });
+          ewbNotSaved = issued.ewb.number;
         }
       }
     });
@@ -337,7 +355,9 @@ export async function generateIrn(
 
   // 8. The stored state, with a warning when the e-way bill asked for did not come.
   const view = (await getEinvoiceView(businessId, invoiceId)) as EinvoiceView;
-  if (wantEwb && !issued.ewb) {
+  if (ewbNotSaved) {
+    view.eway_warning = `E-invoice generated. The e-way bill ${ewbNotSaved} was created on the portal but could not be saved here. Add it to the invoice by hand.`;
+  } else if (wantEwb && !issued.ewb) {
     view.eway_warning = 'E-invoice generated. The e-way bill was not: ' + (issued.ewbError ?? 'the portal did not say why.');
   }
   return view;

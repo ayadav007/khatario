@@ -71,7 +71,16 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!auth.ok) return auth.response;
     const planDenied = await denyIfFeatureMissing(auth.businessId, 'e_invoice');
     if (planDenied) return planDenied;
-    const body = await request.json().catch(() => ({}));
+    // An empty body means no e-way bill; a body that is not JSON is refused rather than ignored.
+    const raw = await request.text();
+    let body: any = {};
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return NextResponse.json({ error: 'The request could not be read.', code: 'BAD_REQUEST' }, { status: 400 });
+      }
+    }
     const ewb = parseEinvoiceEwb(body?.ewb);
     if (ewb) {
       const ewayDenied = await denyIfFeatureMissing(auth.businessId, 'eway_bill');
