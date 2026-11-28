@@ -186,15 +186,18 @@ Your plan must include e-invoices.
 
 **Generate an e-invoice**
 
-1. Open a final invoice (not a draft) and look at the **E-invoice** box. It shows a red **E-invoice pending**.
-2. If it lists problems (for example an item without a 6-digit HSN code, or a customer without an address), press **Fix** beside each, correct it, and come back. **Generate e-invoice** stays greyed out until the list is empty.
-3. Press **Generate e-invoice**. The box turns green and shows the IRN, Ack No, Ack Date and QR.
+1. Open a final invoice (not a draft) and look at the **E-invoice** box. It shows a red **E-invoice pending**. This includes invoices made from a sales order, an estimate, a work order, a recurring invoice or an online order, when the customer has a GSTIN.
+2. If it lists problems, fix them first. **Generate e-invoice** stays greyed out until the list is empty.
+   - A problem with a **Fix** link is on a record you can still change: the customer (address, city, PIN code, GSTIN), the item (HSN code), or your business or branch settings. Press **Fix**, correct it, save, and come back to the invoice. The problem is gone. If you fixed an item's HSN code, the invoice takes the new code when the e-invoice is generated, and its print shows it.
+   - A problem without a **Fix** link is on the invoice itself, which cannot change once it is final: for example the invoice number, the tax type, the total, a zero quantity, the SAC code of a charge such as freight, or an invoice in a foreign currency. The message says what to do, usually: cancel this invoice and make a new one.
+3. If the goods go to an address that is not saved on the customer, the box asks for the **Ship-to city**, **Ship-to PIN code** and **Ship-to state** (and an optional ship-to GSTIN). Fill them in.
+4. Press **Generate e-invoice**. The badge turns green and the box shows the IRN, Ack No, Ack Date and QR.
 
 An invoice to a customer without a GSTIN (B2C), or dated before the start date, shows no E-invoice box.
 
 **E-way bill with it (optional)**
 
-If the invoice has goods, **Also create the e-way bill** appears and is ticked when the goods are worth over ₹50,000. Enter the distance and transport details. If the e-way bill fails but the e-invoice works, you get the IRN and a warning; generate the e-way bill later from the e-way bill box on the invoice.
+If the invoice has goods, **Also create the e-way bill** appears and is ticked when the goods are worth over ₹50,000. Enter the distance and transport details. If the e-way bill fails but the e-invoice works, you get the IRN and a warning; generate the e-way bill later from the e-way bill box on the invoice. If the portal made the e-way bill but Khatario could not record it, the warning gives its number and the number is saved on the invoice.
 
 **Cancel an e-invoice**
 
@@ -202,11 +205,11 @@ You can cancel only within 24 hours of generating it. Press **Cancel e-invoice**
 
 **Why the invoice is locked**
 
-An invoice with an active e-invoice has been filed, so its lines, totals, customer, number and date cannot change. **Amend** and **Cancel Invoice** (and the Edit pencil on a phone) are greyed out with a message. You can still record payments.
+An invoice with an active e-invoice has been filed, so its lines, totals, customer, number and date cannot change. On the invoice page, **Amend** and **Cancel Invoice** are greyed out; hold the mouse over them to see why. On a phone the Edit pencil is greyed out. Cancelling an online or store order whose invoice has an active e-invoice is refused with the same message. You can still record payments.
 
 **What prints**
 
-The printed or PDF invoice shows the QR, the IRN, the Ack No and the Ack Date, on the A4 sales templates and the thermal ones. Credit notes, debit notes and delivery challans do not show an IRN yet. A cancelled e-invoice prints no IRN block.
+The printed or PDF invoice shows the QR, the IRN, the Ack No and the Ack Date, on the A4 sales templates, the tally, distributor and export templates, and the thermal ones. Custom and designer templates, credit notes, debit notes and delivery challans do not show an IRN yet. A cancelled e-invoice prints no IRN block.
 
 ### Proforma invoice, quotation, and sales order
 
