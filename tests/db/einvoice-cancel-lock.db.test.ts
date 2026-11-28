@@ -238,6 +238,10 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
       expect(row).toMatchObject({ irn, irn_status: 'cancelled', status: 'final' });
       expect(row.irn_cancelled_at).toBeInstanceOf(Date);
       expect(row.irn_cancel_reason).toContain('Wrong rate');
+      // The view carries the cancel date and reason for the Cancelled badge.
+      expect(v.cancelled_at).toBe(row.irn_cancelled_at.toISOString());
+      expect(v.cancel_reason).toBe(row.irn_cancel_reason);
+      expect((await getEinvoiceView(businessId, invoiceId))).toMatchObject({ cancelled_at: v.cancelled_at, cancel_reason: 'data_entry: Wrong rate' });
       const rev = await pool.query(
         `SELECT action, actor_user_id FROM invoice_revisions WHERE invoice_id = $1 ORDER BY revision_no DESC LIMIT 1`,
         [invoiceId],
@@ -300,7 +304,7 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
 
     it('offers a status check only for an active IRN past the window', async () => {
       expect(await getEinvoiceView(businessId, lateActId)).toMatchObject({ status: 'active', can_cancel: false, can_recheck: true });
-      expect(await getEinvoiceView(businessId, otherDocId)).toMatchObject({ status: 'active', can_cancel: true, can_recheck: false });
+      expect(await getEinvoiceView(businessId, otherDocId)).toMatchObject({ status: 'active', can_cancel: true, can_recheck: false, cancelled_at: null, cancel_reason: null });
       expect(await getEinvoiceView(businessId, noIrnId)).toMatchObject({ status: 'none', can_recheck: false });
     });
 

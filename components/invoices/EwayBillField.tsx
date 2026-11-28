@@ -165,13 +165,13 @@ export function InvoicePlanExtras({
   );
 }
 
-/** Shown on the invoice only when the plan includes e-invoice. Khatario does not generate the IRN. */
+/** Shown on the invoice only when the plan includes e-invoice; the e-invoice itself is generated from the invoice view. */
 export function EInvoicePlanNote() {
   const allowed = usePlanFeature('e_invoice');
   if (!allowed) return null;
   return (
     <p className="mt-3 text-xs text-text-secondary">
-      E-invoice is on for this plan. Generate the IRN and QR on the government e-invoice portal, then print them on this bill. Khatario does not create the IRN.
+      E-invoice is on for this plan. Generate it from the invoice once it is final.
     </p>
   );
 }

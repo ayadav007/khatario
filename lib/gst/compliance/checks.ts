@@ -501,10 +501,10 @@ export function einvoiceFinding(
       `credit notes and debit notes to the Invoice Registration Portal and print the IRN and QR code; an invoice without an IRN is not a valid tax invoice ` +
       `and your customer cannot claim ITC on it. ` +
       (thirtyDay ? `Because turnover is ${inr(EINVOICE_30_DAY_THRESHOLD_INR)} or more, each invoice must be reported within 30 days of its date. ` : '') +
-      `Khatario does not generate IRNs yet, so generate them on the e-invoice portal. Aggregate turnover counts every GSTIN on your PAN; if this does not apply to you, dismiss this alert.`,
+      `Connect Masters India in Settings, Integrations and set the date e-invoicing started for your GSTIN; then generate each e-invoice from the invoice. Aggregate turnover counts every GSTIN on your PAN; if this does not apply to you, dismiss this alert.`,
     legalRef: 'CGST Rules, Rule 48(4); Notification 10/2023-Central Tax',
-    actionUrl: null,
-    actionLabel: null,
+    actionUrl: '/settings/integrations/gst-masters-india',
+    actionLabel: 'Connect Masters India',
     askQuestion: 'Who has to issue e-invoices with an IRN under GST? (Rule 48(4))',
     dueDate: null,
     amount: over ? round2(input.previousFyTurnover) : null,

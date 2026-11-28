@@ -69,6 +69,102 @@ const MODES: Array<{ value: EwayForm["mode"]; label: string }> = [
   { value: "ship", label: "Ship" },
 ];
 
+/**
+ * The transport part of the e-way bill form: distance, mode, vehicle, transport document, transporter and
+ * over-dimensional cargo. Shared by this dialog and the e-invoice panel ("Also create the e-way bill").
+ */
+export function EwayTransportFields({
+  form,
+  errors,
+  onChange,
+}: {
+  form: EwayForm;
+  errors: EwayFormErrors;
+  onChange: <K extends keyof EwayForm>(key: K, value: EwayForm[K]) => void;
+}) {
+  const set = onChange;
+  return (
+    <>
+      <Input
+        label="Distance (km)"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={4000}
+        value={form.distance}
+        error={errors.distance}
+        helperText="Enter 0 to use the portal's distance."
+        onChange={(e) => set("distance", e.target.value)}
+      />
+
+      <label className="block text-sm text-gray-700">
+        Mode of transport
+        <select
+          className={SELECT_CLASS}
+          value={form.mode}
+          onChange={(e) => set("mode", e.target.value as EwayForm["mode"])}
+        >
+          {MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <Input
+        label="Vehicle number"
+        value={form.vehicle}
+        error={errors.vehicle}
+        placeholder="KA01AB1234"
+        onChange={(e) => set("vehicle", e.target.value)}
+      />
+
+      {form.mode !== "road" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Transport document number"
+            value={form.docNumber}
+            error={errors.docNumber}
+            onChange={(e) => set("docNumber", e.target.value)}
+          />
+          <Input
+            label="Transport document date"
+            type="date"
+            value={form.docDate}
+            error={errors.docDate}
+            onChange={(e) => set("docDate", e.target.value)}
+          />
+        </div>
+      ) : null}
+
+      <Input
+        label="Transporter GSTIN (optional)"
+        value={form.transporterGstin}
+        error={errors.transporterGstin}
+        maxLength={15}
+        onChange={(e) =>
+          set("transporterGstin", e.target.value.toUpperCase())
+        }
+      />
+      <Input
+        label="Transporter name (optional)"
+        value={form.transporterName}
+        onChange={(e) => set("transporterName", e.target.value)}
+      />
+
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input
+          type="checkbox"
+          checked={form.isOdc}
+          onChange={(e) => set("isOdc", e.target.checked)}
+        />
+        Over-dimensional cargo (20 km a day)
+      </label>
+    </>
+  );
+}
+
 type Props = {
   sourceType: "invoice" | "delivery_challan";
   sourceId: string;
@@ -261,82 +357,7 @@ export function GenerateEwayBillDialog({
           </div>
         ) : null}
 
-        <Input
-          label="Distance (km)"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={4000}
-          value={form.distance}
-          error={errors.distance}
-          helperText="Enter 0 to use the portal's distance."
-          onChange={(e) => set("distance", e.target.value)}
-        />
-
-        <label className="block text-sm text-gray-700">
-          Mode of transport
-          <select
-            className={SELECT_CLASS}
-            value={form.mode}
-            onChange={(e) => set("mode", e.target.value as EwayForm["mode"])}
-          >
-            {MODES.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <Input
-          label="Vehicle number"
-          value={form.vehicle}
-          error={errors.vehicle}
-          placeholder="KA01AB1234"
-          onChange={(e) => set("vehicle", e.target.value)}
-        />
-
-        {form.mode !== "road" ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Transport document number"
-              value={form.docNumber}
-              error={errors.docNumber}
-              onChange={(e) => set("docNumber", e.target.value)}
-            />
-            <Input
-              label="Transport document date"
-              type="date"
-              value={form.docDate}
-              error={errors.docDate}
-              onChange={(e) => set("docDate", e.target.value)}
-            />
-          </div>
-        ) : null}
-
-        <Input
-          label="Transporter GSTIN (optional)"
-          value={form.transporterGstin}
-          error={errors.transporterGstin}
-          maxLength={15}
-          onChange={(e) =>
-            set("transporterGstin", e.target.value.toUpperCase())
-          }
-        />
-        <Input
-          label="Transporter name (optional)"
-          value={form.transporterName}
-          onChange={(e) => set("transporterName", e.target.value)}
-        />
-
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={form.isOdc}
-            onChange={(e) => set("isOdc", e.target.checked)}
-          />
-          Over-dimensional cargo (20 km a day)
-        </label>
+        <EwayTransportFields form={form} errors={errors} onChange={set} />
 
         {showShipTo ? (
           <div className="space-y-3 rounded-lg border border-gray-200 p-3">

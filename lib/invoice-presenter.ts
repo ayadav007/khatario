@@ -18,6 +18,8 @@ import {
 } from './print-language';
 import { resolveDocumentLanguage } from './print-language/storage';
 import { translatePrintedItemName } from './print-language/item-name';
+import QRCode from 'qrcode';
+import { formatIndianDate } from './gst/einvoice-panel';
 
 function placeOfSupplyName(code: unknown): string {
   const raw = String(code ?? '').trim();
@@ -59,6 +61,38 @@ function workOrderFields(wo: any, formatDate: (d: any) => string, language: Docu
     total_cost: money(wo.total_cost),
     has_labor: Number(wo.labor_cost || 0) > 0,
     has_other: Number(wo.other_cost || 0) > 0,
+  };
+}
+
+/**
+ * The e-invoice lines for print: IRN, acknowledgement number and date (DD/MM/YYYY, Indian time) and the signed QR as a
+ * PNG data URL encoding the portal's signed string unchanged. All null unless the e-invoice is active.
+ */
+async function einvoicePrintFields(raw: any): Promise<{
+  irn: string | null;
+  irn_ack_no: string | null;
+  irn_ack_date: string | null;
+  irn_qr_data_url: string | null;
+  /** The IRN in 32-character pieces, so the thermal receipt's long-text shortening never cuts it. */
+  irn_parts: string[];
+}> {
+  const none = { irn: null, irn_ack_no: null, irn_ack_date: null, irn_qr_data_url: null, irn_parts: [] };
+  if (raw?.irn_status !== 'active' || !raw?.irn) return none;
+  let qr: string | null = null;
+  if (raw.irn_signed_qr) {
+    try {
+      qr = await QRCode.toDataURL(String(raw.irn_signed_qr), { errorCorrectionLevel: 'L', margin: 1, width: 300 });
+    } catch (error) {
+      console.error('[invoice-presenter] Could not draw the e-invoice QR:', error instanceof Error ? error.message : error);
+    }
+  }
+  const irn = String(raw.irn);
+  return {
+    irn,
+    irn_ack_no: raw.irn_ack_no != null && raw.irn_ack_no !== '' ? String(raw.irn_ack_no) : null,
+    irn_ack_date: formatIndianDate(raw.irn_ack_date),
+    irn_qr_data_url: qr,
+    irn_parts: irn.match(/.{1,32}/g) ?? [irn],
   };
 }
 
@@ -330,6 +364,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   // HSN-wise tax summary, grouped by HSN and rate
   const taxSummary = buildHsnTaxSummary(processedItems);
   const copyLabel = copyLabelFor(docType, normalizePrintCopy(rawData.copy), processedItems);
+  const einvoice = await einvoicePrintFields(rawInvoice);
 
   // 7. Final Data Assembly
   const assembled = {
@@ -380,7 +415,9 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       tax_breakdown: taxSummary.rows,
       tax_breakdown_totals: taxSummary.totals,
       copy_label: copyLabel ? translatePhrase(documentLanguage, copyLabel) : null,
-      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate, documentLanguage) : null
+      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate, documentLanguage) : null,
+      // E-invoice (IRN) block of templates/partials/invoice-meta-extra.html; null unless the IRN is active.
+      ...einvoice,
     },
     business: {
       ...business,

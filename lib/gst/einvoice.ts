@@ -52,6 +52,9 @@ export type EinvoiceView = {
   last_error: string | null;
   problems: EinvoiceProblem[];
   eway_warning: string | null;
+  /** When the e-invoice was cancelled (ISO), and the stored reason (`data_entry: remarks`), for the Cancelled badge. */
+  cancelled_at: string | null;
+  cancel_reason: string | null;
 };
 
 export type EinvoiceEwb = { distanceKm: number; transport: EwayTransport };
@@ -116,12 +119,14 @@ type InvoiceRow = {
   id: string; branch_id: string | null; status: string; document_type: string | null; supply_type: string | null;
   invoice_number: string; invoice_date: string; irn: string | null; irn_ack_no: string | null; irn_ack_date: Date | null; irn_signed_qr: string | null;
   irn_status: 'active' | 'cancelled' | null; irn_last_error: string | null;
+  irn_cancelled_at: Date | null; irn_cancel_reason: string | null;
 };
 
 async function readInvoice(pool: Pool, businessId: string, invoiceId: string): Promise<InvoiceRow | null> {
   const r = await pool.query<InvoiceRow>(
     `SELECT id, branch_id, status, document_type, supply_type, invoice_number, invoice_date::text AS invoice_date,
-            irn, irn_ack_no, irn_ack_date, irn_signed_qr, irn_status, irn_last_error
+            irn, irn_ack_no, irn_ack_date, irn_signed_qr, irn_status, irn_last_error,
+            irn_cancelled_at, irn_cancel_reason
        FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [invoiceId, businessId],
   );
@@ -150,6 +155,8 @@ export async function getEinvoiceView(businessId: string, invoiceId: string): Pr
     last_error: inv.irn_last_error,
     problems,
     eway_warning: null,
+    cancelled_at: status === 'cancelled' && inv.irn_cancelled_at ? new Date(inv.irn_cancelled_at).toISOString() : null,
+    cancel_reason: status === 'cancelled' ? inv.irn_cancel_reason : null,
   };
 }
 

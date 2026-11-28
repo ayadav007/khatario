@@ -35,6 +35,7 @@ import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { IRN_LOCK_MESSAGE } from '@/lib/gst/einvoice-lock';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -311,6 +312,9 @@ export default function InvoiceDetailPage() {
   const isFinal = status === 'final';
   const isCancelled = status === 'cancelled';
   const isProforma = invoice.document_type === 'proforma_invoice';
+  // An active e-invoice (IRN) locks the invoice: no amending or cancelling here until the IRN is cancelled.
+  const irnLocked = invoice.irn_status === 'active';
+  const lockTitle = irnLocked ? IRN_LOCK_MESSAGE : undefined;
   const canConvertProforma =
     isProforma &&
     !isCancelled &&
@@ -470,22 +474,27 @@ export default function InvoiceDetailPage() {
                 {a4PrintButton}
                 {bluetoothPrintButton}
               {isFinal && !isProforma && !isCancelled && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    router.push(
-                      `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
-                    )
-                  }
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Amend
-                </Button>
+                <span title={lockTitle}>
+                  <Button
+                    variant="secondary"
+                    disabled={irnLocked}
+                    onClick={() =>
+                      router.push(
+                        `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                      )
+                    }
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Amend
+                  </Button>
+                </span>
               )}
-              <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
-                <Ban className="w-4 h-4 mr-2" />
-                Cancel Invoice
-              </Button>
+              <span title={lockTitle}>
+                <Button variant="secondary" disabled={irnLocked} onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
+                  <Ban className="w-4 h-4 mr-2" />
+                  Cancel Invoice
+                </Button>
+              </span>
               </>
             )}
 
@@ -551,18 +560,21 @@ export default function InvoiceDetailPage() {
               </Button>
             )}
             {isFinal && !isProforma && !isCancelled && (
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  router.push(
-                    `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
-                  )
-                }
-                className="flex-1"
-              >
-                <Edit className="w-4 h-4" />
-                <span className="ml-2">Amend</span>
-              </Button>
+              <span title={lockTitle} className="flex flex-1">
+                <Button
+                  variant="secondary"
+                  disabled={irnLocked}
+                  onClick={() =>
+                    router.push(
+                      `/invoices/new?edit=${invoiceId}&type=${invoice.document_type || 'tax_invoice'}&amend=1`,
+                    )
+                  }
+                  className="flex-1"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span className="ml-2">Amend</span>
+                </Button>
+              </span>
             )}
             {isFinal && (
               <>

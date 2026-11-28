@@ -371,7 +371,7 @@ export function MoreDetailsPanel({
           </div>
           {einvoiceAllowed ? (
             <p className="text-xs text-text-secondary">
-              E-invoice is on for this plan. Take the IRN and QR from the government portal. Khatario does not create them.
+              E-invoice is on for this plan. Generate it from the invoice once it is final.
             </p>
           ) : null}
           {customFields && (

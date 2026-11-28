@@ -240,6 +240,14 @@ describe('e-invoicing', () => {
     expect(declared.amount).toBeNull();
     expect(einvoiceFinding('2026-10-10', { declaredAbove5cr: false, previousFyTurnover: 12_00_00_000 })!.message).toMatch(/within 30 days/);
   });
+
+  it('the e-invoicing alert no longer says Khatario cannot generate IRNs', () => {
+    const alert = einvoiceFinding('2026-10-10', { declaredAbove5cr: false, previousFyTurnover: 6_00_00_000 })!;
+    expect(alert.message).not.toMatch(/does not generate IRNs/);
+    expect(alert.message).toMatch(/Connect Masters India in Settings, Integrations/);
+    expect(alert.actionUrl).toBe('/settings/integrations/gst-masters-india');
+    expect(alert.actionLabel).toBeTruthy();
+  });
 });
 
 describe('RCM self-invoice', () => {

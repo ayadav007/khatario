@@ -13,6 +13,7 @@
 
 import type { ReceiptData } from './invoice-to-escpos';
 import { getStateName } from '@/lib/gst-utils';
+import { formatIndianDate } from '@/lib/gst/einvoice-panel';
 
 export interface InvoicePayloadLike {
   invoice_number: string;
@@ -38,6 +39,11 @@ export interface InvoicePayloadLike {
   ack_no?: string | number | null;
   ack_date?: string | null;
   signed_qr_code?: string | null;
+  /** E-invoice columns on the invoice row; the receipt prints them only while the IRN is active. */
+  irn_status?: 'active' | 'cancelled' | string | null;
+  irn_ack_no?: string | number | null;
+  irn_ack_date?: string | Date | null;
+  irn_signed_qr?: string | null;
   items?: Array<{
     item_name?: string | null;
     item_code?: string | null;
@@ -118,6 +124,9 @@ export function invoicePayloadToReceipt(
     if (modes.length) paymentMode = modes[0];
   }
 
+  // The IRN lines come from the invoice's e-invoice columns, and only while that e-invoice is active.
+  const irnActive = invoice.irn_status === 'active' && !!invoice.irn;
+
   const paid = num(invoice.paid_amount) || paidSum;
   const balance = num(invoice.balance_amount);
 
@@ -161,9 +170,9 @@ export function invoicePayloadToReceipt(
     placeOfSupplyStateCode: invoice.place_of_supply_state_code || null,
     placeOfSupplyName: invoice.place_of_supply_state_code ? getStateName(invoice.place_of_supply_state_code) || null : null,
     isReverseCharge: !!invoice.is_reverse_charge,
-    irn: invoice.irn || null,
-    ackNo: invoice.ack_no != null ? String(invoice.ack_no) : null,
-    ackDate: invoice.ack_date || null,
-    signedQr: invoice.signed_qr_code || null,
+    irn: irnActive ? invoice.irn || null : null,
+    ackNo: irnActive && invoice.irn_ack_no != null && invoice.irn_ack_no !== '' ? String(invoice.irn_ack_no) : null,
+    ackDate: irnActive ? formatIndianDate(invoice.irn_ack_date) : null,
+    signedQr: irnActive ? invoice.irn_signed_qr || null : null,
   };
 }

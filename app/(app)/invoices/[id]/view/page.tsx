@@ -10,6 +10,10 @@ import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { InvoicePlanExtras } from '@/components/invoices/EwayBillField';
+import { EinvoicePanel } from '@/components/invoices/EinvoicePanel';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
+import { IRN_LOCK_MESSAGE } from '@/lib/gst/einvoice-lock';
+import type { EinvoiceLine } from '@/lib/gst/einvoice-panel';
 
 type InvoiceSummary = {
   id: string;
@@ -23,6 +27,8 @@ type InvoiceSummary = {
   status?: string;
   eway_bill_number?: string | null;
   eway_bill_date?: string | null;
+  irn_status?: 'active' | 'cancelled' | null;
+  items?: EinvoiceLine[];
 };
 
 function PostGenerateAction({
@@ -62,10 +68,14 @@ export default function PublicInvoiceViewPage() {
   const [html, setHtml] = useState('');
   const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const einvoiceAllowed = usePlanFeature('e_invoice');
+  // Bumped after the e-invoice changes: the e-way bill box reloads its list, the other e-invoice panel its state.
+  const [einvoiceVersion, setEinvoiceVersion] = useState(0);
 
-  const load = useCallback(async () => {
+  /** Loads the preview and the invoice; a silent reload keeps the page (and the panels' messages) on screen. */
+  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
     if (!invoiceId) return;
-    setLoading(true);
+    if (!opts.silent) setLoading(true);
     try {
       const [previewRes, invRes] = await Promise.all([
         fetch(`/api/invoices/${invoiceId}/preview?user_id=${user?.id}`),
@@ -93,14 +103,34 @@ export default function PublicInvoiceViewPage() {
           status: inv.status,
           eway_bill_number: inv.eway_bill_number,
           eway_bill_date: inv.eway_bill_date,
+          irn_status: inv.irn_status ?? null,
+          items: Array.isArray(inv.items) ? inv.items : [],
         });
       }
     } catch (error) {
       console.error('Error fetching invoice:', error);
     } finally {
-      setLoading(false);
+      if (!opts.silent) setLoading(false);
     }
   }, [invoiceId, user?.id]);
+
+  const onEinvoiceChanged = useCallback(() => {
+    setEinvoiceVersion((v) => v + 1);
+    void load({ silent: true });
+  }, [load]);
+
+  const irnLocked = invoice?.irn_status === 'active';
+  const einvoicePanel = (refreshToken: number) =>
+    invoice && einvoiceAllowed ? (
+      <EinvoicePanel
+        invoiceId={invoiceId}
+        documentType={invoice.document_type || 'tax_invoice'}
+        items={invoice.items || []}
+        ewayBillNumber={invoice.eway_bill_number}
+        refreshToken={refreshToken}
+        onChanged={onEinvoiceChanged}
+      />
+    ) : null;
 
   useEffect(() => {
     load();
@@ -160,14 +190,17 @@ export default function PublicInvoiceViewPage() {
                 <p className="text-sm text-text-secondary mt-0.5">#{invoice.invoice_number}</p>
               ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => router.push(editHref)}
-              className="shrink-0 rounded-lg border border-border bg-surface p-2 text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800"
-              aria-label="Edit invoice"
-            >
-              <Pencil className="h-5 w-5" />
-            </button>
+            <span title={irnLocked ? IRN_LOCK_MESSAGE : undefined} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => router.push(editHref)}
+                disabled={irnLocked}
+                className="rounded-lg border border-border bg-surface p-2 text-text-secondary hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800"
+                aria-label={irnLocked ? IRN_LOCK_MESSAGE : 'Edit invoice'}
+              >
+                <Pencil className="h-5 w-5" />
+              </button>
+            </span>
           </div>
         </header>
 
@@ -220,13 +253,15 @@ export default function PublicInvoiceViewPage() {
             </p>
           ) : null}
 
+          {invoice && einvoiceAllowed ? <div className="mx-4 mt-3">{einvoicePanel(einvoiceVersion)}</div> : null}
+
           {invoice && invoice.status !== 'cancelled' ? (
-            <div className="mx-4 mt-3">
+            <div className="mx-4 mt-3" key={`extras-m-${einvoiceVersion}`}>
               <InvoicePlanExtras
                 invoiceId={invoiceId}
                 ewayNumber={invoice.eway_bill_number}
                 ewayDate={invoice.eway_bill_date}
-                onSaved={() => void load()}
+                onSaved={() => void load({ silent: true })}
                 goodsValue={grand}
                 isFinal={invoice.status === 'final'}
               />
@@ -290,13 +325,14 @@ export default function PublicInvoiceViewPage() {
               </div>
             )}
           </div>
+          {invoice && einvoiceAllowed ? <div className="mt-4">{einvoicePanel(einvoiceVersion)}</div> : null}
           {invoice && invoice.status !== 'cancelled' ? (
-            <div className="mt-4">
+            <div className="mt-4" key={`extras-d-${einvoiceVersion}`}>
               <InvoicePlanExtras
                 invoiceId={invoiceId}
                 ewayNumber={invoice.eway_bill_number}
                 ewayDate={invoice.eway_bill_date}
-                onSaved={() => void load()}
+                onSaved={() => void load({ silent: true })}
                 goodsValue={grand}
                 isFinal={invoice.status === 'final'}
               />
