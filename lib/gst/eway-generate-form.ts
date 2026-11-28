@@ -104,3 +104,11 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
 export function hasEwayBillOnRecord(bills: Array<{ stored_status: string }>): boolean {
   return bills.some((b) => b.stored_status === 'active');
 }
+
+/**
+ * A form field seeded from a prop (the invoice's saved e-way number or date): it follows the prop only when the
+ * prop itself changes, so a fresh value from the server replaces a stale one and what the user is typing is kept.
+ */
+export function followProp<T>(prevProp: T, nextProp: T, current: T): T {
+  return Object.is(prevProp, nextProp) ? current : nextProp;
+}

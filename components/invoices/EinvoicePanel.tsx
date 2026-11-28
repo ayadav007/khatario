@@ -38,6 +38,8 @@ type Props = {
   onChanged?: () => void;
   /** Changes when another copy of this panel changed the e-invoice: reload the state (messages stay). */
   refreshToken?: number;
+  /** Told what the panel shows: null while it shows nothing, else the e-invoice status. Must be stable (a state setter). */
+  onShownStatus?: (status: EinvoiceView['status'] | null) => void;
 };
 
 const EMPTY_EWB: EwayForm = {
@@ -106,7 +108,7 @@ function ErrorBox({ error, documentType }: { error: ErrorDisplay; documentType: 
 }
 
 /** The e-invoice (IRN) of a sales invoice: what to fix, Generate, the IRN and QR, Cancel within 24 hours. */
-export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, onChanged, refreshToken = 0 }: Props) {
+export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, onChanged, refreshToken = 0, onShownStatus }: Props) {
   const toast = useToastContext();
   const upgrade = useOptionalFeatureUpgradeModal();
   const ewayAllowed = usePlanFeature('eway_bill');
@@ -168,6 +170,11 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
     goodsLineCount: goods.count,
     goodsValue: goods.value,
   });
+
+  const shownStatus = hidden || !view || !state.visible ? null : state.status;
+  useEffect(() => {
+    onShownStatus?.(shownStatus);
+  }, [shownStatus, onShownStatus]);
 
   const fail = (status: number, body: Record<string, unknown> | null, action: Exclude<PanelAction, 'load'>) => {
     const d = einvoiceErrorDisplay({ status, body, action });
@@ -277,18 +284,9 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
     }
   }
 
-  if (hidden) return null;
-  if (!view) {
-    // Nothing while loading; a failed load says so rather than staying blank.
-    if (!loadError) return null;
-    return (
-      <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-text-muted">E-invoice</p>
-        <ErrorBox error={loadError} documentType={documentType} />
-      </div>
-    );
-  }
-  if (!state.visible) return null;
+  // Nothing while loading, and nothing when the first load fails: an invoice that may never need an
+  // e-invoice must not show an e-invoice error. A failed reload shows inside the panel already on screen.
+  if (hidden || !view || !state.visible) return null;
 
   const ewbChecked = state.showEwbOption && (wantEwb ?? state.ewbPreTicked);
   const dialogOpen = cancelOpen && state.showCancel;
@@ -307,7 +305,7 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
               <ProblemList problems={state.problems} />
             </div>
           ) : null}
-          {state.lastError ? <p className="text-xs text-red-700">Last attempt: {state.lastError}</p> : null}
+          {state.lastError && !actionError ? <p className="text-xs text-red-700">Last attempt: {state.lastError}</p> : null}
           {state.showEwbOption ? (
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" checked={ewbChecked} onChange={(e) => setWantEwb(e.target.checked)} disabled={busy !== null} />
@@ -351,6 +349,7 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
 
       {ewayWarning && state.status === 'active' ? <p className="text-xs text-amber-700">{ewayWarning}</p> : null}
 
+      {loadError ? <ErrorBox error={loadError} documentType={documentType} /> : null}
       {actionError && !dialogOpen ? <ErrorBox error={actionError} documentType={documentType} /> : null}
 
       {state.showGenerate ? (

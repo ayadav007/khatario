@@ -71,6 +71,8 @@ export default function PublicInvoiceViewPage() {
   const einvoiceAllowed = usePlanFeature('e_invoice');
   // Bumped after the e-invoice changes: the e-way bill box reloads its list, the other e-invoice panel its state.
   const [einvoiceVersion, setEinvoiceVersion] = useState(0);
+  // What the e-invoice panel shows (null: nothing). The plan note under the e-way box shows only while it is pending.
+  const [einvoiceShown, setEinvoiceShown] = useState<'none' | 'active' | 'cancelled' | null>(null);
 
   /** Loads the preview and the invoice; a silent reload keeps the page (and the panels' messages) on screen. */
   const load = useCallback(async (opts: { silent?: boolean } = {}) => {
@@ -114,9 +116,10 @@ export default function PublicInvoiceViewPage() {
     }
   }, [invoiceId, user?.id]);
 
-  const onEinvoiceChanged = useCallback(() => {
+  // Re-key the e-way box only after the fresh invoice is in, so it remounts with the new e-way number.
+  const onEinvoiceChanged = useCallback(async () => {
+    await load({ silent: true });
     setEinvoiceVersion((v) => v + 1);
-    void load({ silent: true });
   }, [load]);
 
   const irnLocked = invoice?.irn_status === 'active';
@@ -128,7 +131,8 @@ export default function PublicInvoiceViewPage() {
         items={invoice.items || []}
         ewayBillNumber={invoice.eway_bill_number}
         refreshToken={refreshToken}
-        onChanged={onEinvoiceChanged}
+        onChanged={() => void onEinvoiceChanged()}
+        onShownStatus={setEinvoiceShown}
       />
     ) : null;
 
@@ -264,6 +268,7 @@ export default function PublicInvoiceViewPage() {
                 onSaved={() => void load({ silent: true })}
                 goodsValue={grand}
                 isFinal={invoice.status === 'final'}
+                showEinvoiceNote={einvoiceShown === 'none'}
               />
             </div>
           ) : null}
@@ -335,6 +340,7 @@ export default function PublicInvoiceViewPage() {
                 onSaved={() => void load({ silent: true })}
                 goodsValue={grand}
                 isFinal={invoice.status === 'final'}
+                showEinvoiceNote={einvoiceShown === 'none'}
               />
             </div>
           ) : null}

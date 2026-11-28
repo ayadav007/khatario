@@ -25,6 +25,9 @@ jest.mock('@/lib/custom-fields-persist', () => ({ fetchDefinitionsForBusiness: j
 
 import { generateDocumentHtml, finalizePrintHtml } from '@/lib/pdf-generator';
 import { getDefaultTemplateSettings } from '@/lib/template-defaults';
+import fs from 'fs';
+import path from 'path';
+import Handlebars from 'handlebars';
 
 const IRN = 'f'.repeat(60) + 'a1b2';
 const invoiceRow: Row = {
@@ -60,6 +63,9 @@ const WITH_PARTIAL: Array<[string, Row, Row[]]> = [
   ['composition_modern', bosRow, bosItems],
   ['tax_exempt', bosRow, bosItems],
 ];
+
+/** The A4 sales templates that include the einvoice-irn partial directly (not through invoice-meta-extra). */
+const SALES_A4 = ['gst_standard', 'modern', 'classic', 'elegant', 'minimal', 'business_pro', 'gst_detailed'];
 
 async function render(templateId: string, doc: Row, lines: Row[], allOff = false) {
   const settings: Row = { ...(getDefaultTemplateSettings(templateId) as unknown as Row) };
@@ -99,6 +105,39 @@ describe('e-invoice block on the printed invoice', () => {
     it(`${t}: prints no block for a cancelled e-invoice or none`, async () => {
       expect(await render(t, { ...doc, irn_status: 'cancelled' }, lines)).not.toContain('kh-einvoice-irn');
       expect(await render(t, { ...doc, irn: null, irn_status: null }, lines)).not.toContain('kh-einvoice-irn');
+    });
+  }
+});
+
+describe('e-invoice block on the A4 sales templates', () => {
+  for (const t of SALES_A4) {
+    it(`${t}: prints the QR, IRN, Ack No and Ack Date once for an active e-invoice, even with every setting off`, async () => {
+      for (const allOff of [false, true]) {
+        const html = await render(t, invoiceRow, items, allOff);
+        expect(html.split('kh-einvoice-irn').length - 1).toBe(1);
+        const b = block(html);
+        expect(b).toMatch(/<img src="data:image\/png;base64,/);
+        expect(b.replace(/<\/?span>/g, '')).toContain(`<strong>IRN:</strong> ${IRN}</div>`);
+        expect(b).toMatch(/Ack No:<\/strong> 112410239876543/);
+        expect(b).toMatch(/Ack Date:<\/strong> 27\/11\/2026/);
+        expect(b).toContain('width:30mm;height:30mm');
+        expect(b).toContain('word-break:break-all');
+      }
+    });
+
+    it(`${t}: without an active e-invoice the page is byte-identical to one with no block at all`, async () => {
+      const cancelled = await render(t, { ...invoiceRow, irn_status: 'cancelled' }, items);
+      const none = await render(t, { ...invoiceRow, irn: null, irn_status: null }, items);
+      expect(none).not.toContain('kh-einvoice-irn');
+      expect(cancelled).toBe(none);
+      // Swap the partial for nothing: the include itself must add no bytes (no blank line, no spaces).
+      const original = fs.readFileSync(path.join(process.cwd(), 'templates', 'partials', 'einvoice-irn.html'), 'utf-8');
+      Handlebars.registerPartial('einvoice-irn', '');
+      try {
+        expect(await render(t, { ...invoiceRow, irn: null, irn_status: null }, items)).toBe(none);
+      } finally {
+        Handlebars.registerPartial('einvoice-irn', original);
+      }
     });
   }
 });

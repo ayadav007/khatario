@@ -15,6 +15,7 @@ export function registerInvoiceHandlebarsPartials(): void {
     'custom-item-lines',
     'thermal-items',
     'invoice-meta-extra',
+    'einvoice-irn',
     'bos-footer-blocks',
     'copy-label',
     'hsn-summary',

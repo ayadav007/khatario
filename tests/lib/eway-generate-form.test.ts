@@ -1,4 +1,4 @@
-import { hasEwayBillOnRecord, validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
+import { followProp, hasEwayBillOnRecord, validateEwayForm, type EwayForm } from '@/lib/gst/eway-generate-form';
 
 const base: EwayForm = {
   distance: '120', mode: 'road', vehicle: 'ka01 ab 1234', transporterGstin: '', transporterName: '',
@@ -97,5 +97,17 @@ describe('hasEwayBillOnRecord', () => {
   });
   it('is true when a cancelled bill sits beside an active one', () => {
     expect(hasEwayBillOnRecord([b('cancelled'), b('active')])).toBe(true);
+  });
+});
+
+describe('followProp (the e-way number box follows the saved number)', () => {
+  it('takes the new saved value when the prop changes, even over an empty or stale field', () => {
+    expect(followProp('', '331122334455', '')).toBe('331122334455');
+    expect(followProp('111111111111', '331122334455', '111111111111')).toBe('331122334455');
+    expect(followProp('331122334455', '', '331122334455')).toBe('');
+  });
+  it('keeps what the user is typing while the prop stays the same', () => {
+    expect(followProp('', '', '3311')).toBe('3311');
+    expect(followProp('331122334455', '331122334455', '9999')).toBe('9999');
   });
 });

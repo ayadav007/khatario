@@ -369,6 +369,7 @@
     {{/if}}
   {{/unless}}
 
+  {{> einvoice-irn}}
   <table data-kh-section="totals" class="grid-table summary-table" style="font-size: 10px; margin-top: -1px;">
     {{#ifSetting 'show_subtotal'}}
     <tr><td>Taxable Amount</td><td class="text-right">₹{{invoice.subtotal}}</td></tr>

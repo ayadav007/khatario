@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { GenerateEwayBillDialog } from '@/components/eway-bills/GenerateEwayBillDialog';
 import { ActiveEwayBillLine, useDocumentEwayBills } from '@/components/eway-bills/useDocumentEwayBills';
+import { followProp } from '@/lib/gst/eway-generate-form';
 
 type Props = {
   invoiceId: string;
@@ -21,8 +22,20 @@ export const EWAY_LIMIT_HINT = 'Goods are worth more than ₹50,000, so an e-way
 
 export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved, goodsValue = 0, isFinal = false }: Props) {
   const ewayAllowed = usePlanFeature('eway_bill');
-  const [number, setNumber] = useState(initialNumber || '');
-  const [date, setDate] = useState(initialDate ? String(initialDate).slice(0, 10) : '');
+  const propNumber = initialNumber || '';
+  const propDate = initialDate ? String(initialDate).slice(0, 10) : '';
+  const [number, setNumber] = useState(propNumber);
+  const [date, setDate] = useState(propDate);
+  // The page reloads the invoice without remounting this box: take a newly saved number or date (for example
+  // one an e-way bill just wrote), but never overwrite what is being typed while the saved value is unchanged.
+  const lastProps = useRef({ number: propNumber, date: propDate });
+  useEffect(() => {
+    const prev = lastProps.current;
+    if (prev.number === propNumber && prev.date === propDate) return;
+    setNumber((cur) => followProp(prev.number, propNumber, cur));
+    setDate((cur) => followProp(prev.date, propDate, cur));
+    lastProps.current = { number: propNumber, date: propDate };
+  }, [propNumber, propDate]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -137,6 +150,7 @@ export function InvoicePlanExtras({
   onSaved,
   goodsValue,
   isFinal,
+  showEinvoiceNote = true,
 }: {
   invoiceId: string;
   ewayNumber?: string | null;
@@ -144,6 +158,8 @@ export function InvoicePlanExtras({
   onSaved?: () => void;
   goodsValue?: number;
   isFinal?: boolean;
+  /** False where the e-invoice panel decides (the invoice view): no note when it cannot or already has an e-invoice. */
+  showEinvoiceNote?: boolean;
 }) {
   const eway = usePlanFeature('eway_bill');
   const einvoice = usePlanFeature('e_invoice');
@@ -160,7 +176,7 @@ export function InvoicePlanExtras({
           isFinal={isFinal}
         />
       ) : null}
-      <EInvoicePlanNote />
+      {showEinvoiceNote ? <EInvoicePlanNote /> : null}
     </>
   );
 }

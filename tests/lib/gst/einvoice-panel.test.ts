@@ -256,7 +256,7 @@ describe('einvoiceErrorDisplay', () => {
   });
 
   it('reloads the state when it may have changed', () => {
-    for (const code of ['IRN_EXISTS', 'IRN_CANCELLED', 'IRN_NOT_SAVED', 'GSP_NO_ANSWER', 'NO_IRN', 'NOT_APPLICABLE']) {
+    for (const code of ['GSP_REJECTED', 'IRN_EXISTS', 'IRN_CANCELLED', 'IRN_NOT_SAVED', 'GSP_NO_ANSWER', 'NO_IRN', 'NOT_APPLICABLE']) {
       expect(err(409, { error: 'x', code }).refresh).toBe(true);
     }
     expect(err(400, { error: 'Enter the distance in km (0 to 4000)', code: 'INVALID_EWB' }).refresh).toBe(false);
