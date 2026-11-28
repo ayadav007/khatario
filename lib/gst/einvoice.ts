@@ -10,6 +10,7 @@ import { createEwayBill } from '@/lib/gst/eway-bill-records';
 import { buildEwayBill, type NicEwayBill } from '@/lib/gst/eway-json';
 import { toParsed, transportOf } from '@/lib/gst/eway-generate';
 import { einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
 import type { EwayTransport } from '@/lib/gsp/mastersindia/eway';
@@ -111,13 +112,13 @@ export function parseEinvoiceEwb(raw: unknown): EinvoiceEwb | null {
 
 type InvoiceRow = {
   id: string; branch_id: string | null; status: string; document_type: string | null; supply_type: string | null;
-  invoice_date: string; irn: string | null; irn_ack_no: string | null; irn_ack_date: Date | null; irn_signed_qr: string | null;
+  invoice_number: string; invoice_date: string; irn: string | null; irn_ack_no: string | null; irn_ack_date: Date | null; irn_signed_qr: string | null;
   irn_status: 'active' | 'cancelled' | null; irn_last_error: string | null;
 };
 
 async function readInvoice(pool: Pool, businessId: string, invoiceId: string): Promise<InvoiceRow | null> {
   const r = await pool.query<InvoiceRow>(
-    `SELECT id, branch_id, status, document_type, supply_type, invoice_date::text AS invoice_date,
+    `SELECT id, branch_id, status, document_type, supply_type, invoice_number, invoice_date::text AS invoice_date,
             irn, irn_ack_no, irn_ack_date, irn_signed_qr, irn_status, irn_last_error
        FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [invoiceId, businessId],
@@ -148,11 +149,15 @@ export async function getEinvoiceView(businessId: string, invoiceId: string): Pr
   };
 }
 
-/** True when a repeat or found IRN was issued for this very invoice and is still active. */
-function sameDocument(r: MiIrnResult, doc: { number: string; dateIso: string; sellerGstin: string }): boolean {
+/** True when a repeat or found IRN was issued for this very invoice and has the status asked for (still active by default). */
+function sameDocument(
+  r: MiIrnResult,
+  doc: { number: string; dateIso: string; sellerGstin: string },
+  status: MiIrnResult['status'] = 'ACT',
+): boolean {
   const up = (s: string) => s.trim().toUpperCase();
   return (
-    r.status === 'ACT' &&
+    r.status === status &&
     r.docNumber !== null && r.docDate !== null && r.sellerGstin !== null &&
     up(r.docNumber) === up(doc.number) && r.docDate === doc.dateIso && up(r.sellerGstin) === up(doc.sellerGstin)
   );
@@ -361,4 +366,113 @@ export async function generateIrn(
     view.eway_warning = 'E-invoice generated. The e-way bill was not: ' + (issued.ewbError ?? 'the portal did not say why.');
   }
   return view;
+}
+
+export type CancelReason = 'duplicate' | 'data_entry' | 'order_cancelled' | 'others';
+const CANCEL_CODE: Record<CancelReason, '1' | '2' | '3' | '4'> = { duplicate: '1', data_entry: '2', order_cancelled: '3', others: '4' };
+const MAX_CANCEL_REASON_TEXT = 120;
+
+/**
+ * Cancel the active IRN of an invoice at the portal and mark it cancelled here; the IRN stays on the row and the
+ * invoice itself is not cancelled. A cancellation the portal accepted is never reported as failed: when the call
+ * goes unanswered or is refused (for example because the IRN is already cancelled there), the document is looked
+ * up once and a cancelled IRN for this very invoice is stored. No database client is held across a provider call.
+ */
+export async function cancelIrn(
+  businessId: string,
+  userId: string,
+  invoiceId: string,
+  a: { reason: CancelReason; remarks: string },
+  deps: EinvoiceDeps = {},
+): Promise<EinvoiceView> {
+  const loadCredentials = deps.loadCredentials ?? loadGspCredentials;
+  const cancel = deps.cancel ?? miCancelIrn;
+  const getByDocument = deps.getByDocument ?? miGetIrnByDocument;
+  const pool = getPool();
+
+  // 1. The invoice, in this business, with an active IRN still inside the 24-hour window and no active e-way bill.
+  const inv = await readInvoice(pool, businessId, invoiceId);
+  if (!inv) throw new EinvoiceError('Invoice not found', 404, 'NOT_FOUND');
+  if (inv.irn_status !== 'active' || !inv.irn) throw new EinvoiceError('This invoice has no active e-invoice', 409, 'NO_IRN');
+  const ackDate = inv.irn_ack_date ? new Date(inv.irn_ack_date) : null;
+  if (!ackDate || Date.now() - ackDate.getTime() >= CANCEL_WINDOW_MS) {
+    throw new EinvoiceError('An e-invoice can be cancelled only within 24 hours. Issue a credit note instead.', 409, 'CANCEL_WINDOW_CLOSED');
+  }
+  const ewayActive = await pool.query(
+    `SELECT 1 FROM eway_bills WHERE business_id = $1 AND source_type = 'invoice' AND source_id = $2 AND status = 'active' LIMIT 1`,
+    [businessId, invoiceId],
+  );
+  if (ewayActive.rows.length) throw new EinvoiceError('Cancel the e-way bill first', 409, 'EWAY_ACTIVE');
+  const remarks = typeof a?.remarks === 'string' ? a.remarks.trim() : '';
+  if (!remarks) throw new EinvoiceError('Enter the reason for cancelling', 400, 'REMARKS_REQUIRED');
+  const code = Object.prototype.hasOwnProperty.call(CANCEL_CODE, a?.reason) ? CANCEL_CODE[a.reason] : null;
+  if (!code) throw new EinvoiceError('Choose why the e-invoice is being cancelled', 400, 'REASON_REQUIRED');
+
+  // 2. The GSTIN the IRN was issued under, and a saved Masters India login.
+  const sellerGstin = (await resolveSupplierRegistration(pool, businessId, inv.branch_id)).gstin;
+  if (!sellerGstin) throw new EinvoiceError('Add your GSTIN in Business settings', 409, 'NO_GSTIN');
+  let creds;
+  try {
+    creds = await loadCredentials(businessId);
+  } catch (e) {
+    throw gspFailure(e);
+  }
+  if (!creds) throw new EinvoiceError('Connect your Masters India account in Settings, Integrations first.', 409, 'GSP_NOT_CONNECTED');
+
+  // 3. Cancel; nothing is held open here.
+  const irn = inv.irn;
+  const dateIso = inv.invoice_date.slice(0, 10);
+  let cancelledAt: Date;
+  try {
+    cancelledAt = (await cancel(creds, { gstin: sellerGstin, irn, reason: code, remarks }, undefined)).cancelledAt;
+  } catch (e) {
+    if (!(e instanceof GspError)) throw e;
+    const unanswered = e.kind === 'timeout' || e.kind === 'unreachable';
+    if (!unanswered && e.kind !== 'rejected') throw gspFailure(e);
+    let found: MiIrnResult | null = null;
+    try {
+      found = await getByDocument(creds, { gstin: sellerGstin, docNumber: inv.invoice_number, docDate: `${dateIso.slice(8, 10)}/${dateIso.slice(5, 7)}/${dateIso.slice(0, 4)}` });
+    } catch {
+      found = null;
+    }
+    const cancelledThere =
+      !!found && found.irn === irn && sameDocument(found, { number: inv.invoice_number, dateIso, sellerGstin }, 'CNL');
+    if (!cancelledThere) {
+      if (unanswered) {
+        throw new EinvoiceError('The e-invoice portal did not answer. Wait a minute and check again before retrying.', 502, 'GSP_NO_ANSWER');
+      }
+      throw rejected(e.message);
+    }
+    cancelledAt = new Date();
+  }
+
+  // 4. Store; on failure the next click finds the IRN cancelled at the portal and stores it then.
+  try {
+    await runWithInvoiceAudit({ actorUserId: userId, action: 'einvoice_cancelled', reason: remarks }, async (client) => {
+      const u = await client.query(
+        `UPDATE invoices
+            SET irn_status = 'cancelled', irn_cancelled_at = $4, irn_cancel_reason = $5,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND business_id = $2 AND irn = $3 AND irn_status = 'active'`,
+        [invoiceId, businessId, irn, cancelledAt, `${a.reason}: ${remarks}`.slice(0, MAX_CANCEL_REASON_TEXT)],
+      );
+      if (!u.rowCount) throw new Error('invoice changed before the cancellation was stored');
+    });
+  } catch (e: any) {
+    // A concurrent click may have stored this very cancellation first.
+    const saved = await pool
+      .query(`SELECT 1 FROM invoices WHERE id = $1 AND business_id = $2 AND irn = $3 AND irn_status = 'cancelled'`, [invoiceId, businessId, irn])
+      .then((r) => r.rows.length > 0)
+      .catch(() => false);
+    if (!saved) {
+      console.error('[einvoice] IRN cancelled but not saved', { invoiceId, error: e?.code ?? e?.name });
+      throw new EinvoiceError(
+        'The e-invoice was cancelled on the portal but that could not be saved here. Click Cancel again and Khatario will pick it up.',
+        500,
+        'IRN_NOT_SAVED',
+      );
+    }
+  }
+
+  return (await getEinvoiceView(businessId, invoiceId)) as EinvoiceView;
 }

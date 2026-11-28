@@ -9,8 +9,10 @@ import { checkLimitInTransaction } from '@/lib/subscription';
 import { computeValidUntil, EwayBillInputError, type EwayDocType, type EwaySubSupplyType, type ParsedEwayBill } from '@/lib/gst/eway-bills';
 import { createEwayBill, getEwayBill, type EwayBillView } from '@/lib/gst/eway-bill-records';
 import { buildEwayBill, SUB_SUPPLY_CODE, type NicEwayBill } from '@/lib/gst/eway-json';
+import { einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
+import { miGenerateEwbByIrn } from '@/lib/gsp/mastersindia/einvoice';
 import {
   miFindEwayByDocument,
   miGenerateEway,
@@ -44,6 +46,8 @@ export type EwayGenerateDeps = {
   generate?: typeof miGenerateEway;
   findByDocument?: typeof miFindEwayByDocument;
   getDetails?: typeof miGetEwayDetails;
+  /** For an invoice covered by e-invoicing: its e-way bill is made through its IRN. */
+  ewbByIrn?: typeof miGenerateEwbByIrn;
 };
 
 const SHIP_TO_NOT_SAVED = 'This document ships to an address that is not saved on the customer';
@@ -149,6 +153,7 @@ export async function generateEwayBillViaGsp(
   const generate = deps.generate ?? miGenerateEway;
   const findByDocument = deps.findByDocument ?? miFindEwayByDocument;
   const getDetails = deps.getDetails ?? miGetEwayDetails;
+  const ewbByIrn = deps.ewbByIrn ?? miGenerateEwbByIrn;
   const pool = getPool();
 
   if (input?.source_type !== 'invoice' && input?.source_type !== 'delivery_challan') {
@@ -175,13 +180,28 @@ export async function generateEwayBillViaGsp(
   if (existing.rows.length) throw new EwayBillInputError('This document already has an active e-way bill.', 409, 'EWAY_EXISTS');
 
   // 2b. Only a document that moves goods can carry an e-way bill (the same rule the pages use).
+  // An invoice covered by e-invoicing gets its e-way bill through its active IRN.
+  let irn: string | null = null;
   if (input.source_type === 'invoice') {
     const inv = (
-      await pool.query(`SELECT status, document_type, deleted_at FROM invoices WHERE id = $1 AND business_id = $2`, [input.source_id, businessId])
+      await pool.query(
+        `SELECT status, document_type, supply_type, invoice_date::text AS invoice_date, branch_id, irn, irn_status, deleted_at
+           FROM invoices WHERE id = $1 AND business_id = $2`,
+        [input.source_id, businessId],
+      )
     ).rows[0];
     if (!inv) throw new EwayBillInputError('Invoice not found', 404);
     if (inv.status !== 'final' || inv.deleted_at || NOT_EWAY_INVOICE_TYPES.includes(String(inv.document_type || ''))) {
       throw new EwayBillInputError('Only a final invoice can get an e-way bill', 409, 'NOT_ELIGIBLE');
+    }
+    if (einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id))) {
+      if (inv.irn_status === 'cancelled') {
+        throw new EwayBillInputError('The e-invoice for this invoice was cancelled, so an e-way bill cannot be made for it.', 409, 'IRN_CANCELLED');
+      }
+      if (inv.irn_status !== 'active' || !inv.irn) {
+        throw new EwayBillInputError('Generate the e-invoice for this invoice first. Its e-way bill comes through the e-invoice.', 409, 'IRN_REQUIRED');
+      }
+      irn = inv.irn;
     }
   } else {
     const dc = (
@@ -275,12 +295,18 @@ export async function generateEwayBillViaGsp(
       )
     ).rows.length > 0;
 
-  // 5-6. Generate; no transaction is open here. Look up by document number when the call went unanswered,
-  // or when the portal refused it as a repeat of a document number that already has a bill.
+  // 5-6. Generate (through the IRN when the invoice has one); no transaction is open here. Look up by document
+  // number when the call went unanswered, or when the portal refused it as a repeat of a document number that
+  // already has a bill.
+  const callProvider = async (): Promise<MiEwayResult> => {
+    if (!irn) return generate(creds, payload);
+    const b = await ewbByIrn(creds, { gstin: fromGstin, irn, distanceKm: Number(input.distance_km), transport });
+    return { ewbNumber: b.number, generatedAt: b.generatedAt, validUntil: b.validUntil, printUrl: b.printUrl, alert: null, duplicate: false, requestId: null };
+  };
   let result: MiEwayResult;
   let portal: MiEwayDetails | null = null;
   try {
-    result = await generate(creds, payload);
+    result = await callProvider();
   } catch (e) {
     const unanswered = e instanceof GspError && (e.kind === 'timeout' || e.kind === 'unreachable');
     const repeat =
@@ -313,7 +339,7 @@ export async function generateEwayBillViaGsp(
     await client.query('BEGIN');
     await setInvoiceAuditContext(client, { actorUserId: userId, action: 'eway_updated' });
     const view = await createEwayBill(client, businessId, toParsed(input, bill, transport, result, portal), userId, {
-      generatedVia: 'api',
+      generatedVia: irn ? 'irn' : 'api',
       requestId: result.requestId,
       printUrl: result.printUrl,
       transactionType: bill.transactionType,

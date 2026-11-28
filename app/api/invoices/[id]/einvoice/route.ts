@@ -3,7 +3,7 @@ import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
-import { EinvoiceError, generateIrn, getEinvoiceView, parseEinvoiceEwb } from '@/lib/gst/einvoice';
+import { cancelIrn, EinvoiceError, generateIrn, getEinvoiceView, parseEinvoiceEwb } from '@/lib/gst/einvoice';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,5 +90,29 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ einvoice }, { status: 201 });
   } catch (error) {
     return errorResponse(error, 'Failed to generate the e-invoice');
+  }
+}
+
+/**
+ * DELETE /api/invoices/[id]/einvoice: cancel the IRN at the portal (within 24 hours) and mark it cancelled.
+ * Body: { reason: 'duplicate' | 'data_entry' | 'order_cancelled' | 'others', remarks }. The invoice itself is not
+ * cancelled; that is done afterwards through the invoice's cancel route. The business and user come from the session only.
+ */
+export async function DELETE(request: NextRequest, { params }: Ctx) {
+  try {
+    const auth = await authorizeInvoice(request, params.id, 'update');
+    if (!auth.ok) return auth.response;
+    const planDenied = await denyIfFeatureMissing(auth.businessId, 'e_invoice');
+    if (planDenied) return planDenied;
+    let body: any;
+    try {
+      body = JSON.parse(await request.text());
+    } catch {
+      return NextResponse.json({ error: 'The request could not be read.', code: 'BAD_REQUEST' }, { status: 400 });
+    }
+    const einvoice = await cancelIrn(auth.businessId, auth.userId, params.id, { reason: body?.reason, remarks: body?.remarks });
+    return NextResponse.json({ einvoice });
+  } catch (error) {
+    return errorResponse(error, 'Failed to cancel the e-invoice');
   }
 }

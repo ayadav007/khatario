@@ -24,6 +24,7 @@ import {
   type BundleDeductionContext,
 } from '@/lib/invoice-bundle-stock';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { irnLock } from '@/lib/gst/einvoice-lock';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, requireStrictSession } from '@/lib/auth-helpers';
 import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
@@ -559,6 +560,12 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    // Saving over an invoice that has an active e-invoice (IRN) would change a filed document.
+    if (invoiceId) {
+      const irnLocked = await irnLock(client, business_id, invoiceId);
+      if (irnLocked) return NextResponse.json(irnLocked, { status: 409 });
     }
 
     // CRITICAL: Resolve branch_id using helper (handles default branch fallback)

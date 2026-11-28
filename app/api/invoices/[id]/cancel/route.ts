@@ -8,6 +8,7 @@ import {
   releaseWorkOrderAfterInvoiceCancel,
 } from '@/lib/invoices/cancel-final-invoice';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { irnLock } from '@/lib/gst/einvoice-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,10 @@ export async function PATCH(
       }
       throw error;
     }
+
+    // An invoice with an active e-invoice is cancelled only after its IRN is.
+    const irnLocked = await irnLock(getPool(), businessScope, id);
+    if (irnLocked) return NextResponse.json(irnLocked, { status: 409 });
 
     if (inv.status === 'cancelled') {
       return NextResponse.json({ error: 'Invoice is already cancelled' }, { status: 409 });

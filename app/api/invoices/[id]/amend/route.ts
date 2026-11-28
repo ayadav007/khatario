@@ -8,6 +8,7 @@ import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { isInvoiceInFiledGstr1 } from '@/lib/invoices/gstr1-filed';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { parseChangeReason, setInvoiceAuditContext } from '@/lib/invoices/invoice-audit-context';
+import { irnLock } from '@/lib/gst/einvoice-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,6 +172,9 @@ export async function PATCH(
     if (error instanceof AuthorizationError) return error.toNextResponse();
     throw error;
   }
+
+  const irnLocked = await irnLock(pool, businessId, params.id);
+  if (irnLocked) return NextResponse.json(irnLocked, { status: 409 });
 
   const newEwayBill = extras.find((e) => e.column === 'eway_bill_number')?.value;
   if (newEwayBill && newEwayBill !== (inv.eway_bill_number || '').trim()) {
