@@ -10,6 +10,13 @@ export type MiIrnResult = {
   pdfUrl: string | null; requestId: string | null;
   /** True when the provider answered an already-registered document with its existing IRN (see `alert`). */
   duplicate: boolean;
+  /** The provider's alert text, if any (a duplicate says which document number already has an IRN). */
+  alert: string | null;
+  /** The document the IRN was issued for, read from the signed invoice (not signature-checked). Null when unreadable. */
+  docNumber: string | null;
+  /** YYYY-MM-DD. */
+  docDate: string | null;
+  sellerGstin: string | null;
 };
 
 /**
@@ -49,11 +56,30 @@ function ewbErrorOf(info: unknown): string | null {
   return msgs.length ? msgs.join(' ') : null;
 }
 
-function ewbOf(m: any): MiIrnResult['ewb'] {
-  if (m?.EwbNo == null || m.EwbNo === '') return null;
+const EWB_UNREADABLE = 'The e-way bill details could not be read. Check the e-way bill portal.';
+
+/** Never throws: an issued IRN must not be lost because the e-way part is unreadable. */
+function ewbOf(m: any): { ewb: MiIrnResult['ewb']; problem: string | null } {
+  if (m?.EwbNo == null || m.EwbNo === '') return { ewb: null, problem: null };
   const generatedAt = parseGspDate(m.EwbDt);
-  if (!generatedAt) throw new GspError('rejected', 'Masters India sent an e-way bill date we could not read');
-  return { number: String(m.EwbNo), generatedAt, validUntil: parseGspDate(m.EwbValidTill), printUrl: url(m.EwaybillPdf) };
+  if (!generatedAt) return { ewb: null, problem: EWB_UNREADABLE };
+  return { ewb: { number: String(m.EwbNo), generatedAt, validUntil: parseGspDate(m.EwbValidTill), printUrl: url(m.EwaybillPdf) }, problem: null };
+}
+
+/** Document number, date and seller read from the payload segment of the signed invoice. The signature is not verified. */
+function signedDocument(signed: unknown): { docNumber: string | null; docDate: string | null; sellerGstin: string | null } {
+  const none = { docNumber: null, docDate: null, sellerGstin: null };
+  try {
+    if (typeof signed !== 'string') return none;
+    const payload = JSON.parse(Buffer.from(signed.split('.')[1] || '', 'base64url').toString('utf8'));
+    const inv = typeof payload?.data === 'string' ? JSON.parse(payload.data) : payload?.data;
+    const no = typeof inv?.DocDtls?.No === 'string' && inv.DocDtls.No ? inv.DocDtls.No : null;
+    const dt = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(inv?.DocDtls?.Dt ?? ''));
+    const gstin = typeof inv?.SellerDtls?.Gstin === 'string' && inv.SellerDtls.Gstin ? inv.SellerDtls.Gstin : null;
+    return { docNumber: no, docDate: dt ? `${dt[3]}-${dt[2]}-${dt[1]}` : null, sellerGstin: gstin };
+  } catch {
+    return none;
+  }
 }
 
 function toResult(m: any, info: string | null, requestId: string | null): MiIrnResult {
@@ -61,7 +87,8 @@ function toResult(m: any, info: string | null, requestId: string | null): MiIrnR
   if (!m || typeof m !== 'object' || typeof m.Irn !== 'string' || !m.Irn || m.AckNo == null || !ackDate || typeof m.SignedQRCode !== 'string') {
     throw new GspError('rejected', 'Masters India sent an e-invoice reply we could not read');
   }
-  const alert = typeof m.alert === 'string' ? m.alert : '';
+  const alert = typeof m.alert === 'string' && m.alert.trim() ? m.alert.trim() : null;
+  const { ewb, problem } = ewbOf(m);
   return {
     irn: m.Irn,
     ackNo: String(m.AckNo),
@@ -69,11 +96,13 @@ function toResult(m: any, info: string | null, requestId: string | null): MiIrnR
     signedQr: m.SignedQRCode,
     signedInvoice: typeof m.SignedInvoice === 'string' && m.SignedInvoice ? m.SignedInvoice : null,
     status: m.Status === 'CNL' ? 'CNL' : 'ACT',
-    ewb: ewbOf(m),
-    ewbError: ewbErrorOf(info),
+    ewb,
+    ewbError: ewbErrorOf(info) ?? problem,
     pdfUrl: url(m.EinvoicePdf),
     requestId,
-    duplicate: /already generated on this document number/i.test(alert),
+    duplicate: !!alert && /already generated on this document number/i.test(alert),
+    alert,
+    ...signedDocument(m.SignedInvoice),
   };
 }
 

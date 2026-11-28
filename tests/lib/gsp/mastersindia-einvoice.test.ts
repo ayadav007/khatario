@@ -104,6 +104,54 @@ describe('miGenerateIrn', () => {
   });
 });
 
+describe('document identity in the result', () => {
+  const sent = { docNumber: 'KH5824707472', docDate: '2026-11-28', sellerGstin: G };
+  const pick = (r: any) => ({ docNumber: r.docNumber, docDate: r.docDate, sellerGstin: r.sellerGstin });
+
+  it('reads the document number, date and seller from the generate-ok fixture', async () => {
+    const r = await miGenerateIrn(creds, {}, { fetch: replyWith(loginOk, fixture('einvoice-generate-ok.json')) });
+    expect(pick(r)).toEqual(sent);
+    expect(r.alert).toBeNull();
+  });
+
+  it('reads them from the duplicate fixture, with the alert text', async () => {
+    const r = await miGenerateIrn(creds, {}, { fetch: replyWith(loginOk, fixture('einvoice-duplicate.json')) });
+    expect(pick(r)).toEqual(sent);
+    expect(r.alert).toBe('IRN already generated on this document number KH5824707472');
+  });
+
+  it('reads them from the by-document fixture', async () => {
+    const r = await miGetIrnByDocument(creds, { gstin: G, docNumber: 'KH5824707472', docDate: '28/11/2026' }, { fetch: replyWith(loginOk, fixture('einvoice-by-doc.json')) });
+    expect(pick(r)).toEqual(sent);
+  });
+
+  it('makes a mismatch against another document detectable', async () => {
+    const r = await miGenerateIrn(creds, {}, { fetch: replyWith(loginOk, fixture('einvoice-duplicate.json')) });
+    const other = { docNumber: 'KH0000000001', docDate: '2026-11-28', sellerGstin: G };
+    expect(pick(r)).not.toEqual(other);
+    expect(pick(r)).toEqual(sent);
+  });
+
+  it('gives nulls for an unreadable SignedInvoice and still returns the IRN', async () => {
+    const body = JSON.parse(readFileSync(join(__dirname, '../../fixtures/gsp/einvoice-generate-ok.json'), 'utf8'));
+    body.results.message.SignedInvoice = 'garbage';
+    const r = await miGenerateIrn(creds, {}, { fetch: replyWith(loginOk, json(body)) });
+    expect(r.irn).toMatch(/^[0-9a-f]{64}$/);
+    expect(pick(r)).toEqual({ docNumber: null, docDate: null, sellerGstin: null });
+  });
+});
+
+describe('unreadable e-way bill details', () => {
+  it('keeps the IRN and reports a plain ewbError when EwbDt cannot be read', async () => {
+    const body = { results: { message: { AckNo: 1, AckDt: '2026-11-28 05:41:48', Irn: 'a'.repeat(64), SignedQRCode: 'q', EwbNo: 451010053171, EwbDt: 'garbage', Status: 'ACT' },
+      errorMessage: '', InfoDtls: '', status: 'Success', code: 200 } };
+    const r = await miGenerateIrn(creds, {}, { fetch: replyWith(loginOk, json(body)) });
+    expect(r.irn).toBe('a'.repeat(64));
+    expect(r.ewb).toBeNull();
+    expect(r.ewbError).toBe('The e-way bill details could not be read. Check the e-way bill portal.');
+  });
+});
+
 describe('IRN_DUPLICATE_CODES', () => {
   it('holds the documented duplicate IRN code', () => {
     expect(IRN_DUPLICATE_CODES).toEqual(['2150']);
