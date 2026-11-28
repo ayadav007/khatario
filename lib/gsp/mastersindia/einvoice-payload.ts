@@ -213,7 +213,9 @@ export async function buildEinvoice(db: Queryable, businessId: string, invoiceId
   let wrongTax = false;
   lines.forEach((l) => {
     const fix = { kind: 'item' as const, id: l.item_id ?? null };
-    if (!/^\d{4,8}$/.test(String(l.hsn_sac ?? '').trim())) add('hsn', `Add the HSN code for ${l.item_name}`, fix);
+    const hsn = String(l.hsn_sac ?? '').trim();
+    if (!hsn) add('hsn', `Add the HSN code for ${l.item_name}`, fix);
+    else if (!/^\d{6}(\d{2})?$/.test(hsn)) add('hsn', `Use the 6-digit HSN code for ${l.item_name}. E-invoices do not accept shorter codes.`, fix);
     else if (!isService(l) && !(Number(l.quantity) > 0)) add('quantity', `Enter the quantity for ${l.item_name}`, fix);
     const zero = !(Number(l.tax_rate) > 0) && taxOf(l) === 0;
     if (!zero && !wrongTax && pos) {

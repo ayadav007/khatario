@@ -11,7 +11,7 @@ type O = {
 };
 
 const baseLine: Line = {
-  item_id: 'it1', item_name: 'Steel rod', hsn_sac: '7214', quantity: 1, unit_price: 1000, discount_amount: 0, unit_factor: 1, uqc: 'NOS',
+  item_id: 'it1', item_name: 'Steel rod', hsn_sac: '721410', quantity: 1, unit_price: 1000, discount_amount: 0, unit_factor: 1, uqc: 'NOS',
   taxable_value: 1000, tax_rate: 18, cgst_amount: 90, sgst_amount: 90, igst_amount: 0, cess_amount: 0, location_id: null,
 };
 
@@ -186,13 +186,19 @@ describe('buildEinvoice', () => {
   });
 
   it('flags goods lines with no quantity but not services, and free-text lines have a null fix id', async () => {
-    const b = await buildEinvoice(db({ lines: [{ quantity: 0, item_id: null, item_name: 'Loose bolts' }, { hsn_sac: '9965', quantity: 0, item_name: 'Freight' }] }), 'biz', 'inv');
+    const b = await buildEinvoice(db({ lines: [{ quantity: 0, item_id: null, item_name: 'Loose bolts' }, { hsn_sac: '996511', quantity: 0, item_name: 'Freight' }] }), 'biz', 'inv');
     expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([['Enter the quantity for Loose bolts', 'item', null]]);
   });
 
-  it('flags an HSN that is not 4 to 8 digits', async () => {
-    expect(msgs(await buildEinvoice(db({ lines: [{ hsn_sac: '72' }] }), 'biz', 'inv'))).toEqual(['Add the HSN code for Steel rod']);
-    expect(msgs(await buildEinvoice(db({ lines: [{ hsn_sac: '721411111' }] }), 'biz', 'inv'))).toEqual(['Add the HSN code for Steel rod']);
+  it('requires a 6 or 8 digit HSN', async () => {
+    const six = 'Use the 6-digit HSN code for Steel rod. E-invoices do not accept shorter codes.';
+    for (const hsn of ['7214', '72', '721411111', '72141']) {
+      expect(msgs(await buildEinvoice(db({ lines: [{ hsn_sac: hsn }] }), 'biz', 'inv'))).toEqual([six]);
+    }
+    expect(msgs(await buildEinvoice(db({ lines: [{ hsn_sac: '' }] }), 'biz', 'inv'))).toEqual(['Add the HSN code for Steel rod']);
+    for (const hsn of ['721410', '72141010']) {
+      expect((await buildEinvoice(db({ lines: [{ hsn_sac: hsn }] }), 'biz', 'inv')).problems).toEqual([]);
+    }
   });
 
   it('reports a total outside the round-off tolerance', async () => {
@@ -236,18 +242,18 @@ describe('buildEinvoice', () => {
   it('maps a line with a discount, and OTH when the item has no UQC', async () => {
     const p: any = (await buildEinvoice(db({ lines: [{ quantity: 2, unit_price: 500, discount_amount: 100, taxable_value: 900, cgst_amount: 81, sgst_amount: 81, cess_amount: 5, uqc: null }] }), 'biz', 'inv')).payload;
     expect(p.item_list[0]).toEqual({
-      item_serial_number: '1', product_description: 'Steel rod', is_service: 'N', hsn_code: '7214', quantity: 2, unit: 'OTH', unit_price: 500,
+      item_serial_number: '1', product_description: 'Steel rod', is_service: 'N', hsn_code: '721410', quantity: 2, unit: 'OTH', unit_price: 500,
       total_amount: 1000, discount: 100, assessable_value: 900, gst_rate: 18, igst_amount: 0, cgst_amount: 81, sgst_amount: 81, cess_amount: 5, total_item_value: 1067,
     });
     expect(p.value_details.total_cess_value).toBe(5);
   });
 
   it('includes a charge line with a 99 HSN as a service', async () => {
-    const b = await buildEinvoice(db({ lines: [{}, { charge_line: true, item_id: null, item_name: 'Freight', hsn_sac: '9965', quantity: 1, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 }] }), 'biz', 'inv');
+    const b = await buildEinvoice(db({ lines: [{}, { charge_line: true, item_id: null, item_name: 'Freight', hsn_sac: '996511', quantity: 1, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 }] }), 'biz', 'inv');
     expect(b.problems).toEqual([]);
     const items = (b.payload as any).item_list;
     expect(items).toHaveLength(2);
-    expect(items[1]).toMatchObject({ item_serial_number: '2', product_description: 'Freight', is_service: 'Y', hsn_code: '9965' });
+    expect(items[1]).toMatchObject({ item_serial_number: '2', product_description: 'Freight', is_service: 'Y', hsn_code: '996511' });
   });
 
   it('adds ewaybill_details only when asked, and refuses when there are no goods', async () => {
@@ -263,9 +269,9 @@ describe('buildEinvoice', () => {
       ewb: { distanceKm: 300, transport: { mode: 'rail', docNumber: 'RR77', docDate: '2026-10-03', isOdc: true } },
     })).payload;
     expect(rail.ewaybill_details).toMatchObject({ transportation_mode: '2', transporter_document_number: 'RR77', transporter_document_date: '03/10/2026', vehicle_type: 'O' });
-    const svc = await buildEinvoice(db({ lines: [{ hsn_sac: '9983' }] }), 'biz', 'inv', { ewb });
+    const svc = await buildEinvoice(db({ lines: [{ hsn_sac: '998311' }] }), 'biz', 'inv', { ewb });
     expect(msgs(svc)).toEqual(['An e-way bill needs at least one goods line']);
-    expect((await buildEinvoice(db({ lines: [{ hsn_sac: '9983' }] }), 'biz', 'inv')).problems).toEqual([]);
+    expect((await buildEinvoice(db({ lines: [{ hsn_sac: '998311' }] }), 'biz', 'inv')).problems).toEqual([]);
   });
 
   it('adds dispatch_details only when goods leave from another pincode', async () => {
@@ -289,7 +295,7 @@ describe('buildEinvoice', () => {
       expect([i.quantity, i.unit_price, i.total_amount]).toEqual([14400, 83.333, 1200000]);
     });
     it('sends the amount as the price for a service line without a quantity', async () => {
-      const i = await one({ hsn_sac: '9965', quantity: 0, unit_price: 0, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 });
+      const i = await one({ hsn_sac: '996511', quantity: 0, unit_price: 0, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 });
       expect([i.quantity, i.unit_price, i.total_amount]).toEqual([0, 100, 100]);
     });
     it('falls back to the line unit when the item has no UQC, then to OTH', async () => {
