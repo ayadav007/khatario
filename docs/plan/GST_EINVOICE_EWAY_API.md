@@ -1,6 +1,6 @@
 # e-Invoice (IRN) and e-way bills through Masters India
 
-Status: planned, nothing built. Written 27 Nov 2026 from the two Masters India enterprise API PDFs
+Status: Plan 1 and Plan 2 built, reviewed task by task, not deployed (see the status sections at the end). Written 27 Nov 2026 from the two Masters India enterprise API PDFs
 (`Einvoice API_EnterpriseDoc.pdf`, `EWB_API_EnterpriseDoc_Updated.pdf`, owner's Downloads folder; not
 in the repo because the e-invoice PDF carries a sandbox username and password in plain text).
 
@@ -151,3 +151,26 @@ What the sandbox showed (recorded in `tests/fixtures/gsp/`):
 `tests/lib/gst/return-helpers.test.ts` (3 tests on `balance_amount`), a `capability-normalizer` test, and
 `invoice-audit-coverage` flagging `app/api/stock-transfers/[id]/dispatch/route.ts`. The final review confirmed by
 reading imports that nothing in this range can cause them; nobody ran them on the commit before this work.
+
+## Plan 2 status (28 Nov 2026): built, reviewed task by task, not deployed
+
+12 commits on main, `17b1468a` to `1f184f4b`, not pushed. Migration `478_einvoice_irn.sql` (IRN columns on `invoices`, `einvoice_from` on businesses and branches, the `max_einvoices_per_month` limit) written and applied to the disposable test database only. Staging steps:
+`docs/superpowers/plans/2026-11-27-e-invoice-irn-staging-checklist.md`. **Deploy order: migration 478 before the code**, applied by a person with the owner's approval. The migration builds a unique index on `invoices` with a plain `CREATE UNIQUE INDEX`, which blocks invoice writes while it builds: apply it at a quiet time, or split that statement out as `CREATE UNIQUE INDEX CONCURRENTLY` for production. Every plan with the `e_invoice` feature gets an unlimited monthly count for now (the feature gate is the real control until Masters India pricing is known). The final whole-branch review was still to run when this was written; it will be noted here after it.
+
+What the sandbox showed (recorded in `tests/fixtures/gsp/`, 10 of 12 allowed calls used):
+- The e-invoice sandbox GSTIN needs a 6-digit HSN (NIC rule 2311, for turnover of 5 crore and above). The builder checks for 6 or 8 digits before calling.
+- A repeated document is not rejected: it returns the same IRN with an alert, `IRN already generated on this document number`. Khatario detects a repeat from that text and stores the IRN only when the portal's copy matches this invoice's number, date and seller GSTIN and is active.
+- Some fields are missing from replies: no PDF link or request number on a get-by-document, no request number on an e-way bill by IRN, and the details field is empty on every call, so the partial-success case (IRN issued, e-way part failed) is tested only with a made-up body.
+- A seller PIN code of 999999 is refused (2276); a missing document is code 2154.
+
+### Before production (open)
+
+1. Confirm on the live portal: whether a repeated document is refused (code 2150 is assumed, never seen) or returns the existing IRN; all four cancel reason codes (one was tried); whether the e-way bill made through the IRN carries the ship-to address (the app sends only distance and transport details); whether a cancelled invoice number can be reused (the app refuses it before asking).
+2. Scan the printed QR with the government's verification app. It holds about a thousand characters, drawn 30 mm on paper and 132 px on screen; scan-ability was never checked. The 30 mm block layout on each template was never seen in a browser either.
+3. Product decision for the owner: amending an invoice is allowed once its e-invoice is cancelled. Decide whether that should stay.
+4. Printing: credit note, debit note, delivery challan, work order and the other templates do not print the IRN. The seven A4 sales templates, tally, distributor, export, bill of supply and the two thermal templates do. Plan 3 audits the rest.
+5. Double clicks and limits: there is no in-flight claim, so two quick requests (two tabs) make two portal calls and a second history entry, and the monthly limit can be passed by requests in flight. The panel itself greys its buttons while a request runs.
+6. Empty e-way number: `PATCH /api/invoices/[id]/eway` accepts an empty number and clears the invoice's number even while an API-made bill is active in the register. The screen no longer sends it by mistake, but the server has no guard (predates this work).
+7. Recovery gaps: on a retry where the repeated result has no e-way part, an e-way bill the portal already issued is not recorded, and the warning says the portal did not say why; a recheck after 24 hours stores the time of the check, not the portal's cancel time; a rejected cancel looks the document up again on every refusal until the "already cancelled" codes are confirmed.
+8. Smaller code items: a goods quantity under 0.0005 rounds to 0 in the payload; a typed export ship-to place, PIN and state are not validated by the builder; document types are excluded by a deny-list, not an allow-list; the closed-branch start date still resolves; `miGenerateEwbByIrn` accepts an empty `EwbNo`; the same wording is repeated in two files; the panel is mounted twice on the view page (4 to 6 extra requests per view); Fix links have no return target and no accessible names; no component-level test of the panel; some database tests depend on order and shared state; route tests mock authorization and the plan gate.
+9. Screens were type-checked only and never seen in a browser. Masters India pricing, partner terms, production URL and go-live are still open.

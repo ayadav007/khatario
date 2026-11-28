@@ -172,6 +172,42 @@ The **History** tab on an invoice lists every saved change, newest first: creati
 - **Warehouse required**: select a receiving or issuing warehouse if stock is warehouse-based.
 - **Permission denied**: ask an admin to grant invoice create/edit/finalize permission.
 
+### E-invoice (IRN)
+
+Businesses whose turnover crossed ₹5 crore in any year since 2017-18 must give each B2B, export and SEZ tax invoice an e-invoice. The government portal replies with an IRN (invoice reference number), an acknowledgement number and date, and a QR code. Without them the invoice is not valid for your customer's tax credit. Khatario can generate it for you through Masters India, so you do not have to use the portal.
+
+**One-time setup**
+
+1. Sign up with Masters India, add your GSTIN there, and create the API user for Masters India on the government e-invoice portal (Masters India guides you).
+2. In Khatario go to **Settings > Integrations > GST e-invoice and e-way bill (Masters India)** and connect with your Masters India login. This is not your government portal login.
+3. On the same page, in the **E-invoicing** box, set **E-invoicing applies from** for each GSTIN. Invoices dated before that day never show an e-invoice. Leave it blank if e-invoicing does not apply to you.
+
+Your plan must include e-invoices.
+
+**Generate an e-invoice**
+
+1. Open a final invoice (not a draft) and look at the **E-invoice** box. It shows a red **E-invoice pending**.
+2. If it lists problems (for example an item without a 6-digit HSN code, or a customer without an address), press **Fix** beside each, correct it, and come back. **Generate e-invoice** stays greyed out until the list is empty.
+3. Press **Generate e-invoice**. The box turns green and shows the IRN, Ack No, Ack Date and QR.
+
+An invoice to a customer without a GSTIN (B2C), or dated before the start date, shows no E-invoice box.
+
+**E-way bill with it (optional)**
+
+If the invoice has goods, **Also create the e-way bill** appears and is ticked when the goods are worth over ₹50,000. Enter the distance and transport details. If the e-way bill fails but the e-invoice works, you get the IRN and a warning; generate the e-way bill later from the e-way bill box on the invoice.
+
+**Cancel an e-invoice**
+
+You can cancel only within 24 hours of generating it. Press **Cancel e-invoice**, choose a reason, add remarks and confirm. The invoice number cannot be used for another e-invoice, so make a new invoice if you need one. If the invoice has an active e-way bill, cancel that first. After 24 hours the Cancel button is replaced by **Check status on the portal**, and a credit note is how you correct the invoice.
+
+**Why the invoice is locked**
+
+An invoice with an active e-invoice has been filed, so its lines, totals, customer, number and date cannot change. **Amend** and **Cancel Invoice** (and the Edit pencil on a phone) are greyed out with a message. You can still record payments.
+
+**What prints**
+
+The printed or PDF invoice shows the QR, the IRN, the Ack No and the Ack Date, on the A4 sales templates and the thermal ones. Credit notes, debit notes and delivery challans do not show an IRN yet. A cancelled e-invoice prints no IRN block.
+
 ### Proforma invoice, quotation, and sales order
 
 Use **Quotations** or **Proforma invoices** when you are giving a price before the sale is confirmed. Use **Sales orders** after the customer accepts the order. Convert or copy them into a tax invoice when the sale is finalized according to your process.
