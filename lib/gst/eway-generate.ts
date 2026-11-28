@@ -194,14 +194,14 @@ export async function generateEwayBillViaGsp(
     if (inv.status !== 'final' || inv.deleted_at || NOT_EWAY_INVOICE_TYPES.includes(String(inv.document_type || ''))) {
       throw new EwayBillInputError('Only a final invoice can get an e-way bill', 409, 'NOT_ELIGIBLE');
     }
-    if (einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id))) {
+    // An active IRN always carries the e-way bill, even if the start date was moved later since it was issued.
+    if (inv.irn_status === 'active' && inv.irn) {
+      irn = inv.irn;
+    } else if (einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id))) {
       if (inv.irn_status === 'cancelled') {
         throw new EwayBillInputError('The e-invoice for this invoice was cancelled, so an e-way bill cannot be made for it.', 409, 'IRN_CANCELLED');
       }
-      if (inv.irn_status !== 'active' || !inv.irn) {
-        throw new EwayBillInputError('Generate the e-invoice for this invoice first. Its e-way bill comes through the e-invoice.', 409, 'IRN_REQUIRED');
-      }
-      irn = inv.irn;
+      throw new EwayBillInputError('Generate the e-invoice for this invoice first. Its e-way bill comes through the e-invoice.', 409, 'IRN_REQUIRED');
     }
   } else {
     const dc = (

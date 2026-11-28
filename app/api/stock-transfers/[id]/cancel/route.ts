@@ -5,6 +5,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
+import { irnLock } from '@/lib/gst/einvoice-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,6 +103,16 @@ export async function PATCH(
         },
         { status: 409 }
       );
+    }
+
+    // An inter-branch invoice with an active e-invoice (IRN) is cancelled only after its IRN is; checked before any write.
+    if (transfer.inter_branch_invoice_id) {
+      const irnLocked = await irnLock(client, transfer.business_id, transfer.inter_branch_invoice_id);
+      if (irnLocked) {
+        await client.query('ROLLBACK');
+        inTransaction = false;
+        return NextResponse.json(irnLocked, { status: 409 });
+      }
     }
 
     if (transfer.status === 'in_transit') {

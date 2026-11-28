@@ -35,7 +35,7 @@ import * as auditContext from '@/lib/invoices/invoice-audit-context';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import type { MiIrnResult } from '@/lib/gsp/mastersindia/einvoice';
 import type { MiEwayDetails, MiEwayResult } from '@/lib/gsp/mastersindia/eway';
-import { cancelIrn, type EinvoiceDeps } from '@/lib/gst/einvoice';
+import { cancelIrn, getEinvoiceView, type EinvoiceDeps } from '@/lib/gst/einvoice';
 import { IRN_LOCK_MESSAGE, irnLock } from '@/lib/gst/einvoice-lock';
 import { generateEwayBillViaGsp, type EwayGenerateDeps } from '@/lib/gst/eway-generate';
 
@@ -54,6 +54,9 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
   const ids = Array.from({ length: 16 }, () => randomUUID());
   const [invoiceId, oldAckId, ewayActiveId, noIrnId, timeoutCnlId, timeoutActId, rejectedId, notSavedId,
     lockedInvoiceId, irnCancelledId, irnInvoiceId, b2cInvoiceId, irnCancelledEwayId, irnTimeoutEwayId, otherDocId] = ids;
+  // Fix round 1: start date moved later, 25-hour rechecks, inter-branch invoice of a stock transfer.
+  const [movedStartId, lateCnlId, lateActId, transferInvoiceId] = Array.from({ length: 4 }, () => randomUUID());
+  const [warehouse1, warehouse2, transferId] = Array.from({ length: 3 }, () => randomUUID());
 
   /** Today in India, YYYY-MM-DD. */
   const todayIso = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -179,6 +182,20 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
     await seedInvoice(irnCancelledEwayId, 13, { irn: 'cancelled' });
     await seedInvoice(irnTimeoutEwayId, 14, { irn: 'active' });
     await seedInvoice(otherDocId, 15, { irn: 'active' });
+    await seedInvoice(movedStartId, 16, { irn: 'active' });
+    await seedInvoice(lateCnlId, 17, { irn: 'active', ackHoursAgo: 25 });
+    await seedInvoice(lateActId, 18, { irn: 'active', ackHoursAgo: 25 });
+    await seedInvoice(transferInvoiceId, 19, { irn: 'active' });
+    await pool.query(
+      `INSERT INTO warehouses (id, business_id, branch_id, name, warehouse_type, is_active)
+       VALUES ($1, $3, $4, 'Bengaluru godown', 'physical', true), ($2, $3, $4, 'Mysuru godown', 'physical', true)`,
+      [warehouse1, warehouse2, businessId, branchId],
+    );
+    await pool.query(
+      `INSERT INTO stock_transfers (id, business_id, transfer_number, transfer_date, status, from_location_id, to_location_id, inter_branch_invoice_id)
+       VALUES ($1, $2, $3, $4::date, 'pending', $5, $6, $7)`,
+      [transferId, businessId, `TR-${tag}`, todayIso, warehouse1, warehouse2, transferInvoiceId],
+    );
     await pool.query(
       `INSERT INTO eway_bills (business_id, source_type, source_id, ewb_number, distance_km, generated_at)
        VALUES ($1, 'invoice', $2, '301009218801', 120, NOW())`,
@@ -193,6 +210,7 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
       await client.query('BEGIN');
       await withLedgerDelete(client, 'tenant_purge', userId, async () => {
         await client.query(`DELETE FROM eway_bills WHERE business_id = $1`, [businessId]);
+        await client.query(`DELETE FROM stock_transfers WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM business_module_subscriptions WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM business_modules WHERE business_id = $1`, [businessId]);
         await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
@@ -254,6 +272,36 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
         message: 'An e-invoice can be cancelled only within 24 hours. Issue a credit note instead.',
       });
       expect(d1.cancel).not.toHaveBeenCalled();
+    });
+
+    it('past 24 hours, stores a cancellation the portal already shows, without calling cancel or needing a reason', async () => {
+      const d1 = deps({ getByDocument: jest.fn(async () => found(17)) });
+      const v = await cancelIrn(businessId, userId, lateCnlId, { reason: '' as any, remarks: '' }, d1);
+      expect(d1.cancel).not.toHaveBeenCalled();
+      expect(d1.getByDocument).toHaveBeenCalledWith(creds, { gstin: sellerGstin, docNumber: docNo(17), docDate: dmy(todayIso) });
+      expect([v.status, v.can_cancel, v.can_recheck]).toEqual(['cancelled', false, false]);
+      expect(await rowOf(lateCnlId)).toMatchObject({ irn: irnOf(17), irn_status: 'cancelled', irn_cancel_reason: null });
+    });
+
+    it('past 24 hours, refuses when the portal shows the IRN still active, without calling cancel', async () => {
+      const d1 = deps({ getByDocument: jest.fn(async () => found(18, { status: 'ACT' })) });
+      await expect(cancelIrn(businessId, userId, lateActId, reason, d1)).rejects.toMatchObject({ code: 'CANCEL_WINDOW_CLOSED', status: 409 });
+      expect(d1.getByDocument).toHaveBeenCalledTimes(1);
+      expect(d1.cancel).not.toHaveBeenCalled();
+      // A failed lookup or no saved login gives the same answer.
+      const d2 = deps({ getByDocument: jest.fn(async () => { throw new GspError('timeout', 'slow'); }) });
+      await expect(cancelIrn(businessId, userId, lateActId, reason, d2)).rejects.toMatchObject({ code: 'CANCEL_WINDOW_CLOSED' });
+      const d3 = deps({ loadCredentials: async () => null });
+      await expect(cancelIrn(businessId, userId, lateActId, reason, d3)).rejects.toMatchObject({ code: 'CANCEL_WINDOW_CLOSED' });
+      expect(d2.cancel).not.toHaveBeenCalled();
+      expect(d3.getByDocument).not.toHaveBeenCalled();
+      expect((await rowOf(lateActId)).irn_status).toBe('active');
+    });
+
+    it('offers a status check only for an active IRN past the window', async () => {
+      expect(await getEinvoiceView(businessId, lateActId)).toMatchObject({ status: 'active', can_cancel: false, can_recheck: true });
+      expect(await getEinvoiceView(businessId, otherDocId)).toMatchObject({ status: 'active', can_cancel: true, can_recheck: false });
+      expect(await getEinvoiceView(businessId, noIrnId)).toMatchObject({ status: 'none', can_recheck: false });
     });
 
     it('refuses while the invoice has an active e-way bill', async () => {
@@ -399,6 +447,15 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
       expect(await rowOf(irnCancelledId)).toMatchObject({ status: 'cancelled', irn: irnOf(10), irn_status: 'cancelled' });
     });
 
+    it('the stock transfer cancel refuses when its inter-branch invoice has an active IRN, and writes nothing', async () => {
+      const { PATCH } = await import('@/app/api/stock-transfers/[id]/cancel/route');
+      const res = await PATCH(req(`/api/stock-transfers/${transferId}/cancel`, 'PATCH', { cancellation_reason: 'Wrong godown' }), { params: { id: transferId } });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: IRN_LOCK_MESSAGE, code: 'IRN_LOCKED' });
+      expect((await pool.query(`SELECT status FROM stock_transfers WHERE id = $1`, [transferId])).rows[0].status).toBe('pending');
+      expect(await rowOf(transferInvoiceId)).toMatchObject({ status: 'final', irn_status: 'active' });
+    });
+
     it('still records an e-way bill number on an IRN invoice', async () => {
       const { PATCH } = await import('@/app/api/invoices/[id]/eway/route');
       const res = await PATCH(req(`/api/invoices/${lockedInvoiceId}/eway`, 'PATCH', { eway_bill_number: '331234567890', eway_bill_date: todayIso }), {
@@ -420,6 +477,16 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
 
       it('says not found for an invoice of another business', async () => {
         expect((await del(randomUUID(), JSON.stringify(reason))).status).toBe(404);
+      });
+
+      it('takes an empty reason as a status check past the window', async () => {
+        // No saved Masters India login for this business, so the check answers that the window has closed.
+        for (const body of ['', JSON.stringify({ reason: '', remarks: '' })]) {
+          const r = await del(lateActId, body);
+          expect([r.status, r.json.code]).toEqual([409, 'CANCEL_WINDOW_CLOSED']);
+        }
+        const r2 = await del(lockedInvoiceId, '');
+        expect([r2.status, r2.json.code]).toEqual([400, 'REMARKS_REQUIRED']);
       });
 
       it('passes the body to the cancel and returns its refusal', async () => {
@@ -476,6 +543,20 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
       expect([v.generated_via, v.ewb_number]).toEqual(['irn', '401008880914']);
       expect(d1.generate).not.toHaveBeenCalled();
       expect(d1.findByDocument).toHaveBeenCalledTimes(1);
+    });
+
+    it('an invoice with an active IRN goes through the IRN even after the start date was moved later', async () => {
+      const ewbByIrn = jest.fn(async () => ({ number: '401008880916', generatedAt: new Date(), validUntil: null, printUrl: null }));
+      const generate = jest.fn();
+      await pool.query(`UPDATE businesses SET einvoice_from = $2::date + 30 WHERE id = $1`, [businessId, todayIso]);
+      try {
+        const v = await generateEwayBillViaGsp(businessId, userId, { source_type: 'invoice', source_id: movedStartId, distance_km: 256, vehicle_number: 'KA01AB1234' }, { ...ewayDeps, generate, ewbByIrn });
+        expect(v.generated_via).toBe('irn');
+      } finally {
+        await pool.query(`UPDATE businesses SET einvoice_from = $2::date - 10 WHERE id = $1`, [businessId, todayIso]);
+      }
+      expect(ewbByIrn).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
     });
 
     it('asks for the e-invoice first when the invoice is covered but has no IRN', async () => {

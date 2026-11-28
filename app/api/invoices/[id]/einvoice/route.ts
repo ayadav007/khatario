@@ -95,7 +95,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
 
 /**
  * DELETE /api/invoices/[id]/einvoice: cancel the IRN at the portal (within 24 hours) and mark it cancelled.
- * Body: { reason: 'duplicate' | 'data_entry' | 'order_cancelled' | 'others', remarks }. The invoice itself is not
+ * Body: { reason: 'duplicate' | 'data_entry' | 'order_cancelled' | 'others', remarks }. Past the 24-hour window the
+ * reason may be empty: the portal is only asked whether the IRN was already cancelled there. The invoice itself is not
  * cancelled; that is done afterwards through the invoice's cancel route. The business and user come from the session only.
  */
 export async function DELETE(request: NextRequest, { params }: Ctx) {
@@ -104,11 +105,15 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
     if (!auth.ok) return auth.response;
     const planDenied = await denyIfFeatureMissing(auth.businessId, 'e_invoice');
     if (planDenied) return planDenied;
-    let body: any;
-    try {
-      body = JSON.parse(await request.text());
-    } catch {
-      return NextResponse.json({ error: 'The request could not be read.', code: 'BAD_REQUEST' }, { status: 400 });
+    // An empty body or an empty reason is a status check: accepted only once the cancel window has closed.
+    const raw = await request.text();
+    let body: any = {};
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return NextResponse.json({ error: 'The request could not be read.', code: 'BAD_REQUEST' }, { status: 400 });
+      }
     }
     const einvoice = await cancelIrn(auth.businessId, auth.userId, params.id, { reason: body?.reason, remarks: body?.remarks });
     return NextResponse.json({ einvoice });
