@@ -182,3 +182,18 @@ What the sandbox showed (recorded in `tests/fixtures/gsp/`):
 13. Other recovery gaps: a recheck after 24 hours stores the time of the check, not the portal's cancel time; a rejected cancel looks the document up again on every refusal until the "already cancelled" codes are confirmed.
 14. Smaller code items: a goods quantity under 0.0005 rounds to 0 in the payload; a typed export ship-to place, PIN and state are not validated by the builder; document types are excluded by a deny-list, not an allow-list; the closed-branch start date still resolves; `miGenerateEwbByIrn` accepts an empty `EwbNo`; the panel is mounted twice on the view page (4 to 6 extra requests per view); Fix links have no return target and no accessible names; no component-level test of the panel; some database tests depend on order and shared state; route tests mock authorization and the plan gate; the composer does not yet require a 6-digit HSN for a B2B invoice of a GSTIN covered by e-invoicing (the e-invoice box catches it after finalising).
 15. Screens were type-checked only and never seen in a browser. Masters India pricing, partner terms, production URL and go-live are still open.
+16. Left open by the last check of the fix wave (all small, none blocks staging):
+    - When generating an e-invoice replaces a short HSN on a final invoice with the item's 6-digit code, the GST readiness figures (GSTR-1 HSN summary) are not marked for recalculation (`lib/gst/einvoice.ts`, the `einvoice_hsn` savepoint; amend already does this with `markGstReadinessStale`).
+    - The HSN refresh uses the item's code as it is today, which may have changed since the sale.
+    - A courier (Shiprocket) cancel that is refused because the invoice has an active e-invoice is silent: no log, no note on the order, and the tracking update in the same event is dropped. The merchant is not told to cancel the e-invoice.
+    - An e-way bill created together with the IRN is recorded in Khatario's register with the old short HSN when the HSN was refreshed in the same click. The portal's copy is right.
+    - A typed ship-to GSTIN keeps the buyer's legal name in the e-invoice's ship-to details.
+    - Store and online-order invoices are offered an e-invoice only when the customer record has a GSTIN.
+    - Stock transfer cancel checks the e-invoice lock on its own, outside the shared cancel function's row lock.
+    - An item that was deleted and has a short HSN still gets a Fix link.
+    - Old rows in `invoices` with a document type of credit note, debit note, quotation or estimate, no supply type and a GSTIN would be offered an e-invoice (no current code writes such rows).
+    - The composer does not yet demand a 6-digit HSN at finalise for a GSTIN with an e-invoicing start date; the e-invoice box asks for it afterwards.
+
+### Test failures seen at the end of Plan 2 that this work does not cause
+
+Besides the three listed under Plan 1: 15 tests in the database suites `phase4-4`, `store-order-safety` and `sell-in-alternate-units`, and one in `phase3-4` (403 when creating an invoice, and a payment reversal code mismatch). They fail the same way on the commit before the final fix wave, and the last review traced each to code older than Plan 2. Nobody has fixed them.
