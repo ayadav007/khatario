@@ -7,9 +7,9 @@ import { runWithInvoiceAudit } from '@/lib/invoices/invoice-audit-context';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { EwayBillInputError } from '@/lib/gst/eway-bills';
 import { createEwayBill } from '@/lib/gst/eway-bill-records';
-import { buildEwayBill, type NicEwayBill } from '@/lib/gst/eway-json';
-import { toParsed, transportOf } from '@/lib/gst/eway-generate';
-import { einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
+import { buildEwayBill, type NicEwayBill, type ShipToPlace } from '@/lib/gst/eway-json';
+import { shipToOf, toParsed, transportOf } from '@/lib/gst/eway-generate';
+import { effectiveSupplyType, einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
@@ -55,9 +55,15 @@ export type EinvoiceView = {
   /** When the e-invoice was cancelled (ISO), and the stored reason (`data_entry: remarks`), for the Cancelled badge. */
   cancelled_at: string | null;
   cancel_reason: string | null;
+  /**
+   * The goods go to an address that is not saved on the customer: the panel asks for the ship-to city, PIN code
+   * and state, and Generate sends them. Not listed in `problems`, so Generate stays available.
+   */
+  ship_to_needed: boolean;
 };
 
 export type EinvoiceEwb = { distanceKm: number; transport: EwayTransport };
+export type EinvoiceShipTo = { shipTo: ShipToPlace | null; shipToGstin: string | null };
 
 const CANCEL_WINDOW_MS = 24 * 3600e3;
 const MAX_ERROR_TEXT = 1000;
@@ -115,6 +121,24 @@ export function parseEinvoiceEwb(raw: unknown): EinvoiceEwb | null {
   return { distanceKm, transport };
 }
 
+/**
+ * The ship-to fields of the request body (`ship_to_place`, `ship_to_pincode`, `ship_to_state_code`, `ship_to_gstin`),
+ * with the names and checks of the e-way bill generator: the three place fields together or none.
+ */
+export function parseEinvoiceShipTo(raw: unknown): EinvoiceShipTo {
+  const b = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const str = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? String(v) : null);
+  let shipTo: ShipToPlace | null;
+  try {
+    shipTo = shipToOf({ ship_to_place: str(b.ship_to_place), ship_to_pincode: str(b.ship_to_pincode), ship_to_state_code: str(b.ship_to_state_code) });
+  } catch (e) {
+    if (e instanceof EwayBillInputError) throw new EinvoiceError(e.message, 400, 'INVALID_SHIP_TO');
+    throw e;
+  }
+  const shipToGstin = (str(b.ship_to_gstin) ?? '').trim().toUpperCase() || null;
+  return { shipTo, shipToGstin };
+}
+
 type InvoiceRow = {
   id: string; branch_id: string | null; status: string; document_type: string | null; supply_type: string | null;
   invoice_number: string; invoice_date: string; irn: string | null; irn_ack_no: string | null; irn_ack_date: Date | null; irn_signed_qr: string | null;
@@ -122,15 +146,21 @@ type InvoiceRow = {
   irn_cancelled_at: Date | null; irn_cancel_reason: string | null;
 };
 
+/** The invoice, with `supply_type` worked out when none was stored (see effectiveSupplyType). */
 async function readInvoice(pool: Pool, businessId: string, invoiceId: string): Promise<InvoiceRow | null> {
-  const r = await pool.query<InvoiceRow>(
-    `SELECT id, branch_id, status, document_type, supply_type, invoice_number, invoice_date::text AS invoice_date,
-            irn, irn_ack_no, irn_ack_date, irn_signed_qr, irn_status, irn_last_error,
-            irn_cancelled_at, irn_cancel_reason
-       FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+  const r = await pool.query<InvoiceRow & { is_export: boolean | null; place_of_supply_state_code: string | null; customer_gstin: string | null; customer_master_gstin: string | null }>(
+    `SELECT i.id, i.branch_id, i.status, i.document_type, i.supply_type, i.invoice_number, i.invoice_date::text AS invoice_date,
+            i.irn, i.irn_ack_no, i.irn_ack_date, i.irn_signed_qr, i.irn_status, i.irn_last_error,
+            i.irn_cancelled_at, i.irn_cancel_reason,
+            i.is_export, i.place_of_supply_state_code, i.customer_gstin, c.gstin AS customer_master_gstin
+       FROM invoices i
+       LEFT JOIN customers c ON c.id = i.customer_id AND c.business_id = i.business_id
+      WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
     [invoiceId, businessId],
   );
-  return r.rows[0] ?? null;
+  const row = r.rows[0];
+  if (!row) return null;
+  return { ...row, supply_type: effectiveSupplyType(row, row.customer_master_gstin) };
 }
 
 export async function getEinvoiceView(businessId: string, invoiceId: string): Promise<EinvoiceView | null> {
@@ -139,8 +169,10 @@ export async function getEinvoiceView(businessId: string, invoiceId: string): Pr
   if (!inv) return null;
   const applies = einvoiceApplies(inv, await einvoiceFromFor(pool, businessId, inv.branch_id));
   const status = inv.irn_status ?? 'none';
-  // A cancelled e-invoice cannot be made again on the same number, so there is nothing to fix.
-  const problems = applies && status === 'none' ? (await buildEinvoice(pool, businessId, invoiceId)).problems : [];
+  // A cancelled e-invoice cannot be made again on the same number, so there is nothing to fix. A missing ship-to
+  // place is asked for in the panel's own fields rather than listed as a problem.
+  const found = applies && status === 'none' ? (await buildEinvoice(pool, businessId, invoiceId)).problems : [];
+  const problems = found.filter((p) => p.field !== 'ship_to');
   const ackDate = inv.irn_ack_date ? new Date(inv.irn_ack_date) : null;
   const canCancel = status === 'active' && !!ackDate && Date.now() - ackDate.getTime() < CANCEL_WINDOW_MS;
   return {
@@ -157,8 +189,12 @@ export async function getEinvoiceView(businessId: string, invoiceId: string): Pr
     eway_warning: null,
     cancelled_at: status === 'cancelled' && inv.irn_cancelled_at ? new Date(inv.irn_cancelled_at).toISOString() : null,
     cancel_reason: status === 'cancelled' ? inv.irn_cancel_reason : null,
+    ship_to_needed: problems.length < found.length,
   };
 }
+
+/** YYYY-MM-DD in Indian time. */
+const indianDate = (d: Date) => new Date(d.getTime() + 5.5 * 3600e3).toISOString().slice(0, 10);
 
 /** True when a repeat or found IRN was issued for this very invoice and has the status asked for (still active by default). */
 function sameDocument(
@@ -178,7 +214,7 @@ export async function generateIrn(
   businessId: string,
   userId: string,
   invoiceId: string,
-  opts: { ewb?: EinvoiceEwb | null } = {},
+  opts: { ewb?: EinvoiceEwb | null; shipTo?: ShipToPlace | null; shipToGstin?: string | null } = {},
   deps: EinvoiceDeps = {},
 ): Promise<EinvoiceView> {
   const loadCredentials = deps.loadCredentials ?? loadGspCredentials;
@@ -186,6 +222,8 @@ export async function generateIrn(
   const getByDocument = deps.getByDocument ?? miGetIrnByDocument;
   const pool = getPool();
   const wantEwb = opts?.ewb ?? null;
+  const shipTo = opts?.shipTo ?? null;
+  const shipToGstin = opts?.shipToGstin ?? null;
 
   // 1. The invoice, in this business, without an e-invoice yet.
   const inv = await readInvoice(pool, businessId, invoiceId);
@@ -222,7 +260,9 @@ export async function generateIrn(
   if (!creds) throw new EinvoiceError('Connect your Masters India account in Settings, Integrations first.', 409, 'GSP_NOT_CONNECTED');
 
   // 4. The request body, or what to fix first.
-  const build = await buildEinvoice(pool, businessId, invoiceId, { ewb: wantEwb });
+  // The typed ship-to place goes into the IRN whether or not an e-way bill comes with it, so a later e-way bill
+  // made through the IRN carries the same place.
+  const build = await buildEinvoice(pool, businessId, invoiceId, { ewb: wantEwb, shipTo, shipToGstin });
   const ewbRefused = build.problems.find((p) => p.field === 'ewaybill');
   if (ewbRefused) throw new EinvoiceError(ewbRefused.message, 400, 'EWB_NOT_ALLOWED');
   if (build.problems.length || !build.payload || !build.sellerGstin) {
@@ -231,7 +271,7 @@ export async function generateIrn(
   let bill: NicEwayBill | null = null;
   if (wantEwb) {
     try {
-      bill = await buildEwayBill(pool, businessId, 'invoice', invoiceId, { distanceKm: wantEwb.distanceKm });
+      bill = await buildEwayBill(pool, businessId, 'invoice', invoiceId, { distanceKm: wantEwb.distanceKm, shipTo, shipToGstin });
     } catch (e) {
       if (e instanceof EwayBillInputError) {
         throw new EinvoiceError('Fix these before generating the e-invoice', 422, 'PRECHECK_FAILED', [{ field: 'ewaybill', message: e.message }]);
@@ -316,6 +356,7 @@ export async function generateIrn(
   // reaches the duplicate path and stores it.
   const issued = result;
   let ewbNotSaved: string | null = null;
+  let ewbNumberKept = false;
   try {
     await runWithInvoiceAudit({ actorUserId: userId, action: 'einvoice_generated' }, async (client) => {
       const u = await client.query(
@@ -328,6 +369,20 @@ export async function generateIrn(
         [invoiceId, businessId, issued.irn, issued.ackNo, issued.ackDate, issued.signedQr, issued.signedInvoice],
       );
       if (!u.rowCount) throw new Error('invoice changed before the e-invoice was stored');
+      if (build.hsnRefresh.length) {
+        // The IRN carries the item's current HSN for lines whose own copy was short: the printed invoice must match.
+        // Never at the cost of the IRN: on failure only these line writes are undone.
+        await client.query('SAVEPOINT einvoice_hsn');
+        try {
+          for (const h of build.hsnRefresh) {
+            await client.query(`UPDATE invoice_items SET hsn_sac = $3 WHERE id = $1 AND invoice_id = $2`, [h.lineId, invoiceId, h.hsn]);
+          }
+          await client.query('RELEASE SAVEPOINT einvoice_hsn');
+        } catch (hsnError: any) {
+          await client.query('ROLLBACK TO SAVEPOINT einvoice_hsn');
+          console.error('[einvoice] HSN sent with the IRN not written to the invoice lines', { invoiceId, error: hsnError?.code ?? null });
+        }
+      }
       if (issued.ewb && bill && wantEwb) {
         // The e-way bill must never cost the IRN: on any failure only its own writes are undone.
         await client.query('SAVEPOINT einvoice_ewb');
@@ -350,6 +405,20 @@ export async function generateIrn(
           await client.query('ROLLBACK TO SAVEPOINT einvoice_ewb');
           console.error('[einvoice] e-way bill issued with the IRN but not saved', { invoiceId, error: ewbError?.code ?? null });
           ewbNotSaved = issued.ewb.number;
+          // Keep the portal's number on the invoice so it survives a reload and prints; its own savepoint, so even
+          // a number the column refuses never costs the IRN.
+          await client.query('SAVEPOINT einvoice_ewb_number');
+          try {
+            await client.query(
+              `UPDATE invoices SET eway_bill_number = $3, eway_bill_date = COALESCE($4::date, eway_bill_date), updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1 AND business_id = $2`,
+              [invoiceId, businessId, issued.ewb.number, issued.ewb.generatedAt ? indianDate(new Date(issued.ewb.generatedAt)) : null],
+            );
+            await client.query('RELEASE SAVEPOINT einvoice_ewb_number');
+            ewbNumberKept = true;
+          } catch {
+            await client.query('ROLLBACK TO SAVEPOINT einvoice_ewb_number');
+          }
         }
       }
     });
@@ -372,7 +441,9 @@ export async function generateIrn(
   // 8. The stored state, with a warning when the e-way bill asked for did not come.
   const view = (await getEinvoiceView(businessId, invoiceId)) as EinvoiceView;
   if (ewbNotSaved) {
-    view.eway_warning = `E-invoice generated. The e-way bill ${ewbNotSaved} was created on the portal but could not be saved here. Add it to the invoice by hand.`;
+    view.eway_warning = `E-invoice generated. The e-way bill ${ewbNotSaved} was created on the portal but could not be saved here. ${
+      ewbNumberKept ? 'The number is saved on the invoice.' : 'Add it to the invoice by hand.'
+    }`;
   } else if (wantEwb && !issued.ewb) {
     view.eway_warning = 'E-invoice generated. The e-way bill was not: ' + (issued.ewbError ?? 'the portal did not say why.');
   }

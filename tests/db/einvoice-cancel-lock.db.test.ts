@@ -38,6 +38,8 @@ import type { MiEwayDetails, MiEwayResult } from '@/lib/gsp/mastersindia/eway';
 import { cancelIrn, getEinvoiceView, type EinvoiceDeps } from '@/lib/gst/einvoice';
 import { IRN_LOCK_MESSAGE, irnLock } from '@/lib/gst/einvoice-lock';
 import { generateEwayBillViaGsp, type EwayGenerateDeps } from '@/lib/gst/eway-generate';
+import * as einvoiceLock from '@/lib/gst/einvoice-lock';
+import { cancelPostedInvoiceInTransaction } from '@/lib/invoices/cancel-final-invoice';
 
 d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)', () => {
   jest.setTimeout(120000);
@@ -441,6 +443,33 @@ d('cancel the IRN, lock the invoice, e-way bill through the IRN (kh_phase2_test)
       const res = await callRoute(route, lockedInvoiceId);
       expect(res.status).toBe(409);
       expect(await res.json()).toEqual({ error: IRN_LOCK_MESSAGE, code: 'IRN_LOCKED' });
+      expect(await rowOf(lockedInvoiceId)).toMatchObject({ status: 'final', irn_status: 'active' });
+    });
+
+    it('the invoice cancel itself refuses an active IRN under its row lock, whatever path calls it', async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await expect(
+          cancelPostedInvoiceInTransaction(client, { invoiceId: lockedInvoiceId, businessId, userId, reason: 'Wrong customer' }),
+        ).rejects.toMatchObject({ code: 'IRN_LOCKED', statusCode: 409, message: IRN_LOCK_MESSAGE });
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+      expect(await rowOf(lockedInvoiceId)).toMatchObject({ status: 'final', irn_status: 'active' });
+    });
+
+    it('the cancel route shows the lock message, not a server error, when the IRN arrives after its first check', async () => {
+      // The route's own check sees no IRN (as if the IRN was stored a moment later); the locked re-check refuses.
+      const spy = jest.spyOn(einvoiceLock, 'irnLock').mockResolvedValueOnce(null);
+      try {
+        const res = await callRoute('cancel', lockedInvoiceId);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: IRN_LOCK_MESSAGE, code: 'IRN_LOCKED' });
+      } finally {
+        spy.mockRestore();
+      }
       expect(await rowOf(lockedInvoiceId)).toMatchObject({ status: 'final', irn_status: 'active' });
     });
 

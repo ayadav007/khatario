@@ -5,6 +5,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import {
   cancelPostedInvoiceInTransaction,
+  InvoiceCancelError,
   releaseWorkOrderAfterInvoiceCancel,
 } from '@/lib/invoices/cancel-final-invoice';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
@@ -177,6 +178,10 @@ export async function PATCH(
 
     return NextResponse.json({ invoice: updated });
   } catch (error: any) {
+    // A refusal from the locked re-check (for example an e-invoice stored a moment ago) is shown as written.
+    if (error instanceof InvoiceCancelError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+    }
     console.error('Cancel error', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }

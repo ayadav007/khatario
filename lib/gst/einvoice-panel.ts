@@ -2,7 +2,7 @@
 // Pure (no fetch, no React), so every state and every error the panel can meet is unit tested.
 import type { EinvoiceView } from '@/lib/gst/einvoice';
 import type { EinvoiceProblem } from '@/lib/gsp/mastersindia/einvoice-payload';
-import { validateEwayForm, type EwayForm, type EwayFormErrors } from '@/lib/gst/eway-generate-form';
+import { validateEwayForm, validateShipTo, type EwayForm, type EwayFormErrors, type ShipToBody } from '@/lib/gst/eway-generate-form';
 
 export const EWAY_GOODS_LIMIT = 50000;
 export const PENDING_NOTE = "This invoice is not valid for your customer's tax credit until its e-invoice is generated.";
@@ -39,8 +39,11 @@ export function cancelReasonText(stored: string | null | undefined): string | nu
   return rest ? `${label}: ${rest}` : label;
 }
 
-/** Where the Fix link of a problem goes; null when its target has no id (no broken link). */
-export function problemFixHref(problem: EinvoiceProblem, documentType: string): string | null {
+/**
+ * Where the Fix link of a problem goes; null when its target has no id (no broken link), and always null for the
+ * invoice itself: a final invoice cannot be edited, so those problems say in words what to do instead.
+ */
+export function problemFixHref(problem: EinvoiceProblem, _documentType?: string): string | null {
   const fix = problem.fix;
   if (!fix) return null;
   if (fix.kind === 'business') return '/settings/business';
@@ -51,8 +54,8 @@ export function problemFixHref(problem: EinvoiceProblem, documentType: string): 
       return `/customers/${id}/edit`;
     case 'item':
       return `/items/new?edit=${id}`;
-    case 'invoice':
-      return `/invoices/new?edit=${id}&type=${encodeURIComponent(documentType || 'tax_invoice')}`;
+    case 'branch':
+      return `/settings/branches/${id}/edit`;
     default:
       return null;
   }
@@ -109,6 +112,8 @@ export type PanelState =
       generateDisabled: boolean;
       showEwbOption: boolean;
       ewbPreTicked: boolean;
+      /** The goods go to an address not saved on the customer: ask for the ship-to city, PIN code and state. */
+      showShipTo: boolean;
       irn: string | null;
       ackNo: string | null;
       ackDate: string | null;
@@ -148,6 +153,7 @@ export function einvoicePanelState(view: EinvoiceView | null, facts: PanelFacts)
     generateDisabled: problems.length > 0,
     showEwbOption,
     ewbPreTicked: showEwbOption && facts.goodsValue > EWAY_GOODS_LIMIT,
+    showShipTo: pending && view.applies && view.ship_to_needed === true,
     irn: view.status === 'none' ? null : view.irn,
     ackNo: view.status === 'active' ? view.ack_no : null,
     ackDate: view.status === 'active' ? formatIndianDate(view.ack_date) : null,
@@ -173,7 +179,7 @@ export type EinvoiceEwbBody = {
 };
 
 export function einvoiceEwbRequest(form: EwayForm): { ok: true; body: EinvoiceEwbBody } | { ok: false; errors: EwayFormErrors } {
-  // Ship-to is not part of this request: the e-way bill made with the IRN goes to the invoice's own address.
+  // Ship-to is sent next to `ewb` (see einvoiceGenerateRequest), only when the server asks for it.
   const r = validateEwayForm({ ...form, shipToGstin: '', shipToPlace: '', shipToPincode: '', shipToStateCode: '' });
   if (!r.ok) return r;
   const b = r.body;
@@ -188,6 +194,29 @@ export function einvoiceEwbRequest(form: EwayForm): { ok: true; body: EinvoiceEw
   if (b.transport_doc_number) ewb.transport_doc_number = b.transport_doc_number;
   if (b.transport_doc_date) ewb.transport_doc_date = b.transport_doc_date;
   return { ok: true, body: { ewb } };
+}
+
+/** The whole generate request: the optional `ewb` part and, when the server asked for it, the ship-to place next to it. */
+export type EinvoiceGenerateBody = Partial<EinvoiceEwbBody> & ShipToBody;
+
+export function einvoiceGenerateRequest(
+  form: EwayForm,
+  opts: { withEwb: boolean; needShipTo: boolean },
+): { ok: true; body: EinvoiceGenerateBody } | { ok: false; errors: EwayFormErrors } {
+  const errors: EwayFormErrors = {};
+  let body: EinvoiceGenerateBody = {};
+  if (opts.withEwb) {
+    const r = einvoiceEwbRequest(form);
+    if (r.ok) body = { ...r.body };
+    else Object.assign(errors, r.errors);
+  }
+  if (opts.needShipTo) {
+    const s = validateShipTo(form, true);
+    Object.assign(errors, s.errors);
+    body = { ...body, ...s.body };
+  }
+  if (Object.keys(errors).length) return { ok: false, errors };
+  return { ok: true, body };
 }
 
 export type PanelAction = 'load' | 'generate' | 'cancel' | 'recheck';
@@ -207,6 +236,7 @@ const EINVOICE_CODES = new Set([
   'NOT_FOUND', 'NOT_APPLICABLE', 'IRN_EXISTS', 'IRN_CANCELLED', 'IRN_MISMATCH', 'IRN_NOT_SAVED', 'GSP_NOT_CONNECTED', 'GSP_AUTH',
   'GSP_NOT_CONFIGURED', 'GSP_NO_ANSWER', 'GSP_REJECTED', 'PRECHECK_FAILED', 'LIMIT_EXCEEDED', 'INVALID_EWB', 'EWAY_EXISTS',
   'BAD_REQUEST', 'NO_IRN', 'CANCEL_WINDOW_CLOSED', 'EWAY_ACTIVE', 'REMARKS_REQUIRED', 'REASON_REQUIRED', 'EWB_NOT_ALLOWED', 'NO_GSTIN',
+  'INVALID_SHIP_TO',
 ]);
 // GSP_REJECTED: the refusal is also stored as the invoice's last error, so the reloaded view stays in step.
 const REFRESH_CODES = new Set(['GSP_REJECTED', 'IRN_EXISTS', 'IRN_CANCELLED', 'IRN_NOT_SAVED', 'GSP_NO_ANSWER', 'NO_IRN', 'CANCEL_WINDOW_CLOSED', 'NOT_APPLICABLE']);

@@ -134,16 +134,48 @@ d('e-invoice settings (kh_phase2_test)', () => {
     expect(einvoiceApplies({ ...base, supply_type: 'export', document_type: null }, '2026-04-01')).toBe(true);
   });
 
-  it('gives each plan a monthly e-invoice limit by whether it has the e_invoice feature', async () => {
-    const rows = await pool.query<{ plan_id: string; limit_value: number; has: boolean }>(
-      `SELECT sp.id AS plan_id, l.limit_value,
-              EXISTS (SELECT 1 FROM subscription_plan_features f
-                       WHERE f.plan_id = sp.id AND f.feature_id = 'e_invoice' AND f.enabled) AS has
+  it('gives every plan an unlimited monthly e-invoice count: the e_invoice feature is the control', async () => {
+    const rows = await pool.query<{ plan_id: string; limit_value: number }>(
+      `SELECT sp.id AS plan_id, l.limit_value
          FROM subscription_plans sp
          JOIN subscription_plan_limits l ON l.plan_id = sp.id AND l.limit_key = 'max_einvoices_per_month'`,
     );
     expect(rows.rows.length).toBeGreaterThan(0);
-    for (const r of rows.rows) expect(r.limit_value).toBe(r.has ? -1 : 0);
+    // No plan is left at 0, the value that read as "Your plan does not include e-invoices".
+    expect(rows.rows.filter((r) => Number(r.limit_value) === 0)).toEqual([]);
+    const missing = await pool.query(
+      `SELECT sp.id FROM subscription_plans sp
+        WHERE NOT EXISTS (SELECT 1 FROM subscription_plan_limits l WHERE l.plan_id = sp.id AND l.limit_key = 'max_einvoices_per_month')`,
+    );
+    expect(missing.rows).toEqual([]);
+    const def = await pool.query(`SELECT default_value FROM platform_limits WHERE limit_key = 'max_einvoices_per_month'`);
+    expect(Number(def.rows[0].default_value)).toBe(-1);
+  });
+
+  it('re-running migration 478 corrects a plan seeded at 0 and keeps a limit set on purpose', async () => {
+    const zero = `test_einv0_${tag}`;
+    const five = `test_einv5_${tag}`;
+    try {
+      for (const id of [zero, five]) {
+        await pool.query(
+          `INSERT INTO subscription_plans (id, name, display_name, features, product_line, is_public) VALUES ($1, $1, 'Limit test', '{}'::jsonb, 'billing', false)`,
+          [id],
+        );
+      }
+      await pool.query(
+        `INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value) VALUES ($1, 'max_einvoices_per_month', 0), ($2, 'max_einvoices_per_month', 5)`,
+        [zero, five],
+      );
+      await pool.query(fs.readFileSync(path.resolve(process.cwd(), 'database/migrations/478_einvoice_irn.sql'), 'utf8'));
+      const r = await pool.query<{ plan_id: string; limit_value: number }>(
+        `SELECT plan_id, limit_value FROM subscription_plan_limits WHERE plan_id = ANY($1::text[]) AND limit_key = 'max_einvoices_per_month' ORDER BY plan_id`,
+        [[zero, five]],
+      );
+      expect(r.rows.map((x) => [x.plan_id, Number(x.limit_value)])).toEqual([[zero, -1], [five, 5]]);
+    } finally {
+      await pool.query(`DELETE FROM subscription_plan_limits WHERE plan_id = ANY($1::text[])`, [[zero, five]]);
+      await pool.query(`DELETE FROM subscription_plans WHERE id = ANY($1::text[])`, [[zero, five]]);
+    }
   });
 
   it('counts e-invoices issued this month', async () => {

@@ -3,7 +3,7 @@ import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
-import { cancelIrn, EinvoiceError, generateIrn, getEinvoiceView, parseEinvoiceEwb } from '@/lib/gst/einvoice';
+import { cancelIrn, EinvoiceError, generateIrn, getEinvoiceView, parseEinvoiceEwb, parseEinvoiceShipTo } from '@/lib/gst/einvoice';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,8 +62,9 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 /**
  * POST /api/invoices/[id]/einvoice: generate the IRN through Masters India and store it.
  * Body: { ewb?: { distance_km, transport_mode, vehicle_number, is_odc, transporter_gstin, transporter_name,
- * transport_doc_number, transport_doc_date } } to get the e-way bill with it. The business and user
- * come from the session only.
+ * transport_doc_number, transport_doc_date } } to get the e-way bill with it, and, next to it, ship_to_place,
+ * ship_to_pincode, ship_to_state_code and ship_to_gstin for goods sent to an address not saved on the customer
+ * (the e-way bill generator's names and checks). The business and user come from the session only.
  */
 export async function POST(request: NextRequest, { params }: Ctx) {
   try {
@@ -86,7 +87,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       const ewayDenied = await denyIfFeatureMissing(auth.businessId, 'eway_bill');
       if (ewayDenied) return ewayDenied;
     }
-    const einvoice = await generateIrn(auth.businessId, auth.userId, params.id, { ewb });
+    const { shipTo, shipToGstin } = parseEinvoiceShipTo(body);
+    const einvoice = await generateIrn(auth.businessId, auth.userId, params.id, { ewb, shipTo, shipToGstin });
     return NextResponse.json({ einvoice }, { status: 201 });
   } catch (error) {
     return errorResponse(error, 'Failed to generate the e-invoice');

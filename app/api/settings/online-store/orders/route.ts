@@ -231,6 +231,9 @@ export async function PATCH(request: NextRequest) {
       if (error instanceof KhataError) {
         return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
       }
+      if (error instanceof InvoiceCancelError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+      }
       throw error;
     }
   }

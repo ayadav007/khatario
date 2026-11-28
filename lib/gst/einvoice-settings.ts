@@ -109,3 +109,27 @@ export function einvoiceApplies(
   if (!inv.supply_type || !E_INVOICE_SUPPLY.has(inv.supply_type)) return false;
   return inv.invoice_date.slice(0, 10) >= einvoiceFrom;
 }
+
+/** The facts of an invoice that decide its supply type when none was stored on it. */
+export type SupplyTypeFacts = {
+  supply_type?: string | null;
+  is_export?: boolean | null;
+  place_of_supply_state_code?: string | null;
+  /** The GSTIN copied onto the invoice. */
+  customer_gstin?: string | null;
+};
+
+/**
+ * The supply type e-invoicing works with. Invoices made outside the composer (conversions, recurring, store and
+ * WhatsApp orders, offline replay) store none, so it is worked out: an export when the invoice is marked export or
+ * its place of supply is 96, else B2B when the invoice's GSTIN (its own copy, else the customer's) is a real one,
+ * else B2C. A stored supply type always wins.
+ */
+export function effectiveSupplyType(inv: SupplyTypeFacts, customerGstin?: string | null): string {
+  const stored = (inv.supply_type ?? '').trim();
+  if (stored) return stored;
+  if (inv.is_export === true || String(inv.place_of_supply_state_code ?? '').trim() === '96') return 'export';
+  const own = norm(inv.customer_gstin);
+  const gstin = own || norm(customerGstin);
+  return gstin && gstin !== 'URP' ? 'b2b' : 'b2c';
+}

@@ -36,6 +36,40 @@ export function isValidEwayDistance(text: string): boolean {
 
 const isGstin = (g: string) => g === "URP" || g.length === 15;
 
+export type ShipToFields = Pick<EwayForm, "shipToGstin" | "shipToPlace" | "shipToPincode" | "shipToStateCode">;
+export type ShipToBody = Pick<GenerateEwayInput, "ship_to_gstin" | "ship_to_place" | "ship_to_pincode" | "ship_to_state_code">;
+
+/**
+ * The ship-to part of the form: city, PIN code and state together (all three when `required`), and an optional
+ * GSTIN. Shared by the e-way bill dialog and the e-invoice panel, so both send the same field names.
+ */
+export function validateShipTo(
+  f: ShipToFields,
+  required = false,
+): { errors: EwayFormErrors; body: ShipToBody } {
+  const errors: EwayFormErrors = {};
+  const body: ShipToBody = {};
+  const shipToGstin = f.shipToGstin.trim().toUpperCase();
+  if (shipToGstin && !isGstin(shipToGstin)) errors.shipToGstin = GSTIN_MSG;
+  const place = f.shipToPlace.trim();
+  const pincode = f.shipToPincode.trim();
+  const stateCode = f.shipToStateCode.trim();
+  if (required || place || pincode || stateCode) {
+    if (!place) errors.shipToPlace = SHIP_TO_MSG;
+    else if (!pincode) errors.shipToPincode = SHIP_TO_MSG;
+    else if (!stateCode) errors.shipToStateCode = SHIP_TO_MSG;
+    if (pincode && !/^\d{6}$/.test(pincode))
+      errors.shipToPincode = "Enter a 6-digit PIN code";
+  }
+  if (shipToGstin) body.ship_to_gstin = shipToGstin;
+  if (place) {
+    body.ship_to_place = place;
+    body.ship_to_pincode = pincode;
+    body.ship_to_state_code = stateCode;
+  }
+  return { errors, body };
+}
+
 export function validateEwayForm(f: EwayForm): EwayFormResult {
   const errors: EwayFormErrors = {};
 
@@ -44,12 +78,10 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
 
   const vehicle = f.vehicle.toUpperCase().replace(/\s+/g, "");
   const transporterGstin = f.transporterGstin.trim().toUpperCase();
-  const shipToGstin = f.shipToGstin.trim().toUpperCase();
   if (vehicle && !VEHICLE.test(vehicle))
     errors.vehicle = "Enter a valid vehicle number, like KA01AB1234";
   if (transporterGstin && !isGstin(transporterGstin))
     errors.transporterGstin = GSTIN_MSG;
-  if (shipToGstin && !isGstin(shipToGstin)) errors.shipToGstin = GSTIN_MSG;
 
   const docNumber = f.docNumber.trim();
   const docDate = f.docDate.trim();
@@ -63,16 +95,8 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
     if (!docDate) errors.docDate = DOC_MSG;
   }
 
-  const place = f.shipToPlace.trim();
-  const pincode = f.shipToPincode.trim();
-  const stateCode = f.shipToStateCode.trim();
-  if (place || pincode || stateCode) {
-    if (!place) errors.shipToPlace = SHIP_TO_MSG;
-    else if (!pincode) errors.shipToPincode = SHIP_TO_MSG;
-    else if (!stateCode) errors.shipToStateCode = SHIP_TO_MSG;
-    if (pincode && !/^\d{6}$/.test(pincode))
-      errors.shipToPincode = "Enter a 6-digit PIN code";
-  }
+  const shipTo = validateShipTo(f);
+  Object.assign(errors, shipTo.errors);
 
   if (Object.keys(errors).length) return { ok: false, errors };
 
@@ -87,13 +111,7 @@ export function validateEwayForm(f: EwayForm): EwayFormResult {
     body.transporter_name = f.transporterName.trim();
   if (docNumber) body.transport_doc_number = docNumber;
   if (docDate) body.transport_doc_date = docDate;
-  if (shipToGstin) body.ship_to_gstin = shipToGstin;
-  if (place) {
-    body.ship_to_place = place;
-    body.ship_to_pincode = pincode;
-    body.ship_to_state_code = stateCode;
-  }
-  return { ok: true, body };
+  return { ok: true, body: { ...body, ...shipTo.body } };
 }
 
 /**

@@ -1,5 +1,5 @@
 -- e-invoice (IRN) support: the IRN and signed QR returned by the portal, the date e-invoicing
--- starts for each GSTIN, and a monthly limit. No data is changed except the new limit rows.
+-- starts for each GSTIN, and a monthly limit. No data is changed except the limit rows.
 ALTER TABLE invoices
   ADD COLUMN IF NOT EXISTS irn VARCHAR(64),
   ADD COLUMN IF NOT EXISTS irn_ack_no VARCHAR(20),
@@ -15,17 +15,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_business_irn ON invoices (business
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS einvoice_from DATE;
 ALTER TABLE branches   ADD COLUMN IF NOT EXISTS einvoice_from DATE;
 
+-- The monthly limit is unlimited (-1) for every plan: the e_invoice plan feature is what turns e-invoices on or off,
+-- so a plan given the feature later works at once. Safe to run again: a row seeded 0 by an earlier version of this
+-- migration is corrected to -1, and a positive limit set on purpose is kept.
 INSERT INTO platform_limits (limit_key, category, label, description, unit, default_value, sort_order) VALUES
-  ('max_einvoices_per_month', 'sales', 'e-Invoices per month', 'Maximum e-invoices (IRN) generated per month', 'per month', 0, 8)
-ON CONFLICT (limit_key) DO NOTHING;
+  ('max_einvoices_per_month', 'sales', 'e-Invoices per month', 'Maximum e-invoices (IRN) generated per month', 'per month', -1, 8)
+ON CONFLICT (limit_key) DO UPDATE SET default_value = -1 WHERE platform_limits.default_value = 0;
 
--- Per-plan values (-1 = unlimited): unlimited for every plan that has the e_invoice feature,
--- none for the rest. Derived from the plan tables, not a fixed list of plan ids.
 INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value)
-SELECT sp.id, 'max_einvoices_per_month',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM subscription_plan_features f
-          WHERE f.plan_id = sp.id AND f.feature_id = 'e_invoice' AND f.enabled = true
-       ) THEN -1 ELSE 0 END
+SELECT sp.id, 'max_einvoices_per_month', -1
   FROM subscription_plans sp
-ON CONFLICT (plan_id, limit_key) DO NOTHING;
+ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = -1 WHERE subscription_plan_limits.limit_value = 0;

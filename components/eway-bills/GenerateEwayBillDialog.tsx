@@ -165,6 +165,56 @@ export function EwayTransportFields({
   );
 }
 
+/**
+ * The ship-to part of the form: GSTIN (optional), city, PIN code and state. Shared by this dialog and the
+ * e-invoice panel, which shows it when the goods go to an address not saved on the customer.
+ */
+export function EwayShipToFields({
+  form,
+  errors,
+  onChange,
+}: {
+  form: EwayForm;
+  errors: EwayFormErrors;
+  onChange: <K extends keyof EwayForm>(key: K, value: EwayForm[K]) => void;
+}) {
+  const set = onChange;
+  return (
+    <>
+      <p className="text-sm font-medium text-gray-900">Ship-to address</p>
+      <Input
+        label="Ship-to GSTIN (optional)"
+        value={form.shipToGstin}
+        error={errors.shipToGstin}
+        maxLength={15}
+        onChange={(e) => set("shipToGstin", e.target.value.toUpperCase())}
+      />
+      <Input
+        label="Ship-to city"
+        value={form.shipToPlace}
+        error={errors.shipToPlace}
+        onChange={(e) => set("shipToPlace", e.target.value)}
+      />
+      <Input
+        label="Ship-to PIN code"
+        inputMode="numeric"
+        maxLength={6}
+        value={form.shipToPincode}
+        error={errors.shipToPincode}
+        onChange={(e) =>
+          set("shipToPincode", e.target.value.replace(/\D/g, "").slice(0, 6))
+        }
+      />
+      <EwayStateSelect
+        label="Ship-to state"
+        value={form.shipToStateCode}
+        error={errors.shipToStateCode}
+        onChange={(code) => set("shipToStateCode", code)}
+      />
+    </>
+  );
+}
+
 type Props = {
   sourceType: "invoice" | "delivery_challan";
   sourceId: string;
@@ -361,39 +411,7 @@ export function GenerateEwayBillDialog({
 
         {showShipTo ? (
           <div className="space-y-3 rounded-lg border border-gray-200 p-3">
-            <p className="text-sm font-medium text-gray-900">Ship-to address</p>
-            <Input
-              label="Ship-to GSTIN (optional)"
-              value={form.shipToGstin}
-              error={errors.shipToGstin}
-              maxLength={15}
-              onChange={(e) => set("shipToGstin", e.target.value.toUpperCase())}
-            />
-            <Input
-              label="Ship-to city"
-              value={form.shipToPlace}
-              error={errors.shipToPlace}
-              onChange={(e) => set("shipToPlace", e.target.value)}
-            />
-            <Input
-              label="Ship-to PIN code"
-              inputMode="numeric"
-              maxLength={6}
-              value={form.shipToPincode}
-              error={errors.shipToPincode}
-              onChange={(e) =>
-                set(
-                  "shipToPincode",
-                  e.target.value.replace(/\D/g, "").slice(0, 6),
-                )
-              }
-            />
-            <EwayStateSelect
-              label="Ship-to state"
-              value={form.shipToStateCode}
-              error={errors.shipToStateCode}
-              onChange={(code) => set("shipToStateCode", code)}
-            />
+            <EwayShipToFields form={form} errors={errors} onChange={set} />
           </div>
         ) : (
           <button

@@ -37,8 +37,9 @@ jest.mock('@/lib/subscription/feature-access', () => ({
 import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { InvoiceCancelError, SHIPROCKET_WEBHOOK_ACTOR } from '@/lib/invoices/cancel-final-invoice';
+import { IRN_LOCK_MESSAGE } from '@/lib/gst/einvoice-lock';
 import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
-import { transitionStoreOrder } from '@/lib/store/order-lifecycle';
+import { applyShiprocketTrackingUpdate, transitionStoreOrder } from '@/lib/store/order-lifecycle';
 import { hashStoreWebhookToken } from '@/lib/store/delivery/webhooks';
 import { PATCH as patchOrder } from '@/app/api/settings/online-store/orders/route';
 import { PATCH as cancelInvoice } from '@/app/api/invoices/[id]/cancel/route';
@@ -634,5 +635,32 @@ d('Phase 3.6A store order cancellation (real DB)', () => {
     );
     expect(actors.rows.length).toBeGreaterThan(0);
     expect(actors.rows.every((row) => row.created_by === null)).toBe(true);
+  });
+
+  test('28. an invoice with an active e-invoice (IRN) blocks the store order cancel, on every path', async () => {
+    const { orderId, invoiceId } = await finalize();
+    await pool.query(
+      `UPDATE invoices SET irn = $2, irn_ack_no = '1', irn_ack_date = NOW(), irn_status = 'active' WHERE id = $1`,
+      [invoiceId, `${tag}`.padEnd(64, 'e')],
+    );
+    try {
+      await expect(
+        transitionStoreOrder({ businessId: B, orderId, to: 'cancelled', actorUserId: A, cancelledReason: 'IRN' }),
+      ).rejects.toMatchObject({ code: 'IRN_LOCKED', statusCode: 409, message: IRN_LOCK_MESSAGE });
+      const res = await patch({ order_id: orderId, status: 'cancelled' });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: IRN_LOCK_MESSAGE, code: 'IRN_LOCKED' });
+      // A courier's cancel event is acknowledged but not applied.
+      const awb = `AWB28${tag}`;
+      await pool.query(`UPDATE store_orders SET awb = $2 WHERE id = $1`, [orderId, awb]);
+      expect(await applyShiprocketTrackingUpdate({ businessId: B, awb, orderRef: '', status: 'cancelled' })).toEqual({
+        outcome: 'rejected', orderId, code: 'IRN_LOCKED',
+      });
+      expect((await pool.query(`SELECT status FROM store_orders WHERE id = $1`, [orderId])).rows[0].status).toBe('confirmed');
+      expect((await invoiceOf(orderId)).status).toBe('final');
+      expect(await reversalCount(invoiceId)).toBe(0);
+    } finally {
+      await pool.query(`UPDATE invoices SET irn_status = 'cancelled' WHERE id = $1`, [invoiceId]);
+    }
   });
 });

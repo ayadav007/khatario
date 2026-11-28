@@ -4,6 +4,7 @@ import {
   cancelReasonText,
   einvoiceErrorDisplay,
   einvoiceEwbRequest,
+  einvoiceGenerateRequest,
   einvoiceGoodsFacts,
   einvoicePanelState,
   formatIndianDate,
@@ -27,6 +28,7 @@ const view = (over: Partial<EinvoiceView> = {}): EinvoiceView => ({
   eway_warning: null,
   cancelled_at: null,
   cancel_reason: null,
+  ship_to_needed: false,
   ...over,
 });
 
@@ -89,6 +91,7 @@ describe('einvoicePanelState', () => {
             { field: 'seller_gstin', message: 'Add your GSTIN in Business settings', fix: { kind: 'business', id: null } },
             { field: 'doc_number', message: 'Use a shorter number', fix: { kind: 'invoice', id: 'inv-1' } },
             { field: 'other', message: 'No fix' },
+            { field: 'seller_pincode', message: "Add the PIN code of this branch's address in Branch settings", fix: { kind: 'branch', id: 'br 1' } },
           ],
         }),
         facts({ documentType: 'tax_invoice' }),
@@ -100,8 +103,10 @@ describe('einvoicePanelState', () => {
       null,
       '/customers/cust-1/edit',
       '/settings/business',
-      '/invoices/new?edit=inv-1&type=tax_invoice',
+      // A final invoice cannot be edited: its own problems say what to do and have no link.
       null,
+      null,
+      '/settings/branches/br%201/edit',
     ]);
     expect(s.problems[0].message).toBe('Use the 6-digit HSN code for Toor Dal. E-invoices do not accept shorter codes.');
   });
@@ -173,6 +178,53 @@ describe('problemFixHref', () => {
     expect(problemFixHref({ field: 'x', message: 'm', fix: { kind: 'customer', id: 'a b' } }, 'tax_invoice')).toBe('/customers/a%20b/edit');
     expect(problemFixHref({ field: 'x', message: 'm', fix: { kind: 'customer', id: null } }, 'tax_invoice')).toBeNull();
     expect(problemFixHref({ field: 'x', message: 'm', fix: { kind: 'invoice', id: null } }, 'tax_invoice')).toBeNull();
+  });
+});
+
+describe('ship-to on the e-invoice', () => {
+  const form = (over: Partial<EwayForm> = {}): EwayForm => ({
+    distance: '120', mode: 'road', vehicle: 'ka01ab1234', transporterGstin: '', transporterName: '', docNumber: '', docDate: '',
+    isOdc: false, shipToGstin: '', shipToPlace: '', shipToPincode: '', shipToStateCode: '', ...over,
+  });
+  const nashik = { shipToPlace: ' Nashik ', shipToPincode: '422001', shipToStateCode: '27' };
+
+  it('shows the ship-to fields only while the e-invoice is pending and the server says they are needed', () => {
+    expect(shown(einvoicePanelState(view({ ship_to_needed: true }), facts())).showShipTo).toBe(true);
+    expect(shown(einvoicePanelState(view(), facts())).showShipTo).toBe(false);
+    expect(shown(einvoicePanelState(view({ ship_to_needed: true, status: 'active', irn: 'X' }), facts())).showShipTo).toBe(false);
+    // The ship-to need is not a problem: Generate stays enabled so the typed place can be sent.
+    expect(shown(einvoicePanelState(view({ ship_to_needed: true }), facts())).generateDisabled).toBe(false);
+  });
+
+  it('requires the city, a 6-digit PIN code and the state when ship-to is needed', () => {
+    const r = einvoiceGenerateRequest(form(), { withEwb: false, needShipTo: true });
+    expect(r).toEqual({ ok: false, errors: { shipToPlace: 'Enter the ship-to city, PIN code and state together' } });
+    const r2 = einvoiceGenerateRequest(form({ ...nashik, shipToPincode: '4220' }), { withEwb: false, needShipTo: true });
+    expect(r2).toEqual({ ok: false, errors: { shipToPincode: 'Enter a 6-digit PIN code' } });
+    const r3 = einvoiceGenerateRequest(form({ ...nashik, shipToGstin: '27AB' }), { withEwb: false, needShipTo: true });
+    expect(r3).toEqual({ ok: false, errors: { shipToGstin: 'Enter a 15-character GSTIN' } });
+  });
+
+  it('sends the ship-to fields next to ewb, with the names the e-way bill generator uses', () => {
+    expect(einvoiceGenerateRequest(form({ ...nashik, shipToGstin: '27aaact1234a1z5' }), { withEwb: false, needShipTo: true })).toEqual({
+      ok: true,
+      body: { ship_to_place: 'Nashik', ship_to_pincode: '422001', ship_to_state_code: '27', ship_to_gstin: '27AAACT1234A1Z5' },
+    });
+    expect(einvoiceGenerateRequest(form(nashik), { withEwb: true, needShipTo: true })).toEqual({
+      ok: true,
+      body: {
+        ewb: { distance_km: 120, transport_mode: 'road', is_odc: false, vehicle_number: 'KA01AB1234' },
+        ship_to_place: 'Nashik', ship_to_pincode: '422001', ship_to_state_code: '27',
+      },
+    });
+    // Not needed: nothing about ship-to is sent, even if typed earlier.
+    expect(einvoiceGenerateRequest(form(nashik), { withEwb: false, needShipTo: false })).toEqual({ ok: true, body: {} });
+  });
+
+  it('reports e-way bill and ship-to mistakes together', () => {
+    const r = einvoiceGenerateRequest(form({ distance: '' }), { withEwb: true, needShipTo: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(Object.keys(r.errors).sort()).toEqual(['distance', 'shipToPlace']);
   });
 });
 

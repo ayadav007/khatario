@@ -9,7 +9,7 @@ import { SlideOverPanel } from '@/components/ui/SlideOverPanel';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useOptionalFeatureUpgradeModal } from '@/contexts/FeatureUpgradeModalContext';
 import { usePlanFeature } from '@/hooks/usePlanFeature';
-import { CONNECT_URL, EwayTransportFields } from '@/components/eway-bills/GenerateEwayBillDialog';
+import { CONNECT_URL, EwayShipToFields, EwayTransportFields } from '@/components/eway-bills/GenerateEwayBillDialog';
 import { useDocumentEwayBills } from '@/components/eway-bills/useDocumentEwayBills';
 import type { EinvoiceView } from '@/lib/gst/einvoice';
 import type { EinvoiceProblem } from '@/lib/gsp/mastersindia/einvoice-payload';
@@ -18,7 +18,7 @@ import {
   CANCEL_REASONS,
   CANCEL_WARNING,
   einvoiceErrorDisplay,
-  einvoiceEwbRequest,
+  einvoiceGenerateRequest,
   einvoiceGoodsFacts,
   einvoicePanelState,
   problemFixHref,
@@ -198,15 +198,12 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
     setActionError(null);
     setEwayWarning(null);
     const withEwb = state.showEwbOption && (wantEwb ?? state.ewbPreTicked);
-    let body = '{}';
-    if (withEwb) {
-      const r = einvoiceEwbRequest(ewbForm);
-      if (!r.ok) {
-        setEwbErrors(r.errors);
-        return;
-      }
-      body = JSON.stringify(r.body);
+    const r = einvoiceGenerateRequest(ewbForm, { withEwb, needShipTo: state.showShipTo });
+    if (!r.ok) {
+      setEwbErrors(r.errors);
+      return;
     }
+    const body = JSON.stringify(r.body);
     setEwbErrors({});
     setBusy('generate');
     try {
@@ -306,6 +303,14 @@ export function EinvoicePanel({ invoiceId, documentType, items, ewayBillNumber, 
             </div>
           ) : null}
           {state.lastError && !actionError ? <p className="text-xs text-red-700">Last attempt: {state.lastError}</p> : null}
+          {state.showShipTo ? (
+            <div className="space-y-3 rounded-lg border border-gray-200 p-3">
+              <p className="text-xs text-text-secondary">
+                The goods go to an address that is not saved on the customer. Enter where they go.
+              </p>
+              <EwayShipToFields form={ewbForm} errors={ewbErrors} onChange={setEwbField} />
+            </div>
+          ) : null}
           {state.showEwbOption ? (
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" checked={ewbChecked} onChange={(e) => setWantEwb(e.target.checked)} disabled={busy !== null} />

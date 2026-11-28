@@ -9,7 +9,7 @@ import { checkLimitInTransaction } from '@/lib/subscription';
 import { computeValidUntil, EwayBillInputError, type EwayDocType, type EwaySubSupplyType, type ParsedEwayBill } from '@/lib/gst/eway-bills';
 import { createEwayBill, getEwayBill, type EwayBillView } from '@/lib/gst/eway-bill-records';
 import { buildEwayBill, SUB_SUPPLY_CODE, type NicEwayBill } from '@/lib/gst/eway-json';
-import { einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
+import { effectiveSupplyType, einvoiceApplies, einvoiceFromFor } from '@/lib/gst/einvoice-settings';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { loadGspCredentials } from '@/lib/gsp/mastersindia/credentials';
 import { miGenerateEwbByIrn } from '@/lib/gsp/mastersindia/einvoice';
@@ -85,7 +85,10 @@ const text = (v: unknown) => String(v ?? '').trim();
 const gstinOrNull = (g: string | null | undefined) => (g && g !== 'URP' ? g : null);
 const pinOrNull = (p: number) => (p ? String(p) : null);
 
-function shipToOf(input: GenerateEwayInput): { place: string; pincode: string; stateCode: string } | null {
+/** The typed ship-to place: all three fields or none. Shared with the e-invoice route, which takes the same names. */
+export function shipToOf(
+  input: Pick<GenerateEwayInput, 'ship_to_place' | 'ship_to_pincode' | 'ship_to_state_code'>,
+): { place: string; pincode: string; stateCode: string } | null {
   const place = text(input.ship_to_place);
   const pincode = text(input.ship_to_pincode);
   const stateCode = text(input.ship_to_state_code);
@@ -183,14 +186,19 @@ export async function generateEwayBillViaGsp(
   // An invoice covered by e-invoicing gets its e-way bill through its active IRN.
   let irn: string | null = null;
   if (input.source_type === 'invoice') {
-    const inv = (
+    const row = (
       await pool.query(
-        `SELECT status, document_type, supply_type, invoice_date::text AS invoice_date, branch_id, irn, irn_status, deleted_at
-           FROM invoices WHERE id = $1 AND business_id = $2`,
+        `SELECT i.status, i.document_type, i.supply_type, i.invoice_date::text AS invoice_date, i.branch_id, i.irn, i.irn_status, i.deleted_at,
+                i.is_export, i.place_of_supply_state_code, i.customer_gstin, c.gstin AS customer_master_gstin
+           FROM invoices i
+           LEFT JOIN customers c ON c.id = i.customer_id AND c.business_id = i.business_id
+          WHERE i.id = $1 AND i.business_id = $2`,
         [input.source_id, businessId],
       )
     ).rows[0];
-    if (!inv) throw new EwayBillInputError('Invoice not found', 404);
+    if (!row) throw new EwayBillInputError('Invoice not found', 404);
+    // Invoices made outside the composer store no supply type: decide coverage the way the e-invoice does.
+    const inv = { ...row, supply_type: effectiveSupplyType(row, row.customer_master_gstin) };
     if (inv.status !== 'final' || inv.deleted_at || NOT_EWAY_INVOICE_TYPES.includes(String(inv.document_type || ''))) {
       throw new EwayBillInputError('Only a final invoice can get an e-way bill', 409, 'NOT_ELIGIBLE');
     }

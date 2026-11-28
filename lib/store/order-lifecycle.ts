@@ -280,14 +280,24 @@ export async function applyShiprocketTrackingUpdate(input: {
 
     let outcome: { outcome: 'unchanged' | 'updated'; orderId: string } = { outcome: 'unchanged', orderId: order.id };
     if (order.status !== input.status) {
-      const moved = await transitionStoreOrderInTransaction(client, {
-        businessId: input.businessId,
-        orderId: order.id,
-        to: input.status,
-        restoreStockOnCancel: false,
-        systemActor: input.status === 'cancelled' ? SHIPROCKET_WEBHOOK_ACTOR : undefined,
-        skipFulfilmentSync: true,
-      });
+      let moved: StoreOrderLifecycleResult;
+      try {
+        moved = await transitionStoreOrderInTransaction(client, {
+          businessId: input.businessId,
+          orderId: order.id,
+          to: input.status,
+          restoreStockOnCancel: false,
+          systemActor: input.status === 'cancelled' ? SHIPROCKET_WEBHOOK_ACTOR : undefined,
+          skipFulfilmentSync: true,
+        });
+      } catch (error) {
+        // A courier cancel never cancels an invoice that has an active e-invoice: acknowledged, not applied.
+        if (error instanceof InvoiceCancelError && error.code === 'IRN_LOCKED') {
+          await client.query('ROLLBACK');
+          return { outcome: 'rejected', orderId: order.id, code: error.code };
+        }
+        throw error;
+      }
       if (!moved.ok) {
         await client.query('ROLLBACK');
         return { outcome: 'rejected', orderId: order.id, code: moved.code };

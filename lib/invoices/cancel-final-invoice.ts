@@ -4,6 +4,7 @@ import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from 
 import { restoreBundleChildrenAfterInvoiceCancel } from '@/lib/invoice-bundle-stock';
 import { baseQty } from '@/lib/items/item-units';
 import { reverseInvoiceAccountingOnCancel } from '@/lib/invoices/cancel-invoice-accounting';
+import { IRN_LOCK_MESSAGE } from '@/lib/gst/einvoice-lock';
 
 /** Authenticated Shiprocket tracking event. Not a users.id. */
 export const SHIPROCKET_WEBHOOK_ACTOR = 'shiprocket_webhook' as const;
@@ -29,6 +30,7 @@ type PostedInvoiceRow = {
   invoice_date: string | Date;
   customer_id: string | null;
   grand_total: string | number | null;
+  irn_status: string | null;
 };
 
 /**
@@ -49,7 +51,7 @@ export async function cancelPostedInvoiceInTransaction(
 ): Promise<'cancelled' | 'already_cancelled'> {
   const locked = await client.query<PostedInvoiceRow>(
     `SELECT id, business_id, branch_id, status, document_type, invoice_number,
-            invoice_date, customer_id, grand_total
+            invoice_date, customer_id, grand_total, irn_status
        FROM invoices
       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
       FOR UPDATE`,
@@ -60,6 +62,11 @@ export async function cancelPostedInvoiceInTransaction(
     throw new InvoiceCancelError('Invoice not found', 404, 'INVOICE_NOT_FOUND');
   }
   if (inv.status === 'cancelled') return 'already_cancelled';
+  // Checked under the row lock, so every cancel path (invoice page, store and online orders, courier events)
+  // refuses an invoice whose e-invoice is still active, even one stored after the caller's own check.
+  if (inv.irn_status === 'active') {
+    throw new InvoiceCancelError(IRN_LOCK_MESSAGE, 409, 'IRN_LOCKED');
+  }
   if (inv.status !== 'final' || inv.document_type === 'proforma_invoice') {
     throw new InvoiceCancelError(
       'Only a final tax invoice can be reversed',

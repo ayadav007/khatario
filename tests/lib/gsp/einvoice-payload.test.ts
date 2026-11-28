@@ -5,7 +5,7 @@ const GSTIN_KA = '29AAACR5055K1ZO';
 type Line = Record<string, any>;
 type Ship = { address: string; city: string; state: string; pincode: string };
 type O = {
-  invoiceNumber?: string; supplyType?: string; exportType?: string | null; documentType?: string; status?: string; irnStatus?: string | null;
+  invoiceNumber?: string; supplyType?: string | null; isExport?: boolean; currency?: string | null; branchGstin?: string | null; exportType?: string | null; documentType?: string; status?: string; irnStatus?: string | null;
   customerGstin?: string | null; customerPincode?: string | null; pos?: string | null; reverseCharge?: boolean; ecommerce?: string | null;
   lines?: Line[]; grandTotal?: number; docShipping?: string | null; shipping?: Ship; godown?: boolean; noGstin?: boolean; customerState?: string | null; snapshotGstin?: string; billing?: string | null; city?: string | null; sellerAddress?: string | null; sellerCity?: string | null; sellerPincode?: string;
 };
@@ -16,7 +16,7 @@ const baseLine: Line = {
 };
 
 function db(o: O = {}) {
-  const lines = (o.lines ?? [{}]).map((l) => ({ ...baseLine, ...l }));
+  const lines = (o.lines ?? [{}]).map((l, i) => ({ id: `l${i + 1}`, ...baseLine, ...l }));
   const sum = lines.reduce((s, l) => s + l.taxable_value + l.cgst_amount + l.sgst_amount + l.igst_amount + l.cess_amount, 0);
   const biz = { gstin: o.noGstin ? null : GSTIN_KA, state: 'Karnataka', state_code: '29', address_line1: 'MG Road', city: 'Bengaluru', pincode: o.sellerPincode ?? '560001', name: 'Acme Traders' };
   return {
@@ -24,7 +24,8 @@ function db(o: O = {}) {
       if (sql.includes('FROM invoices')) {
         return { rows: [{
           id: 'inv', status: o.status ?? 'final', invoice_number: o.invoiceNumber ?? 'INV-001', invoice_date: '2026-10-01', branch_id: 'br', customer_id: 'c',
-          document_type: o.documentType ?? 'tax_invoice', supply_type: o.supplyType ?? 'b2b', export_type: o.exportType ?? null,
+          document_type: o.documentType ?? 'tax_invoice', supply_type: o.supplyType === undefined ? 'b2b' : o.supplyType, export_type: o.exportType ?? null,
+          is_export: !!o.isExport, invoice_currency: o.currency === undefined ? 'INR' : o.currency,
           irn_status: o.irnStatus ?? null, customer_gstin: o.snapshotGstin ?? (o.customerGstin === undefined ? '33ADVFS4469F1ZJ' : o.customerGstin),
           place_of_supply_state_code: o.pos === undefined ? '29' : o.pos, is_reverse_charge: !!o.reverseCharge, ecommerce_operator_gstin: o.ecommerce ?? null,
           shipping_bill_number: 'SB123', shipping_bill_date: '2026-10-02', port_code: 'INMAA1',
@@ -43,7 +44,9 @@ function db(o: O = {}) {
         return { rows: [{
           b_gstin: biz.gstin, b_state: biz.state, b_state_code: biz.state_code, b_address: o.sellerAddress === undefined ? biz.address_line1 : o.sellerAddress, b_address2: 'Near Park', b_city: o.sellerCity === undefined ? biz.city : o.sellerCity, b_pincode: biz.pincode,
           b_phone: '+91 98450 12345', b_email: 'acme@example.com',
-          br_gstin: null, br_state: biz.state, br_state_code: '29', br_address1: null, br_city: null, br_pincode: null,
+          br_gstin: o.branchGstin ?? null, br_state: biz.state, br_state_code: '29',
+          br_address1: o.branchGstin ? (o.sellerAddress === undefined ? 'Peenya' : o.sellerAddress) : null,
+          br_city: o.branchGstin ? (o.sellerCity === undefined ? 'Bengaluru' : o.sellerCity) : null, br_pincode: o.branchGstin ? o.sellerPincode ?? '560058' : null,
         }] };
       }
       if (sql.includes('LEFT JOIN warehouses w')) {
@@ -59,6 +62,9 @@ function db(o: O = {}) {
 }
 
 const msgs = (b: { problems: { message: string }[] }) => b.problems.map((x) => x.message);
+const FINAL = 'It cannot be changed on a final invoice. Cancel this invoice and make a new one.';
+const IGST_NEEDED = 'This is an inter-state supply, so it must carry IGST. The tax cannot be changed on a final invoice. Cancel this invoice and make a new one.';
+const CGST_NEEDED = 'This is a supply within the state, so it must carry CGST and SGST. The tax cannot be changed on a final invoice. Cancel this invoice and make a new one.';
 const ewb = { distanceKm: 120, transport: { mode: 'road' as const, vehicleNumber: 'ka 01 ab 1234' } };
 const pune: Ship = { address: 'Plot 9, MIDC', city: 'Pune', state: 'Maharashtra', pincode: '411019' };
 const nashik = { place: 'Nashik', pincode: '422001', stateCode: '27' };
@@ -151,7 +157,7 @@ describe('buildEinvoice', () => {
   ])('refuses the document number %s', async (no, re) => {
     const b = await buildEinvoice(db({ invoiceNumber: no }), 'biz', 'inv');
     expect(b.problems[0].message).toMatch(re);
-    expect(b.problems[0].message).toBe(`Invoice number ${no} cannot be used for an e-invoice. It must be at most 16 characters, use only letters, digits, / and -, and not start with 0, / or -.`);
+    expect(b.problems[0].message).toBe(`Invoice number ${no} cannot be used for an e-invoice. It must be at most 16 characters, use only letters, digits, / and -, and not start with 0, / or -. The number cannot be changed on a final invoice. Cancel this invoice and make a new one with a number that fits.`);
     expect(b.payload).toBeNull();
   });
 
@@ -178,7 +184,7 @@ describe('buildEinvoice', () => {
 
   it('asks for the place of supply when neither it nor the buyer state is known', async () => {
     const b = await buildEinvoice(db({ pos: null, customerGstin: null, customerState: null }), 'biz', 'inv');
-    expect(msgs(b)).toEqual(["Add the customer's GSTIN", 'Choose the place of supply']);
+    expect(msgs(b)).toEqual(["Add the customer's GSTIN", "This invoice has no place of supply. Add the customer's GSTIN, or cancel this invoice and make a new one."]);
     expect(b.problems[1].fix).toEqual({ kind: 'invoice', id: 'inv' });
     // With a buyer GSTIN the buyer state stands in for a blank place of supply.
     const ok: any = (await buildEinvoice(db({ pos: null, lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] }), 'biz', 'inv')).payload;
@@ -187,7 +193,9 @@ describe('buildEinvoice', () => {
 
   it('flags goods lines with no quantity but not services, and free-text lines have a null fix id', async () => {
     const b = await buildEinvoice(db({ lines: [{ quantity: 0, item_id: null, item_name: 'Loose bolts' }, { hsn_sac: '996511', quantity: 0, item_name: 'Freight' }] }), 'biz', 'inv');
-    expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([['Enter the quantity for Loose bolts', 'item', null]]);
+    expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([[`Enter the quantity for Loose bolts. ${FINAL}`, 'invoice', 'inv']]);
+    // A goods line from the item list points at the invoice too: the item record cannot change the line's quantity.
+    expect((await buildEinvoice(db({ lines: [{ quantity: 0 }] }), 'biz', 'inv')).problems[0].fix).toEqual({ kind: 'invoice', id: 'inv' });
   });
 
   it('requires a 6 or 8 digit HSN', async () => {
@@ -203,24 +211,24 @@ describe('buildEinvoice', () => {
 
   it('reports a total outside the round-off tolerance', async () => {
     const b = await buildEinvoice(db({ grandTotal: 1300 }), 'biz', 'inv');
-    expect(msgs(b)).toEqual(['The invoice total differs from its lines by more than ₹99.99']);
+    expect(msgs(b)).toEqual(['The invoice total differs from its lines by more than ₹99.99. The total cannot be changed on a final invoice. Cancel this invoice and make a new one.']);
     expect(b.problems[0].fix).toEqual({ kind: 'invoice', id: 'inv' });
     expect((await buildEinvoice(db({ grandTotal: 1279.99 }), 'biz', 'inv')).problems).toEqual([]);
   });
 
   it('reports CGST on an inter-state supply', async () => {
     const b = await buildEinvoice(db({ pos: '33' }), 'biz', 'inv');
-    expect(msgs(b)).toEqual(['This is an inter-state supply, so it must carry IGST']);
+    expect(msgs(b)).toEqual([IGST_NEEDED]);
   });
 
   it('reports IGST on a supply within the state', async () => {
     const b = await buildEinvoice(db({ lines: [{ cgst_amount: 0, sgst_amount: 0, igst_amount: 180 }] }), 'biz', 'inv');
-    expect(msgs(b)).toEqual(['This is a supply within the state, so it must carry CGST and SGST']);
+    expect(msgs(b)).toEqual([CGST_NEEDED]);
   });
 
   it('treats an SEZ supply as inter-state even when the place of supply is the seller state', async () => {
     const b = await buildEinvoice(db({ supplyType: 'sez', pos: '29' }), 'biz', 'inv');
-    expect(msgs(b)).toEqual(['This is an inter-state supply, so it must carry IGST']);
+    expect(msgs(b)).toEqual([IGST_NEEDED]);
   });
 
   it('does not trigger the tax-type problem for a zero-rated line on an inter-state invoice', async () => {
@@ -230,7 +238,7 @@ describe('buildEinvoice', () => {
 
   it('allows at most 1000 lines', async () => {
     const many = (n: number) => Array.from({ length: n }, () => ({ taxable_value: 1, cgst_amount: 0.09, sgst_amount: 0.09 }));
-    expect(msgs(await buildEinvoice(db({ lines: many(1001), grandTotal: 1181.18 }), 'biz', 'inv'))).toEqual(['An e-invoice can carry at most 1000 items']);
+    expect(msgs(await buildEinvoice(db({ lines: many(1001), grandTotal: 1181.18 }), 'biz', 'inv'))).toEqual(['An e-invoice can carry at most 1000 items. Cancel this invoice and make it again as smaller invoices.']);
     expect((await buildEinvoice(db({ lines: many(1000), grandTotal: 1180 }), 'biz', 'inv')).problems).toEqual([]);
   });
 
@@ -355,14 +363,77 @@ describe('buildEinvoice', () => {
       const p: any = (await buildEinvoice(db({ docShipping: 'Gate 4, Chakan', shipping: pune }), 'biz', 'inv', { shipTo: nashik })).payload;
       expect(p.ship_details).toMatchObject({ address1: 'Gate 4, Chakan', location: 'Nashik', pincode: 422001, state_code: '27' });
     });
-    it('is silent about an unsaved document address unless an e-way bill is asked for', async () => {
+    const SHIP_TO = 'This invoice ships to an address that is not saved on the customer. Enter the ship-to city, PIN code and state.';
+    it('asks for the ship-to place of a goods invoice sent to an unsaved address, with or without an e-way bill', async () => {
       const d = () => db({ docShipping: 'Gate 4, Chakan', shipping: pune });
-      const plain = await buildEinvoice(d(), 'biz', 'inv');
-      expect(plain.problems).toEqual([]);
-      expect((plain.payload as any).ship_details).toBeUndefined();
-      const withEwb = await buildEinvoice(d(), 'biz', 'inv', { ewb });
-      expect(withEwb.problems).toEqual([{ field: 'ship_to', message: 'Enter the ship-to city, PIN code and state', fix: { kind: 'invoice', id: 'inv' } }]);
-      expect(withEwb.payload).toBeNull();
+      for (const opts of [{}, { ewb }]) {
+        const b = await buildEinvoice(d(), 'biz', 'inv', opts);
+        expect(b.problems).toEqual([{ field: 'ship_to', message: SHIP_TO }]);
+        expect(b.payload).toBeNull();
+      }
+    });
+    it('is silent about an unsaved address on an invoice of services only', async () => {
+      const b = await buildEinvoice(db({ docShipping: 'Gate 4, Chakan', lines: [{ hsn_sac: '998314' }] }), 'biz', 'inv');
+      expect(b.problems).toEqual([]);
+      expect((b.payload as any).ship_details).toBeUndefined();
+    });
+    it('uses a typed ship-to GSTIN in ship_details', async () => {
+      const p: any = (await buildEinvoice(db({ docShipping: 'Gate 4, Chakan' }), 'biz', 'inv', { shipTo: nashik, shipToGstin: '27AAACT1234A1Z5' })).payload;
+      expect(p.ship_details).toMatchObject({ gstin: '27AAACT1234A1Z5', location: 'Nashik', pincode: 422001, state_code: '27' });
+    });
+  });
+
+  describe('final review fixes', () => {
+    it('builds an invoice saved without a supply type as B2B when it has a GSTIN, and never one without', async () => {
+      const b = await buildEinvoice(db({ supplyType: null }), 'biz', 'inv');
+      expect(b.problems).toEqual([]);
+      expect((b.payload as any).transaction_details.supply_type).toBe('B2B');
+      expect(msgs(await buildEinvoice(db({ supplyType: null, customerGstin: null }), 'biz', 'inv'))).toEqual(['This invoice does not need an e-invoice']);
+      const exp = await buildEinvoice(db({ supplyType: null, isExport: true, customerGstin: null, pos: '96', lines: [{ tax_rate: 0, cgst_amount: 0, sgst_amount: 0 }] }), 'biz', 'inv');
+      expect(exp.problems).toEqual([]);
+      expect((exp.payload as any).transaction_details.supply_type).toBe('EXPWP');
+    });
+
+    it("uses the item's current HSN when the line's own copy is short, and reports the refreshed lines", async () => {
+      const b = await buildEinvoice(db({ lines: [{ hsn_sac: '7214', item_hsn: '721410' }, { item_id: 'it2', item_name: 'Nails', hsn_sac: '', item_hsn: '73170013' }] }), 'biz', 'inv');
+      expect(b.problems).toEqual([]);
+      expect((b.payload as any).item_list.map((i: any) => i.hsn_code)).toEqual(['721410', '73170013']);
+      expect(b.hsnRefresh).toEqual([{ lineId: 'l1', hsn: '721410' }, { lineId: 'l2', hsn: '73170013' }]);
+      // A line whose own code is fine is never refreshed.
+      expect((await buildEinvoice(db({ lines: [{ hsn_sac: '721410', item_hsn: '72141090' }] }), 'biz', 'inv')).hsnRefresh).toEqual([]);
+    });
+
+    it('keeps the HSN problem with the item to fix when the item record is short too', async () => {
+      const b = await buildEinvoice(db({ lines: [{ hsn_sac: '7214', item_hsn: '7214' }] }), 'biz', 'inv');
+      expect(b.problems).toEqual([
+        { field: 'hsn', message: 'Use the 6-digit HSN code for Steel rod. E-invoices do not accept shorter codes.', fix: { kind: 'item', id: 'it1' } },
+      ]);
+      expect(b.hsnRefresh).toEqual([]);
+    });
+
+    it('says a charge with a short SAC needs a new invoice, with nothing to fix', async () => {
+      const b = await buildEinvoice(db({ lines: [{}, { charge_line: true, item_id: null, item_name: 'Freight', hsn_sac: '9965', quantity: 1, taxable_value: 100, cgst_amount: 9, sgst_amount: 9 }] }), 'biz', 'inv');
+      expect(b.problems).toEqual([
+        { field: 'hsn', message: `The charge "Freight" on this invoice needs a 6-digit SAC code. ${FINAL}` },
+      ]);
+      const typed = await buildEinvoice(db({ lines: [{ item_id: null, item_name: 'Loose bolts', hsn_sac: '' }] }), 'biz', 'inv');
+      expect(typed.problems).toEqual([{ field: 'hsn', message: `The line "Loose bolts" on this invoice needs a 6-digit HSN code. ${FINAL}` }]);
+    });
+
+    it('points seller problems of a branch with its own GSTIN at that branch', async () => {
+      const b = await buildEinvoice(db({ branchGstin: '29AAACR5055K2ZN', sellerPincode: '5600', sellerCity: '' }), 'biz', 'inv');
+      expect(b.problems.map((x) => [x.message, x.fix?.kind, x.fix?.id])).toEqual([
+        ["Add the PIN code of this branch's address in Branch settings", 'branch', 'br'],
+        ["Add the city of this branch's address in Branch settings", 'branch', 'br'],
+      ]);
+    });
+
+    it('refuses a foreign currency invoice with a plain reason', async () => {
+      const b = await buildEinvoice(db({ currency: 'USD' }), 'biz', 'inv');
+      expect(b.problems).toEqual([{ field: 'currency', message: 'This invoice is in USD. E-invoices for foreign currency invoices are not supported yet.' }]);
+      for (const currency of ['INR', 'inr', '', null]) {
+        expect((await buildEinvoice(db({ currency }), 'biz', 'inv')).problems).toEqual([]);
+      }
     });
   });
 });

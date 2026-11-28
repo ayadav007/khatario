@@ -32,6 +32,7 @@ import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { GspError } from '@/lib/gsp/mastersindia/client';
 import { IRN_DUPLICATE_CODES, type MiIrnResult } from '@/lib/gsp/mastersindia/einvoice';
 import { generateIrn, getEinvoiceView, parseEinvoiceEwb, type EinvoiceDeps } from '@/lib/gst/einvoice';
+import { generateEwayBillViaGsp } from '@/lib/gst/eway-generate';
 
 d('generate the IRN for a final invoice (kh_phase2_test)', () => {
   jest.setTimeout(120000);
@@ -50,6 +51,10 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
     invoice10Id, invoice11Id, invoice12Id] = ids;
   const [invoiceWithoutHsnId, oldInvoiceId, b2cInvoiceId, serviceInvoiceId] = ids.slice(12);
   const [ewbFailInvoiceId, cancelledInvoiceId] = [randomUUID(), randomUUID()];
+  // Final review fixes: no stored supply type, HSN taken from the item, ship-to typed in the panel.
+  const [nullB2bId, nullB2cId, nullB2bEwayId, hsnRefreshId, hsnStuckId, shipToId] = Array.from({ length: 6 }, () => randomUUID());
+  const customerNoGstinId = randomUUID();
+  const shortHsnItemId = randomUUID();
 
   /** Today in India, YYYY-MM-DD. */
   const todayIso = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -79,18 +84,22 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
   const setPlanLimit = (n: number) =>
     pool.query(`UPDATE subscription_plan_limits SET limit_value = $2 WHERE plan_id = $1 AND limit_key = 'max_einvoices_per_month'`, [planId, n]);
 
-  async function seedInvoice(id: string, n: number, o: { hsn?: string; date?: string; supplyType?: string } = {}) {
+  async function seedInvoice(
+    id: string,
+    n: number,
+    o: { hsn?: string; date?: string; supplyType?: string | null; customer?: string; item?: string; shipping?: string } = {},
+  ) {
     await pool.query(
       `INSERT INTO invoices (id, business_id, branch_id, customer_id, invoice_number, invoice_date, status, document_type, supply_type,
-                             place_of_supply_state_code, subtotal, grand_total, is_editable)
-       VALUES ($1, $2, $3, $4, $5, $6::date, 'final', 'tax_invoice', $7, '27', 1000, 1180, false)`,
-      [id, businessId, branchId, customerId, docNo(n), o.date ?? todayIso, o.supplyType ?? 'b2b'],
+                             place_of_supply_state_code, subtotal, grand_total, is_editable, shipping_address)
+       VALUES ($1, $2, $3, $4, $5, $6::date, 'final', 'tax_invoice', $7, '27', 1000, 1180, false, $8)`,
+      [id, businessId, branchId, o.customer ?? customerId, docNo(n), o.date ?? todayIso, o.supplyType === undefined ? 'b2b' : o.supplyType, o.shipping ?? null],
     );
     await pool.query(
       `INSERT INTO invoice_items (invoice_id, item_id, item_name, hsn_sac, quantity, unit, unit_price, tax_rate, tax_amount,
                                   taxable_value, igst_amount, line_total, sort_order)
        VALUES ($1, $2, 'Steel bar', $3, 2, 'NOS', 500, 18, 180, 1000, 180, 1180, 0)`,
-      [id, itemId, o.hsn ?? '721410'],
+      [id, o.item ?? itemId, o.hsn ?? '721410'],
     );
   }
 
@@ -140,8 +149,21 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
       [customerId, businessId],
     );
     await pool.query(`INSERT INTO items (id, business_id, name, hsn_sac, unit, uqc) VALUES ($1, $2, 'Steel bar', '721410', 'NOS', 'NOS')`, [itemId, businessId]);
+    await pool.query(`INSERT INTO items (id, business_id, name, hsn_sac, unit, uqc) VALUES ($1, $2, 'Steel bar', '7214', 'NOS', 'NOS')`, [shortHsnItemId, businessId]);
+    await pool.query(
+      `INSERT INTO customers (id, business_id, name, billing_address, city, pincode, state, state_code)
+       VALUES ($1, $2, 'Walk-in Buyer', '9 Hill Road, Bandra', 'Mumbai', '400050', 'Maharashtra', '27')`,
+      [customerNoGstinId, businessId],
+    );
+    await seedInvoice(nullB2bId, 21, { supplyType: null });
+    await seedInvoice(nullB2cId, 22, { supplyType: null, customer: customerNoGstinId });
+    await seedInvoice(nullB2bEwayId, 23, { supplyType: null });
+    await seedInvoice(hsnRefreshId, 24, { hsn: '7214' });
+    await seedInvoice(hsnStuckId, 25, { hsn: '7214', item: shortHsnItemId });
+    await seedInvoice(shipToId, 26, { shipping: 'Gate 4, Chakan MIDC, Pune' });
     for (let i = 0; i < 12; i++) await seedInvoice(ids[i], i + 1);
-    await seedInvoice(invoiceWithoutHsnId, 13, { hsn: '' });
+    // No HSN on the line, and none usable on its item either: the problem stays.
+    await seedInvoice(invoiceWithoutHsnId, 13, { hsn: '', item: shortHsnItemId });
     const old = new Date(Date.parse(todayIso) - 20 * 864e5).toISOString().slice(0, 10);
     await seedInvoice(oldInvoiceId, 14, { date: old });
     await seedInvoice(b2cInvoiceId, 15, { supplyType: 'b2c_large' });
@@ -353,12 +375,79 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
     const v = await generateIrn(businessId, userId, ewbFailInvoiceId, { ewb }, d1);
     expect([v.status, v.irn]).toEqual(['active', irnOf(17)]);
     expect(v.eway_warning).toBe(
-      'E-invoice generated. The e-way bill EWB-BAD was created on the portal but could not be saved here. Add it to the invoice by hand.',
+      'E-invoice generated. The e-way bill EWB-BAD was created on the portal but could not be saved here. The number is saved on the invoice.',
     );
     expect(await rowOf(ewbFailInvoiceId)).toMatchObject({ irn: irnOf(17), irn_status: 'active' });
+    // The portal's number survives a reload and prints.
+    const saved = (await pool.query(`SELECT eway_bill_number, eway_bill_date::text AS d FROM invoices WHERE id = $1`, [ewbFailInvoiceId])).rows[0];
+    expect(saved).toEqual({ eway_bill_number: 'EWB-BAD', d: todayIso });
     expect((await pool.query(`SELECT 1 FROM eway_bills WHERE source_id = $1`, [ewbFailInvoiceId])).rowCount).toBe(0);
     expect(log).toHaveBeenCalledWith('[einvoice] e-way bill issued with the IRN but not saved', { invoiceId: ewbFailInvoiceId, error: '23514' });
     log.mockRestore();
+  });
+
+  describe('final review fixes', () => {
+    const SHIP_TO = 'This invoice ships to an address that is not saved on the customer. Enter the ship-to city, PIN code and state.';
+    const nashik = { place: 'Nashik', pincode: '422001', stateCode: '27' };
+
+    it('offers and generates the e-invoice of an invoice saved without a supply type that has a customer GSTIN', async () => {
+      expect(await getEinvoiceView(businessId, nullB2bId)).toMatchObject({ applies: true, status: 'none', problems: [], ship_to_needed: false });
+      const d1 = deps({ generate: jest.fn(async () => res(21)) });
+      expect((await generateIrn(businessId, userId, nullB2bId, undefined, d1)).status).toBe('active');
+      expect((d1.generate as jest.Mock).mock.calls[0][1]).toHaveProperty('transaction_details.supply_type', 'B2B');
+      // Nothing is stored as the supply type: the composer's value is left alone.
+      expect((await pool.query(`SELECT supply_type FROM invoices WHERE id = $1`, [nullB2bId])).rows[0].supply_type).toBeNull();
+    });
+
+    it('does not offer one for an invoice saved without a supply type and without a GSTIN', async () => {
+      expect(await getEinvoiceView(businessId, nullB2cId)).toMatchObject({ applies: false, status: 'none', problems: [] });
+      const d1 = deps();
+      await expect(generateIrn(businessId, userId, nullB2cId, undefined, d1)).rejects.toMatchObject({ code: 'NOT_APPLICABLE', status: 409 });
+      expect(d1.generate).not.toHaveBeenCalled();
+    });
+
+    it('sends the e-way bill of such an invoice through the e-invoice, never the plain call', async () => {
+      const d1 = { loadCredentials: async () => creds, generate: jest.fn(), ewbByIrn: jest.fn(), findByDocument: jest.fn(), getDetails: jest.fn() };
+      await expect(
+        generateEwayBillViaGsp(businessId, userId, { source_type: 'invoice', source_id: nullB2bEwayId, distance_km: 100, vehicle_number: 'KA01AB1234' }, d1),
+      ).rejects.toMatchObject({ code: 'IRN_REQUIRED', status: 409 });
+      expect(d1.generate).not.toHaveBeenCalled();
+      expect(d1.ewbByIrn).not.toHaveBeenCalled();
+    });
+
+    it("takes the item's current HSN for a short line code and writes it to the line with the IRN", async () => {
+      expect((await getEinvoiceView(businessId, hsnRefreshId))!.problems).toEqual([]);
+      const d1 = deps({ generate: jest.fn(async () => res(24)) });
+      expect((await generateIrn(businessId, userId, hsnRefreshId, undefined, d1)).status).toBe('active');
+      expect((d1.generate as jest.Mock).mock.calls[0][1].item_list[0].hsn_code).toBe('721410');
+      const line = (await pool.query(`SELECT hsn_sac FROM invoice_items WHERE invoice_id = $1`, [hsnRefreshId])).rows[0];
+      expect(line.hsn_sac).toBe('721410');
+      const rev = await pool.query(
+        `SELECT action, snapshot->'lines'->0->>'hsn_sac' AS hsn FROM invoice_revisions WHERE invoice_id = $1 ORDER BY revision_no DESC LIMIT 1`,
+        [hsnRefreshId],
+      );
+      expect(rev.rows[0]).toEqual({ action: 'einvoice_generated', hsn: '721410' });
+    });
+
+    it('keeps the HSN problem, with the item to fix, when the item record is short too', async () => {
+      expect((await getEinvoiceView(businessId, hsnStuckId))!.problems).toEqual([
+        { field: 'hsn', message: 'Use the 6-digit HSN code for Steel bar. E-invoices do not accept shorter codes.', fix: { kind: 'item', id: shortHsnItemId } },
+      ]);
+    });
+
+    it('asks for the ship-to place of goods sent to an unsaved address, refuses without it, and sends it in the e-invoice', async () => {
+      expect(await getEinvoiceView(businessId, shipToId)).toMatchObject({ applies: true, problems: [], ship_to_needed: true });
+      const d1 = deps({ generate: jest.fn(async () => res(26)) });
+      await expect(generateIrn(businessId, userId, shipToId, undefined, d1)).rejects.toMatchObject({
+        code: 'PRECHECK_FAILED', status: 422, problems: [{ field: 'ship_to', message: SHIP_TO }],
+      });
+      expect(d1.generate).not.toHaveBeenCalled();
+      const v = await generateIrn(businessId, userId, shipToId, { shipTo: nashik }, d1);
+      expect(v.status).toBe('active');
+      expect((d1.generate as jest.Mock).mock.calls[0][1].ship_details).toMatchObject({
+        gstin: '27ABCDE1234F2Z5', address1: 'Gate 4, Chakan MIDC, Pune', location: 'Nashik', pincode: 422001, state_code: '27',
+      });
+    });
   });
 
   it('refuses an invoice whose e-invoice was cancelled, without calling the portal', async () => {
@@ -391,6 +480,13 @@ d('generate the IRN for a final invoice (kh_phase2_test)', () => {
     it('treats an empty body as no e-way bill and reaches the generator', async () => {
       const r = await post(cancelledInvoiceId, '');
       expect([r.status, r.json.code]).toEqual([409, 'IRN_CANCELLED']);
+    });
+
+    it('takes the ship-to place next to ewb, all three together', async () => {
+      const partial = await post(cancelledInvoiceId, JSON.stringify({ ship_to_place: 'Nashik', ship_to_pincode: '422001' }));
+      expect([partial.status, partial.json.code, partial.json.error]).toEqual([400, 'INVALID_SHIP_TO', 'Enter the ship-to city, PIN code and state together']);
+      const full = await post(cancelledInvoiceId, JSON.stringify({ ship_to_place: 'Nashik', ship_to_pincode: '422001', ship_to_state_code: '27' }));
+      expect([full.status, full.json.code]).toEqual([409, 'IRN_CANCELLED']);
     });
 
     it('refuses an e-way bill request without a distance', async () => {
