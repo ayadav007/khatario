@@ -41,6 +41,9 @@ export const INVOICE_ACTION_LABELS: Record<string, string> = {
   debit_note_cancelled: 'Debit note cancelled',
   converted: 'Converted',
   eway_updated: 'E-way bill updated',
+  einvoice_generated: 'E-invoice generated',
+  einvoice_rejected: 'E-invoice refused by the portal',
+  einvoice_cancelled: 'E-invoice cancelled',
   restored: 'Restored',
   gstr1_locked: 'Locked by GSTR-1 filing',
   proforma_status: 'Estimate status changed',
@@ -70,6 +73,11 @@ const FIELD_LABELS: Record<string, string> = {
   reference_number: 'Reference number',
   eway_bill_number: 'E-way bill number',
   eway_bill_date: 'E-way bill date',
+  irn: 'IRN',
+  irn_ack_no: 'E-invoice acknowledgement number',
+  irn_ack_date: 'E-invoice acknowledgement date',
+  irn_status: 'E-invoice status',
+  irn_last_error: 'E-invoice error',
   delivery_note: 'Delivery note',
   other_references: 'Other references',
   dispatched_through: 'Dispatched through',
@@ -109,8 +117,8 @@ const FIELD_LABELS: Record<string, string> = {
   classification: 'Charge type',
 };
 
-/** System bookkeeping, never shown as a change. */
-const IGNORED_HEADER = new Set(['id', 'business_id', 'created_at', 'created_by', 'search_vector']);
+/** System bookkeeping, never shown as a change. The signed QR and signed e-invoice are long portal tokens that change only with the IRN. */
+const IGNORED_HEADER = new Set(['id', 'business_id', 'created_at', 'created_by', 'search_vector', 'irn_signed_qr', 'irn_signed_invoice']);
 const IGNORED_ROW = new Set(['id', 'invoice_id', 'business_id', 'sort_order']);
 
 function humanize(field: string): string {

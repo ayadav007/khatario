@@ -90,7 +90,10 @@ function shipToOf(input: GenerateEwayInput): { place: string; pincode: string; s
   return { place, pincode, stateCode };
 }
 
-function transportOf(input: GenerateEwayInput): EwayTransport {
+/** The transport fields of a request, checked; shared with the e-invoice route, which takes the same field names. */
+export function transportOf(
+  input: Pick<GenerateEwayInput, 'transport_mode' | 'vehicle_number' | 'is_odc' | 'transporter_gstin' | 'transporter_name' | 'transport_doc_number' | 'transport_doc_date'>,
+): EwayTransport {
   const mode = input.transport_mode ?? 'road';
   if (!MODES.includes(mode)) throw new EwayBillInputError('Invalid transport mode');
   return {
@@ -107,7 +110,7 @@ function transportOf(input: GenerateEwayInput): EwayTransport {
 /** A duplicate or found bill is recorded with the portal's own vehicle, distance and validity, not this click's. */
 type PortalFacts = Pick<MiEwayDetails, 'vehicleNumber' | 'distanceKm'>;
 
-function toParsed(input: GenerateEwayInput, bill: NicEwayBill, click: EwayTransport, r: MiEwayResult, portal: PortalFacts | null): ParsedEwayBill {
+export function toParsed(input: Pick<GenerateEwayInput, 'source_type' | 'source_id'>, bill: NicEwayBill, click: EwayTransport, r: MiEwayResult, portal: PortalFacts | null): ParsedEwayBill {
   const t: EwayTransport = portal ? { ...click, vehicleNumber: portal.vehicleNumber } : click;
   const distance = portal?.distanceKm != null ? portal.distanceKm : Number(bill.transDistance) || 0;
   const isOdc = !!t.isOdc;
